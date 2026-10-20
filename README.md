@@ -1,56 +1,143 @@
-# Welcome to your Expo app 👋
+# K-FIT Gym Management Dashboard
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A modern, mobile-first gym management application built with Expo and React Native. The app provides administrators with a comprehensive dashboard to monitor daily operations, manage members, track revenue, and oversee class schedules.
 
-## Get started
+## Features
 
-1. Install dependencies
+### Dashboard Overview
+- **Real-time Metrics**: Active members, monthly revenue, daily check-ins, and class occupancy
+- **Revenue Analytics**: Visual bar chart showing 6-month revenue trends
+- **Attention Alerts**: Membership renewals, unpaid invoices, and capacity warnings
+- **Session Schedule**: Upcoming classes with trainer details, locations, and booking status
 
+### User Authentication
+- Secure login system for administrators
+- Role-based access control
+
+### Responsive Design
+- Optimized for mobile phones and tablets
+- Adaptive layouts that adjust to screen size
+- Clean, modern interface with subtle shadows and clear visual hierarchy
+
+## Tech Stack
+
+- **Framework**: Expo SDK 57
+- **Language**: TypeScript
+- **Navigation**: Expo Router (file-based routing)
+- **UI**: React Native with SafeAreaView
+- **Styling**: React Native StyleSheet
+- **Icons**: Emoji-based icon system
+
+## Installation
+
+### Prerequisites
+- Node.js (v18 or higher)
+- npm or bun
+- Expo CLI
+
+### Setup
+
+1. Clone the repository
+   ```bash
+   git clone https://github.com/Ivanrestone/K-FIT-APPLICATION.git
+   cd K-FIT-APPLICATION
+   ```
+
+2. Install dependencies
    ```bash
    npm install
    ```
 
-2. Start the app
-
+3. Start the development server
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+4. Run on your preferred platform
+   - Press `a` for Android emulator
+   - Press `i` for iOS simulator
+   - Scan the QR code with Expo Go app for mobile device
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Login Credentials
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+To access the admin dashboard, use the following credentials:
 
-## Get a fresh project
+- **Email**: `admin@gmail.com`
+- **Password**: `admin123`
 
-When you're ready, run:
+## App Structure
 
-```bash
-npm run reset-project
+```
+src/
+├── app/
+│   ├── _layout.tsx          # Root layout with tabs
+│   ├── index.tsx            # Login screen
+│   ├── dashboard.tsx        # Admin dashboard
+│   └── explore.tsx          # Explore screen
+├── components/
+│   ├── app-tabs.tsx         # Tab navigation configuration
+│   └── animated-icon.tsx    # Animated splash screen
+└── assets/
+    └── images/
+        └── tabIcons/        # Tab navigation icons
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Navigation
 
-### Other setup steps
+The app uses Expo Router with a tab-based navigation system:
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+- **Home** (`/`): Login screen
+- **Explore** (`/explore`): Additional features
+- **Dashboard** (`/dashboard`): Admin management dashboard
 
-## Learn more
+## Development
 
-To learn more about developing your project with Expo, look at the following resources:
+### Linting
+```bash
+npx expo lint
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Type Checking
+```bash
+npx tsc --noEmit
+```
 
-## Join the community
+### Building for Production
 
-Join our community of developers creating universal apps.
+For iOS:
+```bash
+npx expo run:ios
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+For Android:
+```bash
+npx expo run:android
+```
+
+For EAS Build (recommended):
+```bash
+npx eas-cli build --platform ios
+npx eas-cli build --platform android
+```
+
+## Future Enhancements
+
+- Member management system
+- Class scheduling and booking
+- Financial reports and analytics
+- Trainer management
+- Payment processing integration
+- Push notifications for alerts
+- Data persistence with backend integration
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License.
+
+## Support
+
+For issues and questions, please open an issue on the GitHub repository.
