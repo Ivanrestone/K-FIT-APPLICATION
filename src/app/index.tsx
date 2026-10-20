@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -34,6 +34,11 @@ export default function HomeScreen() {
       password === 'admin123'
     ) {
       router.replace('/dashboard');
+    } else if (
+      email.trim().toLowerCase() === 'member@gmail.com' &&
+      password === 'member123'
+    ) {
+      router.replace('/member-dashboard' as any);
     } else {
       Alert.alert(
         'Login Failed',
