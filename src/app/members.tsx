@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Dimensions,
@@ -71,6 +72,7 @@ const mockMembers: Member[] = [
 ];
 
 export default function MembersScreen() {
+  const router = useRouter();
   const [selectedFilter, setSelectedFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -132,7 +134,7 @@ export default function MembersScreen() {
           </View>
 
           <View style={styles.sidebarNav}>
-            <TouchableOpacity style={styles.navItem}>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/dashboard')}>
               <Text style={styles.navItemText}>Dashboard</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
@@ -140,8 +142,8 @@ export default function MembersScreen() {
                 Members
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem}>
-              <Text style={styles.navItemText}>Schedule</Text>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/attendance')}>
+              <Text style={styles.navItemText}>Attendance</Text>
             </TouchableOpacity>
           </View>
         </View>

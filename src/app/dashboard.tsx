@@ -38,8 +38,8 @@ export default function DashboardScreen() {
             <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/members')}>
               <Text style={styles.navItemText}>Members</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem}>
-              <Text style={styles.navItemText}>Schedule</Text>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/attendance')}>
+              <Text style={styles.navItemText}>Attendance</Text>
             </TouchableOpacity>
           </View>
         </View>
