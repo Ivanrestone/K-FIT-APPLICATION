@@ -145,6 +145,15 @@ export default function MembersScreen() {
             <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/attendance')}>
               <Text style={styles.navItemText}>Attendance</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/trainers')}>
+              <Text style={styles.navItemText}>Trainers</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/memberships')}>
+              <Text style={styles.navItemText}>Memberships</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/payments')}>
+              <Text style={styles.navItemText}>Payments</Text>
+            </TouchableOpacity>
           </View>
         </View>
 

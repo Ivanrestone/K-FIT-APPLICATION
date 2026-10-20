@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Dimensions,
@@ -9,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
@@ -120,6 +120,15 @@ export default function AttendanceScreen() {
               <Text style={[styles.navItemText, styles.navItemTextActive]}>
                 Attendance
               </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/trainers')}>
+              <Text style={styles.navItemText}>Trainers</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/memberships')}>
+              <Text style={styles.navItemText}>Memberships</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/payments')}>
+              <Text style={styles.navItemText}>Payments</Text>
             </TouchableOpacity>
           </View>
         </View>

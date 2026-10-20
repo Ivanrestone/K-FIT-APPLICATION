@@ -51,6 +51,30 @@ export default function AppTabs() {
           renderingMode="template"
         />
       </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="trainers">
+        <NativeTabs.Trigger.Label>Trainers</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          src={require('@/assets/images/tabIcons/home.png')}
+          renderingMode="template"
+        />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="memberships">
+        <NativeTabs.Trigger.Label>Memberships</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          src={require('@/assets/images/tabIcons/home.png')}
+          renderingMode="template"
+        />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="payments">
+        <NativeTabs.Trigger.Label>Payments</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          src={require('@/assets/images/tabIcons/home.png')}
+          renderingMode="template"
+        />
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
