@@ -1,3 +1,4 @@
+import Sidebar from '@/components/Sidebar';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -7,7 +8,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -97,44 +98,7 @@ export default function AttendanceScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mainContainer}>
-        {/* Left Sidebar */}
-        <View style={styles.sidebar}>
-          <View style={styles.sidebarHeader}>
-            <Text style={styles.gymName}>FORM/Brooklyn</Text>
-            <Text style={styles.gymSubtitle}>Performance club</Text>
-          </View>
-
-          <View style={styles.sidebarDate}>
-            <Text style={styles.dateText}>Tuesday, October 20, 2026</Text>
-            <Text style={styles.timeText}>AM</Text>
-          </View>
-
-          <View style={styles.sidebarNav}>
-            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/dashboard')}>
-              <Text style={styles.navItemText}>Dashboard</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/members')}>
-              <Text style={styles.navItemText}>Members</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navItem, styles.navItemActive]}>
-              <Text style={[styles.navItemText, styles.navItemTextActive]}>
-                Attendance
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/trainers')}>
-              <Text style={styles.navItemText}>Trainers</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/memberships')}>
-              <Text style={styles.navItemText}>Memberships</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/payments')}>
-              <Text style={styles.navItemText}>Payments</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/memo')}>
-              <Text style={styles.navItemText}>Memo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <Sidebar activeRoute="/attendance" />
 
         {/* Main Content */}
         <ScrollView style={styles.content}>
