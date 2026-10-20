@@ -1,13 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-    Dimensions,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -132,6 +132,9 @@ export default function PaymentsScreen() {
               <Text style={[styles.navItemText, styles.navItemTextActive]}>
                 Payments
               </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navItem} onPress={() => router.replace('/memo')}>
+              <Text style={styles.navItemText}>Memo</Text>
             </TouchableOpacity>
           </View>
         </View>
