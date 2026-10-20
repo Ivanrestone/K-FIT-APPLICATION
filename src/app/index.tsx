@@ -137,7 +137,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <Text style={styles.footer}>MyFirstApp · 2026</Text>
+          <Text style={styles.footer}>K-Fit · 2026</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
