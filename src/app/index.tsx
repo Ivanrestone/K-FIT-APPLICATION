@@ -1,21 +1,24 @@
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KFitColors, Spacing } from '@/constants/theme';
+
+const logo = require('../../assets/images/logo.jpg');
 
 export default function HomeScreen() {
   const router = useRouter();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -24,7 +27,7 @@ export default function HomeScreen() {
     if (!email.trim() || !password) {
       Alert.alert(
         'Missing Information',
-        'Please enter your email and password.'
+        'Please enter your username and password.'
       );
       return;
     }
@@ -42,7 +45,7 @@ export default function HomeScreen() {
     } else {
       Alert.alert(
         'Login Failed',
-        'Invalid email or password. Please try again.'
+        'Invalid username or password. Please try again.'
       );
     }
   };
@@ -56,88 +59,118 @@ export default function HomeScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior="automatic"
         >
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>A</Text>
+          <View style={styles.header}>
+            <View style={styles.headerBrand}>
+              <Image
+                source={logo}
+                contentFit="cover"
+                style={styles.headerLogo}
+                accessibilityLabel="K-FIT logo"
+              />
+              <Text style={styles.headerBrandText}>K-FIT</Text>
+            </View>
+            <Text style={styles.headerLabel}>MEMBER PORTAL</Text>
           </View>
 
-          <Text style={styles.title}>Welcome Back!</Text>
-          <Text style={styles.subtitle}>
-            Sign in to continue to your account
-          </Text>
-
-          <View style={styles.form}>
-            <Text style={styles.label}>Email Address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={email}
-              onChangeText={setEmail}
+          <View style={styles.loginCard}>
+            <Image
+              source={logo}
+              contentFit="cover"
+              style={styles.logo}
+              accessibilityLabel="K-FIT logo"
             />
+            <Text style={styles.portalLabel}>MEMBER PORTAL</Text>
 
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordContainer}>
+            <View style={styles.form}>
               <TextInput
-                style={styles.passwordInput}
-                placeholder="Enter your password"
-                placeholderTextColor="#9CA3AF"
-                secureTextEntry={!showPassword}
+                style={styles.input}
+                placeholder="USERNAME"
+                placeholderTextColor={KFitColors.mutedText}
+                keyboardType="email-address"
                 autoCapitalize="none"
-                value={password}
-                onChangeText={setPassword}
+                autoCorrect={false}
+                autoComplete="username"
+                value={email}
+                onChangeText={setEmail}
+                accessibilityLabel="Username"
+                returnKeyType="next"
               />
 
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Text style={styles.showText}>
-                  {showPassword ? 'Hide' : 'Show'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="PASSWORD"
+                  placeholderTextColor={KFitColors.mutedText}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoComplete="password"
+                  value={password}
+                  onChangeText={setPassword}
+                  accessibilityLabel="Password"
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
+                />
+                <Pressable
+                  onPress={() => setShowPassword((visible) => !visible)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  style={({ pressed }) => [
+                    styles.visibilityButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.visibilityText}>
+                    {showPassword ? 'HIDE' : 'SHOW'}
+                  </Text>
+                </Pressable>
+              </View>
 
-            <TouchableOpacity
-              style={styles.forgotButton}
-              onPress={() =>
-                Alert.alert(
-                  'Forgot Password',
-                  'Password recovery is coming soon.'
-                )
-              }
-            >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.loginButton}
-              onPress={handleLogin}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.loginButtonText}>Log In</Text>
-            </TouchableOpacity>
-
-            <View style={styles.signupContainer}>
-              <Text style={styles.signupText}>
-                Don't have an account?{' '}
-              </Text>
-              <TouchableOpacity
+              <Pressable
                 onPress={() =>
                   Alert.alert(
-                    'Sign Up',
-                    'Registration is coming soon.'
+                    'Forgot Password',
+                    'Password recovery is coming soon.'
                   )
                 }
+                accessibilityRole="link"
+                style={({ pressed }) => [
+                  styles.forgotButton,
+                  pressed && styles.pressed,
+                ]}
               >
-                <Text style={styles.signupLink}>Sign Up</Text>
-              </TouchableOpacity>
+                <Text style={styles.forgotText}>Forgot Password?</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.loginButton,
+                  pressed && styles.loginButtonPressed,
+                ]}
+                onPress={handleLogin}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in"
+              >
+                <Text style={styles.loginButtonText}>SIGN IN</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.signupRow}>
+              <Text style={styles.secondaryText}>Don&apos;t have an account? </Text>
+              <Pressable
+                onPress={() =>
+                  Alert.alert('Sign Up', 'Registration is coming soon.')
+                }
+                accessibilityRole="link"
+                style={({ pressed }) => pressed && styles.pressed}
+              >
+                <Text style={styles.signupText}>Sign Up.</Text>
+              </Pressable>
             </View>
           </View>
 
-          <Text style={styles.footer}>K-Fit · 2026</Text>
+          <Text style={styles.footer}>© 2025 K-FIT. All rights reserved.</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -150,124 +183,161 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: KFitColors.charcoal,
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    paddingVertical: 32,
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+    paddingBottom: Spacing.three,
+    gap: Spacing.five,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  headerBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  headerLogo: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+  },
+  headerBrandText: {
+    color: KFitColors.goldBright,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  headerLabel: {
+    color: KFitColors.mutedText,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+  },
+  loginCard: {
+    width: '100%',
+    backgroundColor: KFitColors.charcoalRaised,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.five,
+    alignItems: 'center',
+    gap: Spacing.two,
   },
   logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
-    backgroundColor: '#4F46E5',
-    alignSelf: 'center',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
+    width: 156,
+    height: 156,
+    borderRadius: 12,
+    marginBottom: Spacing.one,
   },
-  logoText: {
-    color: '#FFFFFF',
-    fontSize: 36,
-    fontWeight: 'bold',
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: 'bold',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginTop: 10,
-    marginBottom: 30,
+  portalLabel: {
+    color: KFitColors.goldBright,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 2.5,
+    marginBottom: Spacing.two,
   },
   form: {
     width: '100%',
-  },
-  label: {
-    color: '#374151',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 16,
+    gap: Spacing.two,
   },
   input: {
-    height: 54,
+    minHeight: 52,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: '#111827',
+    borderColor: KFitColors.inputBorder,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    paddingHorizontal: Spacing.three,
+    color: KFitColors.text,
+    fontSize: 14,
+    letterSpacing: 1.2,
   },
   passwordContainer: {
-    height: 54,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    borderColor: KFitColors.inputBorder,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    paddingLeft: Spacing.three,
   },
   passwordInput: {
     flex: 1,
-    height: '100%',
-    fontSize: 15,
-    color: '#111827',
+    minHeight: 50,
+    color: KFitColors.text,
+    fontSize: 14,
+    letterSpacing: 1.2,
   },
-  showText: {
-    color: '#4F46E5',
-    fontWeight: '600',
-    paddingLeft: 10,
+  visibilityButton: {
+    minHeight: 50,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
+  },
+  visibilityText: {
+    color: KFitColors.goldBright,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   forgotButton: {
     alignSelf: 'flex-end',
-    marginTop: 16,
-    marginBottom: 24,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.one,
   },
   forgotText: {
-    color: '#4F46E5',
-    fontWeight: '600',
-    fontSize: 13,
+    color: KFitColors.mutedText,
+    fontSize: 12,
   },
   loginButton: {
-    height: 54,
-    backgroundColor: '#4F46E5',
-    borderRadius: 12,
+    minHeight: 52,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    backgroundColor: KFitColors.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: Spacing.one,
+  },
+  loginButtonPressed: {
+    backgroundColor: KFitColors.goldBright,
   },
   loginButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: KFitColors.charcoal,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.8,
   },
-  signupContainer: {
+  signupRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 28,
+    marginTop: Spacing.two,
+  },
+  secondaryText: {
+    color: KFitColors.mutedText,
+    fontSize: 13,
   },
   signupText: {
-    color: '#6B7280',
-    fontSize: 14,
+    color: KFitColors.goldBright,
+    fontSize: 13,
+    fontWeight: '700',
   },
-  signupLink: {
-    color: '#4F46E5',
-    fontWeight: 'bold',
-    fontSize: 14,
+  pressed: {
+    opacity: 0.7,
   },
   footer: {
+    color: KFitColors.mutedText,
+    fontSize: 11,
     textAlign: 'center',
-    color: '#9CA3AF',
-    fontSize: 12,
-    marginTop: 40,
+    marginTop: 'auto',
   },
 });

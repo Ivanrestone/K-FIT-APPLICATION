@@ -138,7 +138,7 @@ export default function MembershipsScreen() {
         <Sidebar activeRoute="/memberships" />
 
         {/* Main Content */}
-        <ScrollView style={styles.content}>
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
@@ -525,6 +525,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  contentContainer: {
+    paddingBottom: 128,
   },
   header: {
     paddingHorizontal: 20,

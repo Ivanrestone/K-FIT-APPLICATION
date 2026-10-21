@@ -125,7 +125,7 @@ export default function MembersScreen() {
         <Sidebar activeRoute="/members" />
 
         {/* Main Content */}
-        <ScrollView style={styles.content}>
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.importButton}>
@@ -348,6 +348,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  contentContainer: {
+    paddingBottom: 128,
   },
   actionButtons: {
     flexDirection: 'row',
