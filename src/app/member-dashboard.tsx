@@ -1,3 +1,5 @@
+import MemberBottomNav from '@/components/MemberBottomNav';
+import { useRouter } from 'expo-router';
 import {
   Dimensions,
   ScrollView,
@@ -7,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
@@ -16,149 +17,272 @@ export default function MemberDashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.content}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.brand}>FORM</Text>
-          <TouchableOpacity onPress={() => router.replace('/')}>
-            <Text style={styles.logout}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Greeting */}
-        <View style={styles.greetingSection}>
-          <Text style={styles.greeting}>Find your form, Jordan.</Text>
-          <Text style={styles.greetingSubtitle}>Build your foundation. Level body strength.</Text>
-        </View>
-
-        {/* Member Pass */}
-        <View style={styles.memberPassCard}>
-          <View style={styles.passHeader}>
-            <Text style={styles.passTitle}>My member pass</Text>
-            <Text style={styles.passSubtitle}>Performance</Text>
-          </View>
-          <View style={styles.passBody}>
-            <Text style={styles.passDate}>Nov 01, 2028</Text>
-            <View style={styles.passDivider} />
-            <Text style={styles.passId}>ID: 001234</Text>
-          </View>
-        </View>
-
-        {/* Overview Stats */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Overview</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>My workouts</Text>
-              <Text style={styles.statNumber}>18</Text>
-              <Text style={styles.statSubtitle}>This month</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>My streak</Text>
-              <Text style={styles.statNumber}>14</Text>
-              <Text style={styles.statSubtitle}>Days</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Weight</Text>
-              <Text style={styles.statNumber}>75.8 kg</Text>
-              <Text style={styles.statSubtitle}>Goal: 70 kg</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Progress & Profile */}
-        <TouchableOpacity style={styles.actionCard}>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Progress & profile</Text>
-            <Text style={styles.actionSubtitle}>View workout</Text>
-          </View>
-          <Text style={styles.arrow}>›</Text>
-        </TouchableOpacity>
-
-        {/* Your Membership */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your membership</Text>
-          <View style={styles.membershipCard}>
-            <View style={styles.membershipHeader}>
-              <Text style={styles.membershipPlan}>Performance</Text>
-              <Text style={styles.membershipDate}>Nov 01, 2028</Text>
-            </View>
-            <View style={styles.membershipStats}>
-              <View style={styles.membershipStat}>
-                <Text style={styles.membershipStatNumber}>18/20</Text>
-                <Text style={styles.membershipStatLabel}>Sessions</Text>
-              </View>
-              <View style={styles.membershipDivider} />
-              <View style={styles.membershipStat}>
-                <Text style={styles.membershipStatNumber}>14</Text>
-                <Text style={styles.membershipStatLabel}>Streak</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={styles.manageButton}>
-              <Text style={styles.manageButtonText}>Manage membership</Text>
+      <View style={styles.mainContainer}>
+        <ScrollView style={styles.content}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.brand}>FORM</Text>
+            <TouchableOpacity onPress={() => router.replace('/')}>
+              <Text style={styles.logout}>Logout</Text>
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Your Training Week */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your training week</Text>
-          <View style={styles.trainingWeek}>
-            <View style={styles.trainingDay}>
-              <Text style={styles.trainingDayLabel}>Upper body</Text>
-              <Text style={styles.trainingDayStatus}>Completed</Text>
-            </View>
-            <View style={styles.trainingDay}>
-              <Text style={styles.trainingDayLabel}>Lower body</Text>
-              <Text style={styles.trainingDayStatus}>Completed</Text>
-            </View>
-            <View style={styles.trainingDay}>
-              <Text style={styles.trainingDayLabel}>Recovery</Text>
-              <Text style={styles.trainingDayStatus}>Today</Text>
-            </View>
-            <View style={styles.trainingDay}>
-              <Text style={styles.trainingDayLabel}>Upper body</Text>
-              <Text style={styles.trainingDayStatus}>Upcoming</Text>
-            </View>
-            <View style={styles.trainingDay}>
-              <Text style={styles.trainingDayLabel}>Lower body</Text>
-              <Text style={styles.trainingDayStatus}>Upcoming</Text>
-            </View>
+          <View style={styles.subHeader}>
+            <Text style={styles.brandSubtitle}>FORM/Brooklyn</Text>
+            <Text style={styles.brandClub}>Performance club</Text>
+            <Text style={styles.date}>Tuesday, October 20, 2026</Text>
           </View>
-        </View>
 
-        {/* Strength Progress */}
-        <View style={styles.strengthCard}>
-          <Text style={styles.strengthTitle}>Your strength is showing.</Text>
-          <View style={styles.strengthBar}>
-            <View style={[styles.strengthFill, { width: '85%' }]} />
+          {/* Member Info */}
+          <View style={styles.memberInfo}>
+            <Text style={styles.memberLabel}>Member</Text>
+            <Text style={styles.memberName}>Jordan Lee</Text>
           </View>
-          <Text style={styles.strengthValue}>70 kg</Text>
-        </View>
 
-        {/* Your Coach & Sessions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your coach & sessions</Text>
-          <View style={styles.coachCard}>
-            <View style={styles.coachInfo}>
-              <View style={styles.coachAvatar}>
-                <Text style={styles.coachInitials}>MR</Text>
-              </View>
-              <View style={styles.coachDetails}>
-                <Text style={styles.coachName}>Martas Reed</Text>
-                <Text style={styles.coachSpecialization}>Personal Trainer</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={styles.bookButton}>
-              <Text style={styles.bookButtonText}>Book session</Text>
+          {/* Greeting */}
+          <View style={styles.greetingSection}>
+            <Text style={styles.greeting}>Progress, not perfection.</Text>
+            <Text style={styles.greetingSubtitle}>Your effort adds up. See how far you've come, Jordan</Text>
+            <TouchableOpacity style={styles.logButton}>
+              <Text style={styles.logButtonText}>+ Log measurements</Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>FORM ATHLETICS</Text>
-        </View>
-      </ScrollView>
+          {/* Overview Cards */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Overview</Text>
+            <View style={styles.cardsGrid}>
+              <TouchableOpacity style={styles.card}>
+                <Text style={styles.cardTitle}>Progress & goals</Text>
+                <Text style={styles.cardArrow}>›</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.card}>
+                <Text style={styles.cardTitle}>Personal profile</Text>
+                <Text style={styles.cardArrow}>›</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.card}>
+                <Text style={styles.cardTitle}>Attendance history</Text>
+                <Text style={styles.cardArrow}>›</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.card}>
+                <Text style={styles.cardTitle}>My workouts</Text>
+                <Text style={styles.cardArrow}>›</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Progress Stats */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Progress & profile</Text>
+            <View style={styles.statsContainer}>
+              <View style={styles.statRow}>
+                <Text style={styles.statLabel}>Current weight</Text>
+                <View style={styles.statValueGroup}>
+                  <Text style={styles.statValue}>75.8 kg</Text>
+                  <Text style={styles.statChange}>4.2 kg from 80 kg</Text>
+                </View>
+              </View>
+              <View style={styles.statRow}>
+                <Text style={styles.statLabel}>Body fat</Text>
+                <View style={styles.statValueGroup}>
+                  <Text style={styles.statValue}>19.2%</Text>
+                  <Text style={styles.statChange}>+ 20% since September</Text>
+                </View>
+              </View>
+              <View style={styles.statRow}>
+                <Text style={styles.statLabel}>Squat personal best</Text>
+                <View style={styles.statValueGroup}>
+                  <Text style={styles.statValue}>70 kg</Text>
+                  <Text style={styles.statChange}>+10 kg from your first</Text>
+                </View>
+              </View>
+              <View style={styles.statRow}>
+                <Text style={styles.statLabel}>Training consistency</Text>
+                <View style={styles.statValueGroup}>
+                  <Text style={styles.statValue}>92%</Text>
+                  <Text style={styles.statChange}>54 workouts completed in October</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Strength Progression */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Strength progression</Text>
+            <View style={styles.chartCard}>
+              <Text style={styles.chartTitle}>70 kg</Text>
+              <View style={styles.chartBars}>
+                <View style={styles.chartBar}>
+                  <View style={[styles.barFill, { height: 40 }]} />
+                  <Text style={styles.barLabel}>Aug</Text>
+                </View>
+                <View style={styles.chartBar}>
+                  <View style={[styles.barFill, { height: 55 }]} />
+                  <Text style={styles.barLabel}>Aug 24</Text>
+                </View>
+                <View style={styles.chartBar}>
+                  <View style={[styles.barFill, { height: 70 }]} />
+                  <Text style={styles.barLabel}>Sep</Text>
+                </View>
+                <View style={styles.chartBar}>
+                  <View style={[styles.barFill, { height: 85 }]} />
+                  <Text style={styles.barLabel}>Last 12</Text>
+                </View>
+              </View>
+              <Text style={styles.chartNote}>Barbell squat +10 kg</Text>
+            </View>
+          </View>
+
+          {/* Body Weight Chart */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Body weight</Text>
+            <View style={styles.chartCard}>
+              <Text style={styles.chartTitle}>75.8 kg</Text>
+              <View style={styles.weightChart}>
+                <View style={styles.weightPoint}>
+                  <View style={styles.weightDot} />
+                  <Text style={styles.weightLabel}>73</Text>
+                </View>
+                <View style={[styles.weightPoint, { top: '60%' }]}>
+                  <View style={styles.weightDot} />
+                  <Text style={styles.weightLabel}>75.8</Text>
+                </View>
+              </View>
+              <Text style={styles.chartNote}>Sep 01 - Oct 20</Text>
+              <Text style={styles.chartNote}>+4.2 kg / 7 w</Text>
+            </View>
+          </View>
+
+          {/* Goals */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Goals worth showing up for.</Text>
+            <View style={styles.goalsContainer}>
+              <View style={styles.goalCard}>
+                <Text style={styles.goalTitle}>Reach target weight</Text>
+                <Text style={styles.goalValue}>75.8 → 74 kg</Text>
+                <View style={styles.goalProgress}>
+                  <View style={[styles.goalFill, { width: '80%' }]} />
+                </View>
+              </View>
+              <View style={styles.goalCard}>
+                <Text style={styles.goalTitle}>Monthly attendance</Text>
+                <Text style={styles.goalValue}>18/20 visits</Text>
+                <View style={styles.goalProgress}>
+                  <View style={[styles.goalFill, { width: '90%' }]} />
+                </View>
+              </View>
+              <View style={styles.goalCard}>
+                <Text style={styles.goalTitle}>Build upper body strength</Text>
+                <Text style={styles.goalValue}>70/80 kg</Text>
+                <Text style={styles.goalTarget}>Target date: Dec 2028</Text>
+                <TouchableOpacity style={styles.editButton}>
+                  <Text style={styles.editButtonText}>Edit goals</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Personal Details */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Personal details</Text>
+            <View style={styles.detailsContainer}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Email</Text>
+                <Text style={styles.detailValue}>jordan.lee@email.com</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Name</Text>
+                <Text style={styles.detailValue}>Jordan Lee</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Member ID</Text>
+                <Text style={styles.detailValue}>PM-1042</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Joined</Text>
+                <Text style={styles.detailValue}>Sep 11, 2016</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Phone</Text>
+                <Text style={styles.detailValue}>+1 (917) 555-0142</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Date of birth</Text>
+                <Text style={styles.detailValue}>June 12, 1996</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Height</Text>
+                <Text style={styles.detailValue}>178 cm</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Emergency contact</Text>
+                <Text style={styles.detailValue}>Casey Lee (917) 555-0173</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Recent Attendance */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Recent attendance</Text>
+            <View style={styles.attendanceContainer}>
+              <View style={styles.attendanceCard}>
+                <View style={styles.attendanceHeader}>
+                  <Text style={styles.attendanceDate}>Oct 20</Text>
+                  <Text style={styles.attendanceTime}>07:04 AM</Text>
+                </View>
+                <View style={styles.attendanceDivider} />
+                <View style={styles.attendanceBody}>
+                  <Text style={styles.attendanceLabel}>ACTIVITY</Text>
+                  <Text style={styles.attendanceActivity}>Open gym</Text>
+                  <Text style={styles.attendanceLabel}>WORKOUT COMPLETED</Text>
+                  <Text style={styles.attendanceWorkout}>Mobility & cardio</Text>
+                  <Text style={styles.attendanceDuration}>DURATION</Text>
+                  <Text style={styles.attendanceDurationValue}>64 min</Text>
+                </View>
+              </View>
+              <View style={styles.attendanceCard}>
+                <View style={styles.attendanceHeader}>
+                  <Text style={styles.attendanceDate}>Oct 19</Text>
+                  <Text style={styles.attendanceTime}>06:00 PM</Text>
+                </View>
+                <View style={styles.attendanceDivider} />
+                <View style={styles.attendanceBody}>
+                  <Text style={styles.attendanceLabel}>ACTIVITY</Text>
+                  <Text style={styles.attendanceActivity}>Strength training</Text>
+                  <Text style={styles.attendanceLabel}>WORKOUT COMPLETED</Text>
+                  <Text style={styles.attendanceWorkout}>Upper body A</Text>
+                  <Text style={styles.attendanceDuration}>DURATION</Text>
+                  <Text style={styles.attendanceDurationValue}>55 min</Text>
+                </View>
+              </View>
+              <View style={styles.attendanceCard}>
+                <View style={styles.attendanceHeader}>
+                  <Text style={styles.attendanceDate}>Oct 17</Text>
+                  <Text style={styles.attendanceTime}>08:12 AM</Text>
+                </View>
+                <View style={styles.attendanceDivider} />
+                <View style={styles.attendanceBody}>
+                  <Text style={styles.attendanceLabel}>ACTIVITY</Text>
+                  <Text style={styles.attendanceActivity}>Strength training</Text>
+                  <Text style={styles.attendanceLabel}>WORKOUT COMPLETED</Text>
+                  <Text style={styles.attendanceWorkout}>Full body</Text>
+                  <Text style={styles.attendanceDuration}>DURATION</Text>
+                  <Text style={styles.attendanceDurationValue}>60 min</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerName}>Jordan Lee</Text>
+            <Text style={styles.footerLabel}>Member</Text>
+            <Text style={styles.footerId}>PM-1042</Text>
+            <Text style={styles.footerJoined}>Joined Sep 11, 2016</Text>
+            <Text style={styles.footerBrand}>FORM ATHLETICS MEMBER WORKSPACE</Text>
+          </View>
+        </ScrollView>
+        <MemberBottomNav activeRoute="/member-dashboard" />
+      </View>
     </SafeAreaView>
   );
 }
@@ -168,9 +292,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  mainContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    position: 'relative',
+  },
   content: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
@@ -178,10 +308,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   brand: {
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: 'bold',
     color: '#111827',
   },
@@ -189,6 +319,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#EF4444',
     fontWeight: '600',
+  },
+  subHeader: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  brandSubtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  brandClub: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  date: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 8,
+  },
+  memberInfo: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  memberLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    textTransform: 'uppercase',
+  },
+  memberName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginTop: 4,
   },
   greetingSection: {
     paddingHorizontal: 20,
@@ -203,46 +367,19 @@ const styles = StyleSheet.create({
   greetingSubtitle: {
     fontSize: 15,
     color: '#6B7280',
-  },
-  memberPassCard: {
-    marginHorizontal: 20,
-    backgroundColor: '#111827',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-  },
-  passHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 16,
   },
-  passTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  logButton: {
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignSelf: 'flex-start',
+  },
+  logButtonText: {
     color: '#FFFFFF',
-  },
-  passSubtitle: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  passBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  passDate: {
     fontSize: 14,
-    color: '#FFFFFF',
-  },
-  passDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: '#374151',
-    marginHorizontal: 16,
-  },
-  passId: {
-    fontSize: 14,
-    color: '#9CA3AF',
+    fontWeight: '600',
   },
   section: {
     paddingHorizontal: 20,
@@ -254,213 +391,245 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 16,
   },
-  statsGrid: {
-    flexDirection: 'row',
+  cardsGrid: {
     gap: 12,
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  statSubtitle: {
-    fontSize: 11,
-    color: '#9CA3AF',
-  },
-  actionCard: {
-    marginHorizontal: 20,
+  card: {
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
   },
-  actionContent: {
-    flex: 1,
-  },
-  actionTitle: {
+  cardTitle: {
     fontSize: 15,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 4,
   },
-  actionSubtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  arrow: {
+  cardArrow: {
     fontSize: 24,
     color: '#9CA3AF',
   },
-  membershipCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 20,
+  statsContainer: {
+    gap: 16,
   },
-  membershipHeader: {
+  statRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  membershipPlan: {
+  statLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  statValueGroup: {
+    alignItems: 'flex-end',
+  },
+  statValue: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#111827',
   },
-  membershipDate: {
+  statChange: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  chartCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 20,
+  },
+  chartTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 16,
+  },
+  chartBars: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    height: 120,
+    marginBottom: 12,
+  },
+  chartBar: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginHorizontal: 4,
+  },
+  barFill: {
+    width: 24,
+    backgroundColor: '#4F46E5',
+    borderRadius: 4,
+  },
+  barLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  chartNote: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  weightChart: {
+    height: 100,
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  weightPoint: {
+    alignItems: 'center',
+  },
+  weightDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4F46E5',
+    marginBottom: 4,
+  },
+  weightLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  goalsContainer: {
+    gap: 12,
+  },
+  goalCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+  },
+  goalTitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  goalValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  goalProgress: {
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+  },
+  goalFill: {
+    height: '100%',
+    backgroundColor: '#4F46E5',
+    borderRadius: 3,
+  },
+  goalTarget: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 8,
+  },
+  editButton: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+  },
+  editButtonText: {
+    fontSize: 14,
+    color: '#4F46E5',
+    fontWeight: '600',
+  },
+  detailsContainer: {
+    gap: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  detailValue: {
+    fontSize: 14,
+    color: '#111827',
+  },
+  attendanceContainer: {
+    gap: 12,
+  },
+  attendanceCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+  },
+  attendanceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  attendanceDate: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  attendanceTime: {
     fontSize: 13,
     color: '#6B7280',
   },
-  membershipStats: {
-    flexDirection: 'row',
-    marginBottom: 16,
+  attendanceDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginBottom: 12,
   },
-  membershipStat: {
-    flex: 1,
+  attendanceBody: {
+    gap: 8,
   },
-  membershipStatNumber: {
+  attendanceLabel: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+  },
+  attendanceActivity: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  attendanceWorkout: {
+    fontSize: 14,
+    color: '#111827',
+  },
+  attendanceDuration: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+  },
+  attendanceDurationValue: {
+    fontSize: 14,
+    color: '#111827',
+  },
+  footer: {
+    paddingHorizontal: 20,
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  footerName: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 4,
   },
-  membershipStatLabel: {
-    fontSize: 12,
+  footerLabel: {
+    fontSize: 14,
     color: '#6B7280',
   },
-  membershipDivider: {
-    width: 1,
-    backgroundColor: '#E5E7EB',
-  },
-  manageButton: {
-    backgroundColor: '#111827',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  manageButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  trainingWeek: {
-    gap: 8,
-  },
-  trainingDay: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  trainingDayLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827',
-  },
-  trainingDayStatus: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  strengthCard: {
-    marginHorizontal: 20,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-  },
-  strengthTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  strengthBar: {
-    height: 8,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 4,
-    marginBottom: 8,
-  },
-  strengthFill: {
-    height: '100%',
-    backgroundColor: '#4F46E5',
-    borderRadius: 4,
-  },
-  strengthValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  coachCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 20,
-  },
-  coachInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  coachAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#4F46E5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  coachInitials: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  coachDetails: {
-    flex: 1,
-  },
-  coachName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  coachSpecialization: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  bookButton: {
-    backgroundColor: '#4F46E5',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  bookButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  footer: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  footerText: {
+  footerId: {
     fontSize: 12,
     color: '#9CA3AF',
+  },
+  footerJoined: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  footerBrand: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 8,
   },
 });
