@@ -62,13 +62,13 @@ export const Spacing = {
 } as const;
 
 export const KFitColors = {
-  charcoal: '#242424',
-  charcoalRaised: '#2D2D2D',
-  gold: '#D6A844',
-  goldBright: '#F1C55B',
-  text: '#F7F2E8',
-  mutedText: '#A6A19A',
-  inputBorder: '#504B43',
+  background: '#0A0A0A',
+  surface: '#202020',
+  accent: '#B8F34A',
+  text: '#FFFFFF',
+  mutedText: '#B3B3B3',
+  border: '#333333',
+  warning: '#F59E0B',
   error: '#F28B82',
 } as const;
 

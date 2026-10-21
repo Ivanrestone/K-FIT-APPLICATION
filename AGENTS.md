@@ -20,6 +20,7 @@ npx eas-cli@latest <cmd>    # EAS builds, submits, and updates
 
 - Expo ships breaking changes every SDK release, so don't trust memory. Before touching an Expo, EAS, or React Native API, check the `expo` major version in `package.json` and read the official docs.
 - Routes live in `src/app/`: every file is a screen and `_layout.tsx` files define navigators. Keep components, hooks, and utils outside `src/app/`.
+- Startup shows centered `K-Fit` text in Bebas Neue on black before replacing to the existing login route.
 - `ios/` and `android/` are generated. Never create or edit them by hand; configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. For the camera scanner or secure storage modules, use a development build (`npx expo run:android` or `run:ios`).
 
@@ -41,6 +42,7 @@ Each tool has one job. Ask before moving a responsibility to a different tool.
 - **Memory/Battery Management:** The Door Kiosk camera scanning state must be heavily optimized for long-term battery and memory efficiency, as it runs continuously.
 - **Offline States:** The Member app generates TOTP locally (like Google Authenticator) and can do so offline. The Kiosk *must* have an internet connection to validate tokens; implement strict error UI if the Kiosk drops offline.
 - **Database Schema:** Let the backend generate document IDs. Decouple `users`, `subscriptions_app`, `subscriptions_gym`, `attendance_logs`, and `bookings` strictly.
+- Login and dashboard surfaces use the K-Fit colors in `src/constants/theme.ts`. Keep other routes on their existing theme unless asked.
 - Ask before adding a dependency, changing the database schema once content exists, or deleting data. Prefer Expo modules over third-party libraries.
 - Whenever you need input from the user, ask through your tool's built-in question panel so they pick from options instead of typing. 
 

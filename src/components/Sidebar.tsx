@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { KFitColors } from '@/constants/theme';
 import { useState } from 'react';
 import {
   Modal,
@@ -13,9 +14,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface SidebarProps {
   activeRoute: string;
+  theme?: 'default' | 'dashboard';
 }
 
-export default function Sidebar({ activeRoute }: SidebarProps) {
+export default function Sidebar({
+  activeRoute,
+  theme = 'default',
+}: SidebarProps) {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -38,6 +43,7 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
   };
 
   const isMobile = width < 768;
+  const isDashboardTheme = theme === 'dashboard';
   const primaryNavItems = navItems.filter((item) =>
     ['/dashboard', '/members', '/attendance', '/trainers', '/payments'].includes(
       item.route
@@ -50,7 +56,13 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
   if (isMobile) {
     return (
       <>
-        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <View
+          style={[
+            styles.bottomBar,
+            isDashboardTheme && styles.bottomBarDashboard,
+            { paddingBottom: Math.max(insets.bottom, 8) },
+          ]}
+        >
           {primaryNavItems.map((item) => {
             const isActive = activeRoute === item.route;
 
@@ -59,6 +71,7 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                 key={item.route}
                 style={({ pressed }) => [
                   styles.bottomNavItem,
+                  isActive && isDashboardTheme && styles.bottomNavItemActiveDashboard,
                   pressed && styles.pressed,
                 ]}
                 onPress={() => router.replace(item.route as any)}
@@ -66,10 +79,22 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                 accessibilityState={{ selected: isActive }}
                 accessibilityLabel={item.name}
               >
-                <Text style={[styles.bottomNavIcon, isActive && styles.bottomNavIconActive]}>
+                <Text
+                  style={[
+                    styles.bottomNavIcon,
+                    isActive && styles.bottomNavIconActive,
+                    isActive && isDashboardTheme && styles.bottomNavIconActiveDashboard,
+                  ]}
+                >
                   {item.icon}
                 </Text>
-                <Text style={[styles.bottomNavLabel, isActive && styles.bottomNavLabelActive]}>
+                <Text
+                  style={[
+                    styles.bottomNavLabel,
+                    isActive && styles.bottomNavLabelActive,
+                    isActive && isDashboardTheme && styles.bottomNavLabelActiveDashboard,
+                  ]}
+                >
                   {item.name}
                 </Text>
               </Pressable>
@@ -84,8 +109,22 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
             accessibilityRole="button"
             accessibilityLabel="More admin navigation"
           >
-            <Text style={styles.bottomNavIcon}>•••</Text>
-            <Text style={styles.bottomNavLabel}>More</Text>
+            <Text
+              style={[
+                styles.bottomNavIcon,
+                isDashboardTheme && styles.bottomNavIconDashboard,
+              ]}
+            >
+              •••
+            </Text>
+            <Text
+              style={[
+                styles.bottomNavLabel,
+                isDashboardTheme && styles.bottomNavLabelDashboard,
+              ]}
+            >
+              More
+            </Text>
           </Pressable>
         </View>
 
@@ -100,17 +139,36 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
             onPress={() => setIsMoreOpen(false)}
           >
             <Pressable
-              style={[styles.moreSheet, { paddingBottom: Math.max(insets.bottom, 20) }]}
+              style={[
+                styles.moreSheet,
+                isDashboardTheme && styles.moreSheetDashboard,
+                { paddingBottom: Math.max(insets.bottom, 20) },
+              ]}
               onPress={(event) => event.stopPropagation()}
             >
-              <View style={styles.sheetHandle} />
-              <Text style={styles.sheetTitle}>Admin tools</Text>
+              <View
+                style={[
+                  styles.sheetHandle,
+                  isDashboardTheme && styles.sheetHandleDashboard,
+                ]}
+              />
+              <Text
+                style={[
+                  styles.sheetTitle,
+                  isDashboardTheme && styles.sheetTitleDashboard,
+                ]}
+              >
+                Admin tools
+              </Text>
               {secondaryNavItems.map((item) => (
                 <Pressable
                   key={item.route}
                   style={({ pressed }) => [
                     styles.moreItem,
                     activeRoute === item.route && styles.moreItemActive,
+                    activeRoute === item.route &&
+                      isDashboardTheme &&
+                      styles.moreItemActiveDashboard,
                     pressed && styles.pressed,
                   ]}
                   onPress={() => {
@@ -118,19 +176,44 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                     router.replace(item.route as any);
                   }}
                 >
-                  <Text style={styles.moreItemIcon}>{item.icon}</Text>
-                  <Text style={styles.moreItemText}>{item.name}</Text>
+                  <Text
+                    style={[
+                      styles.moreItemIcon,
+                      isDashboardTheme && styles.moreItemIconDashboard,
+                    ]}
+                  >
+                    {item.icon}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.moreItemText,
+                      isDashboardTheme && styles.moreItemTextDashboard,
+                      activeRoute === item.route &&
+                        isDashboardTheme &&
+                        styles.moreItemTextActiveDashboard,
+                    ]}
+                  >
+                    {item.name}
+                  </Text>
                 </Pressable>
               ))}
               <Pressable
                 style={({ pressed }) => [
                   styles.moreItem,
                   styles.logoutItem,
+                  isDashboardTheme && styles.logoutItemDashboard,
                   pressed && styles.pressed,
                 ]}
                 onPress={handleLogout}
               >
-                <Text style={styles.moreItemIcon}>↪</Text>
+                <Text
+                  style={[
+                    styles.moreItemIcon,
+                    isDashboardTheme && styles.moreItemIconDashboard,
+                  ]}
+                >
+                  ↪
+                </Text>
                 <Text style={styles.logoutText}>Logout</Text>
               </Pressable>
             </Pressable>
@@ -143,19 +226,38 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
   const sidebarWidth = isCollapsed ? width * 0.08 : width * 0.2;
 
   return (
-    <View style={[styles.sidebar, { width: sidebarWidth }]}>
+    <View
+      style={[
+        styles.sidebar,
+        isDashboardTheme && styles.sidebarDashboard,
+        { width: sidebarWidth },
+      ]}
+    >
       <TouchableOpacity
         style={styles.collapseButton}
         onPress={() => setIsCollapsed(!isCollapsed)}
       >
-        <Text style={styles.collapseIcon}>{isCollapsed ? '▶' : '◀'}</Text>
+        <Text
+          style={[
+            styles.collapseIcon,
+            isDashboardTheme && styles.collapseIconDashboard,
+          ]}
+        >
+          {isCollapsed ? '▶' : '◀'}
+        </Text>
       </TouchableOpacity>
 
       <View style={styles.sidebarNav}>
         {navItems.map((item) => (
           <TouchableOpacity
             key={item.route}
-            style={[styles.navItem, activeRoute === item.route && styles.navItemActive]}
+            style={[
+              styles.navItem,
+              activeRoute === item.route && styles.navItemActive,
+              activeRoute === item.route &&
+                isDashboardTheme &&
+                styles.navItemActiveDashboard,
+            ]}
             onPress={() => router.replace(item.route as any)}
           >
             <Text style={styles.navIcon}>{item.icon}</Text>
@@ -164,6 +266,10 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                 style={[
                   styles.navItemText,
                   activeRoute === item.route && styles.navItemTextActive,
+                  isDashboardTheme && styles.navItemTextDashboard,
+                  activeRoute === item.route &&
+                    isDashboardTheme &&
+                    styles.navItemTextActiveDashboard,
                 ]}
               >
                 {item.name}
@@ -174,12 +280,24 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
       </View>
 
       {!isCollapsed && (
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <TouchableOpacity
+          style={[
+            styles.logoutButton,
+            isDashboardTheme && styles.logoutButtonDashboard,
+          ]}
+          onPress={handleLogout}
+        >
           <Text style={styles.logoutButtonText}>Logout</Text>
         </TouchableOpacity>
       )}
       {isCollapsed && (
-        <TouchableOpacity style={styles.logoutButtonCollapsed} onPress={handleLogout}>
+        <TouchableOpacity
+          style={[
+            styles.logoutButtonCollapsed,
+            isDashboardTheme && styles.logoutButtonDashboard,
+          ]}
+          onPress={handleLogout}
+        >
           <Text style={styles.logoutIcon}>🚪</Text>
         </TouchableOpacity>
       )}
@@ -196,6 +314,10 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
   },
+  sidebarDashboard: {
+    backgroundColor: KFitColors.surface,
+    borderRightColor: KFitColors.border,
+  },
   collapseButton: {
     alignSelf: 'flex-end',
     padding: 8,
@@ -204,6 +326,9 @@ const styles = StyleSheet.create({
   collapseIcon: {
     fontSize: 16,
     color: '#6B7280',
+  },
+  collapseIconDashboard: {
+    color: KFitColors.mutedText,
   },
   sidebarHeader: {
     marginBottom: 20,
@@ -247,6 +372,9 @@ const styles = StyleSheet.create({
   navItemActive: {
     backgroundColor: '#E5E7EB',
   },
+  navItemActiveDashboard: {
+    backgroundColor: KFitColors.accent,
+  },
   navIcon: {
     fontSize: 18,
   },
@@ -255,9 +383,15 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '500',
   },
+  navItemTextDashboard: {
+    color: KFitColors.mutedText,
+  },
   navItemTextActive: {
     color: '#111827',
     fontWeight: '600',
+  },
+  navItemTextActiveDashboard: {
+    color: KFitColors.background,
   },
   logoutButton: {
     marginTop: 30,
@@ -284,6 +418,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
   },
+  logoutButtonDashboard: {
+    backgroundColor: KFitColors.surface,
+  },
   logoutIcon: {
     fontSize: 18,
   },
@@ -306,13 +443,22 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  bottomBarDashboard: {
+    backgroundColor: KFitColors.surface,
+    borderTopColor: KFitColors.border,
+  },
   bottomNavItem: {
     flex: 1,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
     paddingHorizontal: 2,
     paddingVertical: 2,
+  },
+  bottomNavItemActiveDashboard: {
+    borderTopWidth: 2,
+    borderTopColor: KFitColors.accent,
   },
   bottomNavIcon: {
     color: '#9CA3AF',
@@ -321,6 +467,12 @@ const styles = StyleSheet.create({
   },
   bottomNavIconActive: {
     color: '#D99423',
+  },
+  bottomNavIconActiveDashboard: {
+    color: KFitColors.accent,
+  },
+  bottomNavIconDashboard: {
+    color: KFitColors.mutedText,
   },
   bottomNavLabel: {
     color: '#9CA3AF',
@@ -331,6 +483,12 @@ const styles = StyleSheet.create({
   bottomNavLabelActive: {
     color: '#D99423',
     fontWeight: '700',
+  },
+  bottomNavLabelDashboard: {
+    color: KFitColors.mutedText,
+  },
+  bottomNavLabelActiveDashboard: {
+    color: KFitColors.accent,
   },
   pressed: {
     opacity: 0.65,
@@ -348,6 +506,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 8,
   },
+  moreSheetDashboard: {
+    backgroundColor: KFitColors.surface,
+  },
   sheetHandle: {
     alignSelf: 'center',
     width: 42,
@@ -356,11 +517,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#D1D5DB',
     marginBottom: 8,
   },
+  sheetHandleDashboard: {
+    backgroundColor: KFitColors.border,
+  },
   sheetTitle: {
     color: '#111827',
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 4,
+  },
+  sheetTitleDashboard: {
+    color: KFitColors.text,
   },
   moreItem: {
     flexDirection: 'row',
@@ -373,22 +540,37 @@ const styles = StyleSheet.create({
   moreItemActive: {
     backgroundColor: '#FEF3C7',
   },
+  moreItemActiveDashboard: {
+    backgroundColor: KFitColors.border,
+  },
   moreItemIcon: {
     width: 28,
     color: '#6B7280',
     fontSize: 19,
     textAlign: 'center',
   },
+  moreItemIconDashboard: {
+    color: KFitColors.mutedText,
+  },
   moreItemText: {
     color: '#374151',
     fontSize: 15,
     fontWeight: '600',
+  },
+  moreItemTextDashboard: {
+    color: KFitColors.mutedText,
+  },
+  moreItemTextActiveDashboard: {
+    color: KFitColors.accent,
   },
   logoutItem: {
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
     marginTop: 4,
     paddingTop: 8,
+  },
+  logoutItemDashboard: {
+    borderTopColor: KFitColors.border,
   },
   logoutText: {
     color: '#DC2626',
