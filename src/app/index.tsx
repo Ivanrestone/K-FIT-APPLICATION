@@ -43,6 +43,11 @@ export default function HomeScreen() {
     ) {
       router.replace('/scanner');
     } else if (
+      email.trim().toLowerCase() === 'qrcode@gmail.com' &&
+      password === 'qrcode123'
+    ) {
+      router.replace('/display');
+    } else if (
       email.trim().toLowerCase() === 'member@gmail.com' &&
       password === 'member123'
     ) {
