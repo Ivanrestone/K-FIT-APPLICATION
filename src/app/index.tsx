@@ -3,16 +3,16 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+    useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -61,6 +61,11 @@ export default function HomeScreen() {
       password === "member123"
     ) {
       router.replace("/member-dashboard" as any);
+    } else if (
+      email.trim().toLowerCase() === "trainer@gmail.com" &&
+      password === "trainer123"
+    ) {
+      router.replace("/trainer-dashboard" as any);
     } else {
       Alert.alert(
         "Login Failed",
