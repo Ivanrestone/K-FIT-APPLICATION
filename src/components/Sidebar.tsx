@@ -1,14 +1,14 @@
-import { useRouter } from 'expo-router';
 import { KFitColors } from '@/constants/theme';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
+    Modal,
+    Pressable,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+    useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,6 +34,7 @@ export default function Sidebar({
     { name: 'Trainers', route: '/trainers', icon: '🏋️' },
     { name: 'Memberships', route: '/memberships', icon: '💳' },
     { name: 'Payments', route: '/payments', icon: '💰' },
+    { name: 'Scanner', route: '/admin-scanner', icon: '📷' },
     { name: 'Memo', route: '/memo', icon: '📝' },
   ];
 

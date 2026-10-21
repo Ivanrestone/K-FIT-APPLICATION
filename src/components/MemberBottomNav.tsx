@@ -11,7 +11,8 @@ export default function MemberBottomNav({ activeRoute }: MemberBottomNavProps) {
   const navItems = [
     { name: 'Progress', route: '/member-dashboard', icon: '📊' },
     { name: 'Workouts', route: '/member-workout', icon: '💪' },
-    { name: 'Check-in', route: '/member-checkin', icon: '�' },
+    { name: 'Check-in', route: '/member-checkin', icon: '📍' },
+    { name: 'QR Code', route: '/member-qr', icon: '📱' },
     { name: 'Membership', route: '/member-membership', icon: '💳' },
     { name: 'Profile', route: '/member-profile', icon: '👤' },
   ];
