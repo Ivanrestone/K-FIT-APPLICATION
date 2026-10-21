@@ -38,6 +38,11 @@ export default function HomeScreen() {
     ) {
       router.replace('/dashboard');
     } else if (
+      email.trim().toLowerCase() === 'scanner@gmail.com' &&
+      password === 'scanner123'
+    ) {
+      router.replace('/scanner');
+    } else if (
       email.trim().toLowerCase() === 'member@gmail.com' &&
       password === 'member123'
     ) {
