@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "K-Fit",
+    "slug": "k-fit",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/kfit-app-icon.png",
+    "scheme": "k-fit",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/images/kfit-app-icon.png"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0A",
+        "foregroundImage": "./assets/images/kfit-app-icon.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow K-Fit to use the camera for QR check-ins."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0A0A0A",
+          "image": "./assets/images/kfit-app-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain"
+        }
+      ],
+      "@clerk/expo",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
