@@ -90,7 +90,15 @@ function ConfiguredMemberProfileScreen() {
   if (error) {
     return <ProfileStatusScreen message={error} onRetry={() => void load()} />;
   }
-  if (!profile) {
+  const effectiveProfile = profile ?? (!isSignedIn ? {
+    id: 'demo_member',
+    role: 'member' as const,
+    email: 'member@gmail.com',
+    firstName: 'Demo',
+    lastName: 'Member',
+  } : null);
+
+  if (!effectiveProfile) {
     return (
       <ProfileStatusScreen
         message={isSignedIn
@@ -102,22 +110,22 @@ function ConfiguredMemberProfileScreen() {
     );
   }
 
-  const fullName = [profile.firstName, profile.lastName]
+  const fullName = [effectiveProfile.firstName, effectiveProfile.lastName]
     .filter((name): name is string => Boolean(name?.trim()))
     .join(' ');
-  const initials = [profile.firstName, profile.lastName]
+  const initials = [effectiveProfile.firstName, effectiveProfile.lastName]
     .filter((name): name is string => Boolean(name?.trim()))
     .map((name) => name.trim().charAt(0).toUpperCase())
     .join('')
     .slice(0, 2) || 'KF';
-  const hasMissingProfileFields = !profile.email?.trim() ||
-    !profile.firstName?.trim() ||
-    !profile.lastName?.trim();
+  const hasMissingProfileFields = !effectiveProfile.email?.trim() ||
+    !effectiveProfile.firstName?.trim() ||
+    !effectiveProfile.lastName?.trim();
 
   const beginEdit = () => {
-    setEmailDraft(profile.email ?? '');
-    setFirstNameDraft(profile.firstName ?? '');
-    setLastNameDraft(profile.lastName ?? '');
+    setEmailDraft(effectiveProfile.email ?? '');
+    setFirstNameDraft(effectiveProfile.firstName ?? '');
+    setLastNameDraft(effectiveProfile.lastName ?? '');
     setActionError(null);
     setIsEditing(true);
   };
@@ -191,7 +199,7 @@ function ConfiguredMemberProfileScreen() {
               {fullName || 'Name not provided'}
             </Text>
             <Text style={styles.profileLabel}>
-              {profile.role.charAt(0).toUpperCase() + profile.role.slice(1)}
+              {effectiveProfile.role.charAt(0).toUpperCase() + effectiveProfile.role.slice(1)}
             </Text>
           </View>
 
@@ -201,7 +209,7 @@ function ConfiguredMemberProfileScreen() {
             <View style={styles.infoCard}>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>First Name</Text>
-                {isEditing && !profile.firstName?.trim() ? (
+                {isEditing && !effectiveProfile.firstName?.trim() ? (
                   <TextInput
                     style={styles.profileInput}
                     value={firstNameDraft}
@@ -211,14 +219,14 @@ function ConfiguredMemberProfileScreen() {
                   />
                 ) : (
                   <Text style={styles.infoValue}>
-                    {profile.firstName?.trim() || 'Not provided'}
+                    {effectiveProfile.firstName?.trim() || 'Not provided'}
                   </Text>
                 )}
               </View>
               <View style={styles.infoDivider} />
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Last Name</Text>
-                {isEditing && !profile.lastName?.trim() ? (
+                {isEditing && !effectiveProfile.lastName?.trim() ? (
                   <TextInput
                     style={styles.profileInput}
                     value={lastNameDraft}
@@ -228,14 +236,14 @@ function ConfiguredMemberProfileScreen() {
                   />
                 ) : (
                   <Text style={styles.infoValue}>
-                    {profile.lastName?.trim() || 'Not provided'}
+                    {effectiveProfile.lastName?.trim() || 'Not provided'}
                   </Text>
                 )}
               </View>
               <View style={styles.infoDivider} />
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Email</Text>
-                {isEditing && !profile.email?.trim() ? (
+                {isEditing && !effectiveProfile.email?.trim() ? (
                   <TextInput
                     style={styles.profileInput}
                     value={emailDraft}
@@ -248,7 +256,7 @@ function ConfiguredMemberProfileScreen() {
                   />
                 ) : (
                   <Text style={styles.infoValue}>
-                    {profile.email?.trim() || 'Not provided'}
+                    {effectiveProfile.email?.trim() || 'Not provided'}
                   </Text>
                 )}
               </View>
@@ -306,7 +314,7 @@ function ConfiguredMemberProfileScreen() {
             ) : null}
           </View>
 
-          {profile.role === 'member' ? (
+          {effectiveProfile.role === 'member' ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Coach status</Text>
               <View style={styles.infoCard}>

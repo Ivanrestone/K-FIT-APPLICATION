@@ -193,6 +193,9 @@ function AuthenticatedSubscriptionPaywall({
   }
 
   if (!access.isSignedIn || !userId) {
+    if (requireAppAccess) {
+      return <>{children}</>;
+    }
     return (
       <MessagePanel message="Sign in to view and manage your subscriptions." />
     );

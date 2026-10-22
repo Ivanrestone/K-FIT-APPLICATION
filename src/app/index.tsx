@@ -29,6 +29,14 @@ WebBrowser.maybeCompleteAuthSession();
 const logo = require("../../assets/images/logo.jpg");
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
+const LOCAL_DEV_ACCOUNTS: Record<string, { password: string; route: string }> = {
+  "admin@gmail.com": { password: "admin123", route: "/dashboard" },
+  "member@gmail.com": { password: "member123", route: "/member-dashboard" },
+  "trainer@gmail.com": { password: "trainer123", route: "/trainer-dashboard" },
+  "scanner@gmail.com": { password: "scanner123", route: "/scanner" },
+  "qrcode@gmail.com": { password: "qrcode123", route: "/display" },
+};
+
 type AppRole = "member" | "coach" | "admin";
 type AuthMode = "sign-in" | "sign-up" | "verify-email";
 
@@ -315,6 +323,21 @@ function ConfiguredHomeScreen() {
       setAuthError("Enter your email address and password.");
       return;
     }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPassword = password.trim().toLowerCase();
+
+    const localAccount = LOCAL_DEV_ACCOUNTS[normalizedEmail];
+    if (localAccount) {
+      if (localAccount.password.toLowerCase() === normalizedPassword) {
+        setAuthError(null);
+        router.replace(localAccount.route as any);
+        return;
+      }
+      setAuthError("Invalid password for test account.");
+      return;
+    }
+
     if (!isSignInLoaded || !signIn || !activateSignIn) {
       setAuthError("Sign in is still loading. Please try again.");
       return;
