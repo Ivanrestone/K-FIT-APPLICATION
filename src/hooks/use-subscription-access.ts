@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/expo";
 import { createMemberSupabaseClient } from "@/utils/supabase";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type SubscriptionPlanType = "app" | "gym";
 export type SubscriptionRole = "member" | "coach" | "admin";
@@ -142,12 +142,20 @@ export function useSubscriptionAccess() {
   const [loadError, setLoadError] = useState<
     { userId: string; message: string } | null
   >(null);
+  const activeUserIdRef = useRef<string | null>(null);
+  const latestLoadIdRef = useRef(0);
 
   const load = useCallback(async () => {
-    if (!supabase || !isSignedIn || !userId) {
+    if (
+      !supabase ||
+      !isSignedIn ||
+      !userId ||
+      activeUserIdRef.current !== userId
+    ) {
       return;
     }
 
+    const loadId = ++latestLoadIdRef.current;
     try {
       const [profileResult, plansResult] = await Promise.all([
         supabase.from("users").select("role").maybeSingle(),
@@ -221,9 +229,21 @@ export function useSubscriptionAccess() {
         appSubscription,
         gymSubscription,
       };
+      if (
+        activeUserIdRef.current !== userId ||
+        latestLoadIdRef.current !== loadId
+      ) {
+        return;
+      }
       setLoadError(null);
       setQueryState({ data, isRefreshing: false, error: null });
     } catch (error) {
+      if (
+        activeUserIdRef.current !== userId ||
+        latestLoadIdRef.current !== loadId
+      ) {
+        return;
+      }
       const message = getErrorMessage(error);
       setLoadError({ userId, message });
       setQueryState((current) =>
@@ -232,9 +252,38 @@ export function useSubscriptionAccess() {
           : null
       );
     } finally {
-      setIsLoading(false);
+      if (
+        activeUserIdRef.current === userId &&
+        latestLoadIdRef.current === loadId
+      ) {
+        setIsLoading(false);
+      }
     }
   }, [isSignedIn, supabase, userId]);
+
+  useEffect(() => {
+    if (!isLoaded) {
+      return;
+    }
+    void Promise.resolve().then(() => {
+      const activeUserId = isSignedIn && userId ? userId : null;
+      activeUserIdRef.current = activeUserId;
+      latestLoadIdRef.current += 1;
+      if (!isSignedIn || !userId) {
+        setQueryState(null);
+        setLoadError(null);
+        setIsLoading(false);
+        return;
+      }
+      setQueryState((current) =>
+        current?.data.userId === userId ? current : null
+      );
+      setLoadError((current) =>
+        current?.userId === userId ? current : null
+      );
+      setIsLoading(true);
+    });
+  }, [isLoaded, isSignedIn, userId]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !userId || !supabase) {
@@ -255,10 +304,12 @@ export function useSubscriptionAccess() {
     void load();
   }, [isSignedIn, load, supabase, userId]);
 
-  const currentQueryState = queryState && queryState.data.userId === userId
+  const currentQueryState = isSignedIn && queryState &&
+      queryState.data.userId === userId
     ? queryState
     : null;
-  const currentLoadError = loadError && loadError.userId === userId
+  const currentLoadError = isSignedIn && loadError &&
+      loadError.userId === userId
     ? loadError
     : null;
   const data = currentQueryState?.data ?? null;

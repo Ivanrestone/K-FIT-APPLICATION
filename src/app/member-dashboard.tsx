@@ -1,6 +1,6 @@
 import MemberBottomNav from '@/components/MemberBottomNav';
 import SubscriptionPaywall from '@/components/SubscriptionPaywall';
-import { useRouter } from 'expo-router';
+import { useLogout } from '@/hooks/use-logout';
 import {
   ScrollView,
   StyleSheet,
@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function MemberDashboardScreen() {
-  const router = useRouter();
+  const { isSigningOut, logout } = useLogout();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -24,7 +24,7 @@ export default function MemberDashboardScreen() {
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.brand}>FORM</Text>
-            <TouchableOpacity onPress={() => router.replace('/')}>
+            <TouchableOpacity disabled={isSigningOut} onPress={logout}>
               <Text style={styles.logout}>Logout</Text>
             </TouchableOpacity>
           </View>

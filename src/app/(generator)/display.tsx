@@ -1,5 +1,5 @@
 import QRCode from 'react-native-qrcode-svg';
-import { useRouter } from 'expo-router';
+import { useLogout } from '@/hooks/use-logout';
 import { useEffect, useRef, useState } from 'react';
 import {
   AppState,
@@ -18,7 +18,7 @@ function generatePayload() {
 }
 
 export default function GeneratorScreen() {
-  const router = useRouter();
+  const { isSigningOut, logout } = useLogout();
   const [qrPayload, setQrPayload] = useState(generatePayload);
   const [timeLeft, setTimeLeft] = useState(REFRESH_INTERVAL_SECONDS);
   const [isVisible, setIsVisible] = useState(true);
@@ -68,7 +68,8 @@ export default function GeneratorScreen() {
             <Text style={styles.title}>Scan to check in</Text>
           </View>
           <Pressable
-            onPress={() => router.replace('/')}
+            onPress={logout}
+            disabled={isSigningOut}
             style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}
           >
             <Text style={styles.logoutText}>Log out</Text>

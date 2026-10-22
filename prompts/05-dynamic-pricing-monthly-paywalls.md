@@ -19,7 +19,7 @@ Replace fixed payment amounts and indefinite boolean access with versioned month
 
 ## Decisions
 
-1. App and Gym plans each display USD 3.00 and charge PHP 170.00 per calendar month.
+1. App and Gym plans each display USD 3.00. App charges PHP 190.00 and Gym charges PHP 170.00 per calendar month.
 2. Price versions remain stored after deactivation, with exactly one active row per plan type. Prices are managed in the Supabase dashboard, with no new Admin screen.
 3. Members may buy App and Gym access. Coaches may buy App access only.
 4. The app reads active plans through Clerk authenticated Supabase RLS. The checkout function chooses the authoritative active plan and amount.

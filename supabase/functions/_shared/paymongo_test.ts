@@ -25,7 +25,7 @@ function createPaidEvent(overrides: {
   const payment = {
     attributes: {
       status: overrides.paymentStatus ?? "paid",
-      amount: overrides.amount ?? 17_000,
+      amount: overrides.amount ?? 19_000,
       currency: overrides.currency ?? "PHP",
       paid_at: paidAt,
     },
@@ -43,7 +43,7 @@ function createPaidEvent(overrides: {
             kfit_user_id: "user_test_123",
             kfit_fee_type: overrides.feeType ?? "app",
             kfit_pricing_plan_id: overrides.pricingPlanId ?? pricingPlanId,
-            kfit_amount_centavos: overrides.metadataAmount ?? "17000",
+            kfit_amount_centavos: overrides.metadataAmount ?? "19000",
           },
           payments: Array.from(
             { length: overrides.paymentCount ?? 1 },
@@ -136,7 +136,7 @@ Deno.test("parses one paid test checkout with the provider paid timestamp", () =
     checkout.feeType !== "app" ||
     checkout.pricingPlanId !== pricingPlanId ||
     checkout.sessionId !== "cs_test_123" ||
-    checkout.amountCentavos !== 17_000 ||
+    checkout.amountCentavos !== 19_000 ||
     checkout.paidAt !== new Date(paidAtSeconds * 1000).toISOString()
   ) {
     throw new Error(
@@ -151,8 +151,8 @@ Deno.test("rejects live, unpaid, expired, mismatched, and duplicate payments", (
     createPaidEvent({ paymentStatus: "pending" }),
     createPaidEvent({ sessionStatus: "expired" }),
     createPaidEvent({ currency: "USD" }),
-    createPaidEvent({ amount: 17_001 }),
-    createPaidEvent({ metadataAmount: "17001" }),
+    createPaidEvent({ amount: 19_001 }),
+    createPaidEvent({ metadataAmount: "19001" }),
     createPaidEvent({ feeType: "other" }),
     createPaidEvent({ pricingPlanId: "not-a-uuid" }),
     createPaidEvent({ paymentCount: 2 }),
@@ -184,7 +184,7 @@ Deno.test("requires an explicit valid provider paid timestamp", () => {
 
 Deno.test("converts positive PHP prices to centavos without rounding", () => {
   if (
-    parsePhpAmount("170.00") !== 17_000 ||
+    parsePhpAmount("190.00") !== 19_000 ||
     parsePhpAmount("1.5") !== 150 ||
     parsePhpAmount(2) !== 200
   ) {

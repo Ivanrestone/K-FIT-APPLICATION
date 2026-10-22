@@ -30,7 +30,7 @@ npx eas-cli@latest <cmd>    # EAS builds, submits, and updates
 
 Each tool has one job. Ask before moving a responsibility to a different tool.
 
-- **Roles & Auth:** The system strictly enforces three roles: Member (end-user), Coach (staff/classes), and Admin/Gym Owner (kiosk setup, financials). 
+- **Roles & Auth:** Clerk handles authentication (Google OAuth + Email/Password) and session state. The Supabase `users` table is the strict source of truth for roles and profile data. The system enforces three roles: Member (end-user), Coach (staff/classes), and Admin/Gym Owner. All new Clerk signups must automatically sync to Supabase and default to the `member` role. Members can request Coach status via the Profile UI.
 - **The Door Kiosk:** A dedicated physical phone/tablet mounted at the door. Logged in as Admin/Coach, it remains permanently on a Camera Scanner screen to read member QRs and log check-ins/check-outs.
 - **Subscriptions (Dual-Tier):** The backend separates software access from physical access. The monthly App plan owns access to digital features; the Gym plan owns physical facility rights. Each has independent expiry and cancellation state. Both must be active to check in.
 - **Payments (Test Mode):** Supabase Edge Functions create PayMongo-hosted Checkout Sessions; only a signature-verified paid event may extend the matching `subscriptions_app` or `subscriptions_gym` period. Test keys and webhook secrets stay in Supabase Function secrets, never in Expo.

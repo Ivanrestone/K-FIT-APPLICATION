@@ -420,5 +420,8 @@ verify_jwt = true
 [functions.cancel-subscription]
 verify_jwt = true
 
+[functions.provision-user]
+verify_jwt = true
+
 [functions.paymongo-webhook]
 verify_jwt = false
