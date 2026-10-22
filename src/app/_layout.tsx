@@ -1,8 +1,12 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import { ClerkProvider } from "@clerk/expo";
+import { tokenCache } from "@clerk/expo/token-cache";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { Text, useColorScheme, View } from "react-native";
+
+const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -40,7 +44,7 @@ export default function RootLayout() {
     return null;
   }
 
-  return (
+  const app = (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack initialRouteName="splash" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="splash" options={{ animation: "fade" }} />
@@ -51,5 +55,13 @@ export default function RootLayout() {
         <Stack.Screen name="dashboard" />
       </Stack>
     </ThemeProvider>
+  );
+
+  return clerkPublishableKey ? (
+    <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
+      {app}
+    </ClerkProvider>
+  ) : (
+    app
   );
 }

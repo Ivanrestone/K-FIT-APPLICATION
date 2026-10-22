@@ -1,8 +1,11 @@
 import { KFitColors, Spacing } from "@/constants/theme";
+import { useSSO } from "@clerk/expo";
+import { useSignIn } from "@clerk/expo/legacy";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
@@ -17,6 +20,157 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const logo = require("../../assets/images/logo.jpg");
+const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+function navigateForEmail(router: ReturnType<typeof useRouter>, email: string) {
+  switch (email.trim().toLowerCase()) {
+    case "admin@gmail.com":
+      router.replace("/dashboard");
+      break;
+    case "scanner@gmail.com":
+      router.replace("/scanner");
+      break;
+    case "qrcode@gmail.com":
+      router.replace("/display");
+      break;
+    case "trainer@gmail.com":
+      router.replace("/trainer-dashboard" as any);
+      break;
+    case "member@gmail.com":
+    default:
+      router.replace("/member-dashboard" as any);
+      break;
+  }
+}
+
+function GoogleLoginButton({
+  onAuthenticated,
+}: {
+  onAuthenticated: (email: string) => void;
+}) {
+  const { startSSOFlow } = useSSO();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const { authSessionResult, createdSessionId, setActive, signIn, signUp } =
+        await startSSOFlow({ strategy: "oauth_google" });
+
+      if (authSessionResult?.type === "cancel") {
+        return;
+      }
+
+      if (!createdSessionId || !setActive) {
+        throw new Error("Google sign in did not complete. Please try again.");
+      }
+
+      await setActive({ session: createdSessionId });
+      onAuthenticated(signIn?.identifier ?? signUp?.emailAddress ?? "");
+    } catch (error) {
+      Alert.alert(
+        "Google sign in failed",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.googleButton,
+        pressed && !isLoading && styles.pressed,
+      ]}
+      onPress={handleGoogleLogin}
+      disabled={isLoading}
+      accessibilityRole="button"
+      accessibilityLabel="Continue with Google"
+      accessibilityState={{ disabled: isLoading, busy: isLoading }}
+    >
+      {isLoading ? (
+        <ActivityIndicator color={KFitColors.accent} />
+      ) : (
+        <Text style={styles.googleButtonText}>Continue with Google</Text>
+      )}
+    </Pressable>
+  );
+}
+
+function ClerkCredentialLoginButton({
+  email,
+  password,
+  onAuthenticated,
+}: {
+  email: string;
+  password: string;
+  onAuthenticated: (email: string) => void;
+}) {
+  const { isLoaded, signIn, setActive } = useSignIn();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert(
+        "Missing Information",
+        "Please enter your username and password.",
+      );
+      return;
+    }
+
+    if (!isLoaded) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const attempt = await signIn.create({
+        identifier: email.trim(),
+        password,
+      });
+
+      if (attempt.status !== "complete" || !attempt.createdSessionId) {
+        Alert.alert(
+          "Sign in needs more steps",
+          "This account requires additional verification. Please contact your gym administrator.",
+        );
+        return;
+      }
+
+      await setActive({ session: attempt.createdSessionId });
+      onAuthenticated(attempt.identifier ?? email);
+    } catch (error) {
+      Alert.alert(
+        "Login Failed",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.loginButton,
+        pressed && !isLoading && styles.loginButtonPressed,
+      ]}
+      onPress={handleLogin}
+      disabled={isLoading || !isLoaded}
+      accessibilityRole="button"
+      accessibilityLabel="Sign in"
+      accessibilityHint="Signs in to your K-FIT account"
+      accessibilityState={{ disabled: isLoading || !isLoaded, busy: isLoading }}
+    >
+      {isLoading ? (
+        <ActivityIndicator color={KFitColors.background} />
+      ) : (
+        <Text style={styles.loginButtonText}>SIGN IN</Text>
+      )}
+    </Pressable>
+  );
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -33,6 +187,14 @@ export default function HomeScreen() {
   const cardWidth = Math.min(width - horizontalPadding * 2, 480);
 
   const handleLogin = () => {
+    if (!__DEV__) {
+      Alert.alert(
+        "Authentication unavailable",
+        "Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to enable sign in.",
+      );
+      return;
+    }
+
     if (!email.trim() || !password) {
       Alert.alert(
         "Missing Information",
@@ -45,27 +207,27 @@ export default function HomeScreen() {
       email.trim().toLowerCase() === "admin@gmail.com" &&
       password === "admin123"
     ) {
-      router.replace("/dashboard");
+      navigateForEmail(router, email);
     } else if (
       email.trim().toLowerCase() === "scanner@gmail.com" &&
       password === "scanner123"
     ) {
-      router.replace("/scanner");
+      navigateForEmail(router, email);
     } else if (
       email.trim().toLowerCase() === "qrcode@gmail.com" &&
       password === "qrcode123"
     ) {
-      router.replace("/display");
+      navigateForEmail(router, email);
     } else if (
       email.trim().toLowerCase() === "member@gmail.com" &&
       password === "member123"
     ) {
-      router.replace("/member-dashboard" as any);
+      navigateForEmail(router, email);
     } else if (
       email.trim().toLowerCase() === "trainer@gmail.com" &&
       password === "trainer123"
     ) {
-      router.replace("/trainer-dashboard" as any);
+      navigateForEmail(router, email);
     } else {
       Alert.alert(
         "Login Failed",
@@ -120,6 +282,39 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.form}>
+                {clerkPublishableKey ? (
+                  <GoogleLoginButton
+                    onAuthenticated={(authenticatedEmail) =>
+                      navigateForEmail(router, authenticatedEmail)
+                    }
+                  />
+                ) : (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.googleButton,
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() =>
+                      Alert.alert(
+                        "Google sign in is not configured",
+                        "Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to your local environment, then restart Expo.",
+                      )
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel="Continue with Google"
+                  >
+                    <Text style={styles.googleButtonText}>
+                      Continue with Google
+                    </Text>
+                  </Pressable>
+                )}
+
+                <View style={styles.separatorRow} accessibilityElementsHidden>
+                  <View style={styles.separatorLine} />
+                  <Text style={styles.separatorText}>OR SIGN IN WITH EMAIL</Text>
+                  <View style={styles.separatorLine} />
+                </View>
+
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>Username or email</Text>
                   <TextInput
@@ -167,7 +362,9 @@ export default function HomeScreen() {
                       onBlur={() => setFocusedField(null)}
                       accessibilityLabel="Password"
                       returnKeyType="done"
-                      onSubmitEditing={handleLogin}
+                      onSubmitEditing={
+                        __DEV__ ? handleLogin : undefined
+                      }
                     />
                     <Pressable
                       onPress={() => setShowPassword((visible) => !visible)}
@@ -204,18 +401,41 @@ export default function HomeScreen() {
                   <Text style={styles.forgotText}>Forgot Password?</Text>
                 </Pressable>
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.loginButton,
-                    pressed && styles.loginButtonPressed,
-                  ]}
-                  onPress={handleLogin}
-                  accessibilityRole="button"
-                  accessibilityLabel="Sign in"
-                  accessibilityHint="Signs in to your K-FIT account"
-                >
-                  <Text style={styles.loginButtonText}>SIGN IN</Text>
-                </Pressable>
+                {__DEV__ ? (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.loginButton,
+                      pressed && styles.loginButtonPressed,
+                    ]}
+                    onPress={handleLogin}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sign in"
+                    accessibilityHint="Signs in to your K-FIT account"
+                  >
+                    <Text style={styles.loginButtonText}>SIGN IN</Text>
+                  </Pressable>
+                ) : clerkPublishableKey ? (
+                  <ClerkCredentialLoginButton
+                    email={email}
+                    password={password}
+                    onAuthenticated={(authenticatedEmail) =>
+                      navigateForEmail(router, authenticatedEmail)
+                    }
+                  />
+                ) : (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.loginButton,
+                      pressed && styles.loginButtonPressed,
+                    ]}
+                    onPress={handleLogin}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sign in"
+                    accessibilityHint="Signs in to your K-FIT account"
+                  >
+                    <Text style={styles.loginButtonText}>SIGN IN</Text>
+                  </Pressable>
+                )}
               </View>
 
               <View style={styles.signupRow}>
@@ -325,6 +545,38 @@ const styles = StyleSheet.create({
   form: {
     width: "100%",
     gap: Spacing.three,
+  },
+  googleButton: {
+    minHeight: 58,
+    borderRadius: 12,
+    borderCurve: "continuous",
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.three,
+  },
+  googleButtonText: {
+    color: KFitColors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  separatorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: KFitColors.border,
+  },
+  separatorText: {
+    color: KFitColors.mutedText,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.8,
   },
   input: {
     minHeight: 58,
