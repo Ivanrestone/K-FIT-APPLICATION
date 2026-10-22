@@ -1,7 +1,7 @@
 import MemberBottomNav from '@/components/MemberBottomNav';
+import SubscriptionPaywall from '@/components/SubscriptionPaywall';
 import { useRouter } from 'expo-router';
 import {
-  Dimensions,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,15 +10,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
-
 export default function MemberDashboardScreen() {
   const router = useRouter();
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mainContainer}>
-        <ScrollView style={styles.content}>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          style={styles.content}
+        >
+          <SubscriptionPaywall requireAppAccess>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.brand}>FORM</Text>
@@ -41,7 +43,7 @@ export default function MemberDashboardScreen() {
           {/* Greeting */}
           <View style={styles.greetingSection}>
             <Text style={styles.greeting}>Progress, not perfection.</Text>
-            <Text style={styles.greetingSubtitle}>Your effort adds up. See how far you've come, Jordan</Text>
+            <Text style={styles.greetingSubtitle}>Your effort adds up. See how far you&apos;ve come, Jordan</Text>
             <TouchableOpacity style={styles.logButton}>
               <Text style={styles.logButtonText}>+ Log measurements</Text>
             </TouchableOpacity>
@@ -280,6 +282,7 @@ export default function MemberDashboardScreen() {
             <Text style={styles.footerJoined}>Joined Sep 11, 2016</Text>
             <Text style={styles.footerBrand}>FORM ATHLETICS MEMBER WORKSPACE</Text>
           </View>
+          </SubscriptionPaywall>
         </ScrollView>
         <MemberBottomNav activeRoute="/member-dashboard" />
       </View>
