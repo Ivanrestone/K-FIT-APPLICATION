@@ -42,6 +42,28 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Please try again.";
 }
 
+function getExistingSessionId(value: unknown): string | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("existingSession" in value)
+  ) {
+    return null;
+  }
+
+  const existingSession = value.existingSession;
+  if (
+    typeof existingSession !== "object" ||
+    existingSession === null ||
+    !("sessionId" in existingSession) ||
+    typeof existingSession.sessionId !== "string"
+  ) {
+    return null;
+  }
+
+  return existingSession.sessionId;
+}
+
 export default function HomeScreen() {
   return clerkPublishableKey
     ? <ConfiguredHomeScreen />
@@ -202,12 +224,15 @@ function ConfiguredHomeScreen() {
         identifier: email.trim(),
         password,
       });
-      if (attempt.status !== "complete" || !attempt.createdSessionId) {
+      const sessionId = attempt.status === "complete"
+        ? attempt.createdSessionId
+        : getExistingSessionId(attempt);
+      if (!sessionId) {
         throw new Error(
           "This account needs another verification step. Complete it in Clerk and try again.",
         );
       }
-      await activateSignIn({ session: attempt.createdSessionId });
+      await activateSignIn({ session: sessionId });
     } catch (error) {
       setAuthError(getErrorMessage(error));
     } finally {
