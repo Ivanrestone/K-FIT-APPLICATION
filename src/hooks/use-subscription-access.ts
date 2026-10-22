@@ -111,6 +111,8 @@ function getErrorMessage(error: unknown): string {
 
 export function useSubscriptionAccess() {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
   const supabaseConfigured = Boolean(
     process.env.EXPO_PUBLIC_SUPABASE_URL &&
       process.env.EXPO_PUBLIC_SUPABASE_KEY,
@@ -123,7 +125,7 @@ export function useSubscriptionAccess() {
       try {
         return {
           client: createMemberSupabaseClient(() =>
-            isSignedIn ? getToken() : Promise.resolve(null)
+            isSignedIn ? getTokenRef.current() : Promise.resolve(null)
           ),
           error: null,
         };
@@ -134,7 +136,7 @@ export function useSubscriptionAccess() {
         };
       }
     },
-    [getToken, isSignedIn, supabaseConfigured],
+    [isSignedIn, supabaseConfigured],
   );
   const supabase = clientResult.client;
   const [queryState, setQueryState] = useState<QueryState | null>(null);

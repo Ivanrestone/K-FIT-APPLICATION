@@ -93,11 +93,14 @@ function getErrorMessage(error: unknown): string {
 
 export function useMemberProfile() {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+
   const clientResult = useMemo(() => {
     try {
       return {
         client: createMemberSupabaseClient(() =>
-          isSignedIn ? getToken() : Promise.resolve(null)
+          isSignedIn ? getTokenRef.current() : Promise.resolve(null)
         ),
         error: null,
       };
@@ -107,7 +110,7 @@ export function useMemberProfile() {
         error: "Supabase is not configured for profile access.",
       };
     }
-  }, [getToken, isSignedIn]);
+  }, [isSignedIn]);
   const supabase = clientResult.client;
   const [queryState, setQueryState] = useState<ProfileQueryState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -122,6 +125,7 @@ export function useMemberProfile() {
       !userId ||
       activeUserIdRef.current !== userId
     ) {
+      setIsLoading(false);
       return;
     }
 
@@ -150,10 +154,10 @@ export function useMemberProfile() {
         return;
       }
       if (profileResult.error) {
-        throw new Error("Could not load your K-Fit profile.");
+        throw new Error(profileResult.error.message || "Could not load your K-Fit profile.");
       }
       if (requestResult.error) {
-        throw new Error("Could not load your Coach request status.");
+        throw new Error(requestResult.error.message || "Could not load your Coach request status.");
       }
 
       const profile = profileResult.data
@@ -190,21 +194,26 @@ export function useMemberProfile() {
     if (!isLoaded) {
       return;
     }
-    void Promise.resolve().then(() => {
-      const activeUserId = isSignedIn && userId ? userId : null;
-      activeUserIdRef.current = activeUserId;
-      latestLoadIdRef.current += 1;
-      if (!isSignedIn || !userId) {
-        setQueryState(null);
-        setLoadError(null);
-        setIsLoading(false);
-        return;
-      }
-      setQueryState((current) => current?.userId === userId ? current : null);
-      setLoadError((current) => current?.userId === userId ? current : null);
-      void load();
-    });
-  }, [isLoaded, isSignedIn, load, userId]);
+    const activeUserId = isSignedIn && userId ? userId : null;
+    activeUserIdRef.current = activeUserId;
+    latestLoadIdRef.current += 1;
+    if (!isSignedIn || !userId) {
+      setQueryState(null);
+      setLoadError(null);
+      setIsLoading(false);
+      return;
+    }
+    setQueryState((current) => current?.userId === userId ? current : null);
+    setLoadError((current) => current?.userId === userId ? current : null);
+    setIsLoading(true);
+  }, [isLoaded, isSignedIn, userId]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !userId || !supabase) {
+      return;
+    }
+    void load();
+  }, [isLoaded, isSignedIn, load, supabase, userId]);
 
   const saveMissingProfileFields = useCallback(async (fields: ProfileFields) => {
     if (
