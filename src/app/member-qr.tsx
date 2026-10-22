@@ -27,7 +27,7 @@ export default function MemberQRScreen() {
   const [qrData, setQrData] = useState('');
   const [isBlurred, setIsBlurred] = useState(false);
   const appState = useRef(AppState.currentState);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Generate TOTP QR data
   const generateQRData = () => {
