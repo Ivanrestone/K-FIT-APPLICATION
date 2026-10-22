@@ -59,7 +59,7 @@ insert into public.pricing_plans (
   is_active
 )
 values
-  ('app', 3.00, 'USD', 170.00, true),
+  ('app', 3.00, 'USD', 190.00, true),
   ('gym', 3.00, 'USD', 170.00, true);
 
 create or replace function public.apply_paid_subscription_checkout(

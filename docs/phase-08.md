@@ -10,7 +10,7 @@ K-Fit needs monthly manual payments for App access and physical Gym access. PayM
 
 Use Supabase Edge Functions for checkout, cancellation, and PayMongo webhooks, with PayMongo hosted Checkout Sessions. This reuses the existing Supabase backend and keeps payment credentials out of the Expo bundle. The app reads active prices through Clerk authenticated Supabase RLS; the checkout function independently chooses the active plan version and amount.
 
-The initial App and Gym prices each display USD 3.00 and charge PHP 170.00 monthly. Price versions remain in the database after deactivation, with exactly one active version per type. Renewals are manual and each confirmed payment adds one calendar month from the later of payment time or current expiry. There is no automatic charge or payment method vaulting.
+The App and Gym plans each display USD 3.00. App charges PHP 190.00 and Gym charges PHP 170.00 monthly. Price versions remain in the database after deactivation, with exactly one active version per type. Renewals are manual and each confirmed payment adds one calendar month from the later of payment time or current expiry. There is no automatic charge or payment method vaulting.
 
 ## Configuration
 
@@ -63,7 +63,7 @@ The checkout function does not change subscription state. The webhook does not t
 - ESLint for the changed subscription screens, component, and hook: passed.
 - `npx expo export --platform web`: passed and bundled all 26 routes.
 - `git diff --check`: passed.
-- Remote catalog checks confirmed both migrations, all six expected tables, two seeded active plans at USD 3.00 and PHP 170.00, the own row and active price policies, no client insert/update grants, and service role only RPC execution.
+- Remote catalog checks confirmed the schema migrations, six expected tables, active plan policies, no client insert/update grants, and service role only RPC execution. The current App price is USD 3.00 and PHP 190.00; Gym is USD 3.00 and PHP 170.00.
 - Full `npx expo lint` still reports existing errors in unrelated screens and hooks. Full `npx tsc --noEmit` still reports the existing `NodeJS.Timeout` error in `src/app/member-qr.tsx:30`; no changed payment files were reported.
 
 ## Remaining deployment and verification
