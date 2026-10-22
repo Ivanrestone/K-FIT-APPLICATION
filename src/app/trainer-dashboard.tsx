@@ -1,4 +1,5 @@
 import TrainerBottomNav from '@/components/TrainerBottomNav';
+import SubscriptionPaywall from '@/components/SubscriptionPaywall';
 import { useRouter } from 'expo-router';
 import {
     ScrollView,
@@ -15,7 +16,11 @@ export default function TrainerDashboardScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mainContainer}>
-        <ScrollView style={styles.content}>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          style={styles.content}
+        >
+          <SubscriptionPaywall requireAppAccess>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.brand}>FORM ATHLETICS</Text>
@@ -71,7 +76,7 @@ export default function TrainerDashboardScreen() {
 
           {/* Today's Schedule */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today's Schedule</Text>
+            <Text style={styles.sectionTitle}>Today&apos;s Schedule</Text>
             <View style={styles.scheduleCard}>
               <View style={styles.scheduleItem}>
                 <Text style={styles.scheduleTime}>09:00 AM</Text>
@@ -157,6 +162,7 @@ export default function TrainerDashboardScreen() {
             <Text style={styles.footerName}>Marcus Reed</Text>
             <Text style={styles.footerLabel}>FORM ATHLETICS TRAINER WORKSPACE</Text>
           </View>
+          </SubscriptionPaywall>
         </ScrollView>
         <TrainerBottomNav activeRoute="/trainer-dashboard" />
       </View>

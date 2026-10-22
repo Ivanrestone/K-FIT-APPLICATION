@@ -20,6 +20,8 @@ npx eas-cli@latest <cmd>    # EAS builds, submits, and updates
 
 - Expo ships breaking changes every SDK release, so don't trust memory. Before touching an Expo, EAS, or React Native API, check the `expo` major version in `package.json` and read the official docs.
 - Routes live in `src/app/`: every file is a screen and `_layout.tsx` files define navigators. Keep components, hooks, and utils outside `src/app/`.
+- App data reads use the signed Clerk token with the existing Supabase client and RLS; handle loading, error, and empty states, and never grant access on a failed read.
+- Use the installed Expo UI skills for app UI and networking; prefer universal `@expo/ui` controls when available and reuse the tokens in `src/constants/theme.ts`.
 - Startup shows centered `K-Fit` text in Bebas Neue on black before replacing to the existing login route.
 - `ios/` and `android/` are generated. Never create or edit them by hand; configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. For the camera scanner or secure storage modules, use a development build (`npx expo run:android` or `run:ios`).
@@ -30,10 +32,11 @@ Each tool has one job. Ask before moving a responsibility to a different tool.
 
 - **Roles & Auth:** The system strictly enforces three roles: Member (end-user), Coach (staff/classes), and Admin/Gym Owner (kiosk setup, financials). 
 - **The Door Kiosk:** A dedicated physical phone/tablet mounted at the door. Logged in as Admin/Coach, it remains permanently on a Camera Scanner screen to read member QRs and log check-ins/check-outs.
-- **Subscriptions (Dual-Tier):** The backend separates software access from physical access. The `App Subscription` (150 PHP) owns access to the UI (QR generation, booking). The `Gym Subscription` owns the physical facility rights. Both must be active to check in.
+- **Subscriptions (Dual-Tier):** The backend separates software access from physical access. The monthly App plan owns access to digital features; the Gym plan owns physical facility rights. Each has independent expiry and cancellation state. Both must be active to check in.
+- **Payments (Test Mode):** Supabase Edge Functions create PayMongo-hosted Checkout Sessions; only a signature-verified paid event may extend the matching `subscriptions_app` or `subscriptions_gym` period. Test keys and webhook secrets stay in Supabase Function secrets, never in Expo.
 - **Dynamic Access (TOTP):** The Member app generates a Time-Based One-Time Password (TOTP) QR code. It refreshes every 15-30 seconds. The payload includes `member_id`, `timestamp`, and a cryptographic hash.
 - **Validation Logic:** The backend owns validation. When the Kiosk scans a QR, the backend validates the token, checks dual-subscription status, marks the token as consumed to prevent replay attacks, and logs the attendance.
-- **Bookings:** Capacity-limited slots and waitlists. Only Members with an active 150 PHP App Subscription can reserve slots.
+- **Bookings:** Capacity-limited slots and waitlists. Only Members with active App access can reserve slots.
 
 ## Rules
 
