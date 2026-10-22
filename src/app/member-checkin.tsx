@@ -6,11 +6,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import MemberBottomNav from '@/components/MemberBottomNav';
+import { useLogout } from '@/hooks/use-logout';
 
 export default function MemberCheckinScreen() {
-  const router = useRouter();
+  const { isSigningOut, logout } = useLogout();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -19,7 +19,7 @@ export default function MemberCheckinScreen() {
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.brand}>FORM ATHLETICS</Text>
-            <TouchableOpacity onPress={() => router.replace('/')}>
+            <TouchableOpacity disabled={isSigningOut} onPress={logout}>
               <Text style={styles.logout}>Logout</Text>
             </TouchableOpacity>
           </View>

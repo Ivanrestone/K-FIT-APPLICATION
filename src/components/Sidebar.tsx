@@ -1,5 +1,6 @@
 import { KFitColors } from '@/constants/theme';
 import { useRouter } from 'expo-router';
+import { useLogout } from '@/hooks/use-logout';
 import { useState } from 'react';
 import {
     Modal,
@@ -22,6 +23,7 @@ export default function Sidebar({
   theme = 'default',
 }: SidebarProps) {
   const router = useRouter();
+  const { logout } = useLogout();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -40,7 +42,7 @@ export default function Sidebar({
 
   const handleLogout = () => {
     setIsMoreOpen(false);
-    router.replace('/');
+    void logout();
   };
 
   const isMobile = width < 768;

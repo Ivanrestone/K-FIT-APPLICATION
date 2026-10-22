@@ -1,240 +1,380 @@
 import { KFitColors, Spacing } from "@/constants/theme";
-import { useSSO } from "@clerk/expo";
-import { useSignIn } from "@clerk/expo/legacy";
+import { useAuth, useSSO } from "@clerk/expo";
+import { useSignIn, useSignUp } from "@clerk/expo/legacy";
+import { createMemberSupabaseClient } from "@/utils/supabase";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
-    useWindowDimensions,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const logo = require("../../assets/images/logo.jpg");
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-function navigateForEmail(router: ReturnType<typeof useRouter>, email: string) {
-  switch (email.trim().toLowerCase()) {
-    case "admin@gmail.com":
-      router.replace("/dashboard");
-      break;
-    case "scanner@gmail.com":
-      router.replace("/scanner");
-      break;
-    case "qrcode@gmail.com":
-      router.replace("/display");
-      break;
-    case "trainer@gmail.com":
-      router.replace("/trainer-dashboard" as any);
-      break;
-    case "member@gmail.com":
+type AppRole = "member" | "coach" | "admin";
+type AuthMode = "sign-in" | "sign-up" | "verify-email";
+
+function getDashboardRoute(role: unknown) {
+  switch (role) {
+    case "member":
+      return "/member-dashboard" as const;
+    case "coach":
+      return "/trainer-dashboard" as const;
+    case "admin":
+      return "/dashboard" as const;
     default:
-      router.replace("/member-dashboard" as any);
-      break;
+      throw new Error("Your account role is not configured.");
   }
 }
 
-function GoogleLoginButton({
-  onAuthenticated,
-}: {
-  onAuthenticated: (email: string) => void;
-}) {
-  const { startSSOFlow } = useSSO();
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    try {
-      const { authSessionResult, createdSessionId, setActive, signIn, signUp } =
-        await startSSOFlow({ strategy: "oauth_google" });
-
-      if (authSessionResult?.type === "cancel") {
-        return;
-      }
-
-      if (!createdSessionId || !setActive) {
-        throw new Error("Google sign in did not complete. Please try again.");
-      }
-
-      await setActive({ session: createdSessionId });
-      onAuthenticated(signIn?.identifier ?? signUp?.emailAddress ?? "");
-    } catch (error) {
-      Alert.alert(
-        "Google sign in failed",
-        error instanceof Error ? error.message : "Please try again.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.googleButton,
-        pressed && !isLoading && styles.pressed,
-      ]}
-      onPress={handleGoogleLogin}
-      disabled={isLoading}
-      accessibilityRole="button"
-      accessibilityLabel="Continue with Google"
-      accessibilityState={{ disabled: isLoading, busy: isLoading }}
-    >
-      {isLoading ? (
-        <ActivityIndicator color={KFitColors.accent} />
-      ) : (
-        <Text style={styles.googleButtonText}>Continue with Google</Text>
-      )}
-    </Pressable>
-  );
-}
-
-function ClerkCredentialLoginButton({
-  email,
-  password,
-  onAuthenticated,
-}: {
-  email: string;
-  password: string;
-  onAuthenticated: (email: string) => void;
-}) {
-  const { isLoaded, signIn, setActive } = useSignIn();
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleLogin = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter your username and password.",
-      );
-      return;
-    }
-
-    if (!isLoaded) {
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const attempt = await signIn.create({
-        identifier: email.trim(),
-        password,
-      });
-
-      if (attempt.status !== "complete" || !attempt.createdSessionId) {
-        Alert.alert(
-          "Sign in needs more steps",
-          "This account requires additional verification. Please contact your gym administrator.",
-        );
-        return;
-      }
-
-      await setActive({ session: attempt.createdSessionId });
-      onAuthenticated(attempt.identifier ?? email);
-    } catch (error) {
-      Alert.alert(
-        "Login Failed",
-        error instanceof Error ? error.message : "Please try again.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.loginButton,
-        pressed && !isLoading && styles.loginButtonPressed,
-      ]}
-      onPress={handleLogin}
-      disabled={isLoading || !isLoaded}
-      accessibilityRole="button"
-      accessibilityLabel="Sign in"
-      accessibilityHint="Signs in to your K-FIT account"
-      accessibilityState={{ disabled: isLoading || !isLoaded, busy: isLoading }}
-    >
-      {isLoading ? (
-        <ActivityIndicator color={KFitColors.background} />
-      ) : (
-        <Text style={styles.loginButtonText}>SIGN IN</Text>
-      )}
-    </Pressable>
-  );
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Please try again.";
 }
 
 export default function HomeScreen() {
+  return clerkPublishableKey
+    ? <ConfiguredHomeScreen />
+    : <MissingClerkConfiguration />;
+}
+
+function MissingClerkConfiguration() {
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.statusContent}>
+        <Image
+          source={logo}
+          contentFit="cover"
+          style={styles.brandLogo}
+          accessibilityLabel="K-FIT logo"
+        />
+        <Text style={styles.heading}>Sign in is not configured</Text>
+        <Text style={styles.subtitle}>
+          Add the Clerk publishable key to your local environment and restart
+          the app.
+        </Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function ConfiguredHomeScreen() {
   const router = useRouter();
   const { width, height, fontScale } = useWindowDimensions();
+  const { getToken, isLoaded, isSignedIn, signOut, userId } = useAuth();
+  const {
+    isLoaded: isSignInLoaded,
+    setActive: activateSignIn,
+    signIn,
+  } = useSignIn();
+  const {
+    isLoaded: isSignUpLoaded,
+    setActive: activateSignUp,
+    signUp,
+  } = useSignUp();
+  const { startSSOFlow } = useSSO();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(
-    null,
-  );
+  const [mode, setMode] = useState<AuthMode>("sign-in");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isProvisioning, setIsProvisioning] = useState(false);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [focusedField, setFocusedField] = useState<
+    "email" | "password" | "verification" | null
+  >(null);
   const compactLayout = height < 700 || fontScale >= 1.3;
   const horizontalPadding =
     width < 360 ? Spacing.two : width >= 600 ? 28 : Spacing.three;
   const cardWidth = Math.min(width - horizontalPadding * 2, 480);
 
-  const handleLogin = () => {
-    if (!__DEV__) {
-      Alert.alert(
-        "Authentication unavailable",
-        "Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to enable sign in.",
+  const clientResult = useMemo(() => {
+    try {
+      return {
+        client: createMemberSupabaseClient(() =>
+          isSignedIn ? getToken() : Promise.resolve(null)
+        ),
+        error: null,
+      };
+    } catch {
+      return {
+        client: null,
+        error: "Supabase profile access is not configured.",
+      };
+    }
+  }, [getToken, isSignedIn]);
+
+  const provisionAndRoute = useCallback(async () => {
+    if (!userId || !clientResult.client) {
+      setProvisionError(
+        clientResult.error ?? "Your signed in account is not available.",
       );
       return;
     }
 
-    if (!email.trim() || !password) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter your username and password.",
+    setIsProvisioning(true);
+    setProvisionError(null);
+    try {
+      const { data, error } = await clientResult.client.functions.invoke(
+        "provision-user",
       );
+      if (error) {
+        throw error;
+      }
+      if (
+        typeof data !== "object" ||
+        data === null ||
+        !("role" in data) ||
+        (data.role !== "member" && data.role !== "coach" && data.role !== "admin")
+      ) {
+        throw new Error("The server returned an invalid account role.");
+      }
+
+      const role: AppRole = data.role;
+      router.replace(getDashboardRoute(role));
+    } catch (error) {
+      setProvisionError(
+        error instanceof Error
+          ? error.message
+          : "Could not prepare your K-Fit account. Please retry.",
+      );
+    } finally {
+      setIsProvisioning(false);
+    }
+  }, [clientResult, router, userId]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !userId) {
       return;
     }
+    void Promise.resolve().then(provisionAndRoute);
+  }, [isLoaded, isSignedIn, provisionAndRoute, userId]);
 
-    if (
-      email.trim().toLowerCase() === "admin@gmail.com" &&
-      password === "admin123"
-    ) {
-      navigateForEmail(router, email);
-    } else if (
-      email.trim().toLowerCase() === "scanner@gmail.com" &&
-      password === "scanner123"
-    ) {
-      navigateForEmail(router, email);
-    } else if (
-      email.trim().toLowerCase() === "qrcode@gmail.com" &&
-      password === "qrcode123"
-    ) {
-      navigateForEmail(router, email);
-    } else if (
-      email.trim().toLowerCase() === "member@gmail.com" &&
-      password === "member123"
-    ) {
-      navigateForEmail(router, email);
-    } else if (
-      email.trim().toLowerCase() === "trainer@gmail.com" &&
-      password === "trainer123"
-    ) {
-      navigateForEmail(router, email);
-    } else {
-      Alert.alert(
-        "Login Failed",
-        "Invalid username or password. Please try again.",
-      );
+  const handleGoogleLogin = async () => {
+    setIsSubmitting(true);
+    setAuthError(null);
+    try {
+      const { authSessionResult, createdSessionId, setActive } =
+        await startSSOFlow({
+          strategy: "oauth_google",
+          oidcPrompt: "select_account",
+        });
+      if (authSessionResult?.type === "cancel") {
+        return;
+      }
+      if (!createdSessionId || !setActive) {
+        throw new Error("Google sign in did not complete. Please try again.");
+      }
+      await setActive({ session: createdSessionId });
+    } catch (error) {
+      setAuthError(getErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const handleCredentialLogin = async () => {
+    if (!email.trim() || !password) {
+      setAuthError("Enter your email address and password.");
+      return;
+    }
+    if (!isSignInLoaded || !signIn || !activateSignIn) {
+      setAuthError("Sign in is still loading. Please try again.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setAuthError(null);
+    try {
+      const attempt = await signIn.create({
+        identifier: email.trim(),
+        password,
+      });
+      if (attempt.status !== "complete" || !attempt.createdSessionId) {
+        throw new Error(
+          "This account needs another verification step. Complete it in Clerk and try again.",
+        );
+      }
+      await activateSignIn({ session: attempt.createdSessionId });
+    } catch (error) {
+      setAuthError(getErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCredentialSignUp = async () => {
+    if (!email.trim() || !password) {
+      setAuthError("Enter your email address and password.");
+      return;
+    }
+    if (!isSignUpLoaded || !signUp || !activateSignUp) {
+      setAuthError("Registration is still loading. Please try again.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setAuthError(null);
+    try {
+      const attempt = await signUp.create({
+        emailAddress: email.trim(),
+        password,
+      });
+      if (attempt.status === "complete" && attempt.createdSessionId) {
+        await activateSignUp({ session: attempt.createdSessionId });
+      } else if (attempt.unverifiedFields.includes("email_address")) {
+        await attempt.prepareEmailAddressVerification({ strategy: "email_code" });
+        setMode("verify-email");
+        setVerificationCode("");
+      } else {
+        throw new Error(
+          "Registration needs another step. Check your Clerk account settings and try again.",
+        );
+      }
+    } catch (error) {
+      setAuthError(getErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyEmail = async () => {
+    if (
+      !verificationCode.trim() ||
+      !isSignUpLoaded ||
+      !signUp ||
+      !activateSignUp
+    ) {
+      setAuthError("Enter the verification code sent to your email.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setAuthError(null);
+    try {
+      const attempt = await signUp.attemptEmailAddressVerification({
+        code: verificationCode.trim(),
+      });
+      if (attempt.status !== "complete" || !attempt.createdSessionId) {
+        throw new Error(
+          "Email verification is incomplete. Check the code and retry.",
+        );
+      }
+      await activateSignUp({ session: attempt.createdSessionId });
+    } catch (error) {
+      setAuthError(getErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResendVerificationCode = async () => {
+    if (!isSignUpLoaded || !signUp) {
+      setAuthError("Registration is still loading. Please try again.");
+      return;
+    }
+    setIsSubmitting(true);
+    setAuthError(null);
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+    } catch (error) {
+      setAuthError(getErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSignOutFromSetup = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      setProvisionError(getErrorMessage(error));
+    }
+  };
+
+  if (!isLoaded || !isSignInLoaded || !isSignUpLoaded) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.statusContent}>
+          <ActivityIndicator color={KFitColors.accent} />
+          <Text style={styles.subtitle}>Loading your K-Fit account…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (isSignedIn) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.statusContent}>
+          <Image
+            source={logo}
+            contentFit="cover"
+            style={styles.brandLogo}
+            accessibilityLabel="K-FIT logo"
+          />
+          {provisionError ? (
+            <>
+              <Text style={styles.heading}>We could not prepare your account</Text>
+              <Text style={styles.errorText} accessibilityRole="alert">
+                {provisionError}
+              </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.loginButton,
+                  pressed && styles.loginButtonPressed,
+                ]}
+                onPress={provisionAndRoute}
+                accessibilityRole="button"
+              >
+                <Text style={styles.loginButtonText}>RETRY</Text>
+              </Pressable>
+              <Pressable
+                style={styles.statusAction}
+                onPress={handleSignOutFromSetup}
+                accessibilityRole="button"
+              >
+                <Text style={styles.signupText}>Sign out</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <ActivityIndicator color={KFitColors.accent} />
+              <Text style={styles.subtitle}>
+                {isProvisioning
+                  ? "Preparing your K-Fit profile…"
+                  : "Opening your account…"}
+              </Text>
+            </>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const isVerification = mode === "verify-email";
+  const submitLabel = isVerification
+    ? "VERIFY EMAIL"
+    : mode === "sign-up"
+    ? "CREATE ACCOUNT"
+    : "SIGN IN";
+  const submit = isVerification
+    ? handleVerifyEmail
+    : mode === "sign-up"
+    ? handleCredentialSignUp
+    : handleCredentialLogin;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -275,190 +415,236 @@ export default function HomeScreen() {
 
               <View style={styles.intro}>
                 <Text style={styles.portalLabel}>MEMBER PORTAL</Text>
-                <Text style={styles.heading}>Sign in</Text>
+                <Text style={styles.heading}>
+                  {isVerification
+                    ? "Verify your email"
+                    : mode === "sign-up"
+                    ? "Create your account"
+                    : "Sign in"}
+                </Text>
                 <Text style={styles.subtitle}>
-                  Enter your details to access your account.
+                  {isVerification
+                    ? `Enter the code sent to ${email}.`
+                    : mode === "sign-up"
+                    ? "Create a K-Fit account with your email and password."
+                    : "Enter your details to access your account."}
                 </Text>
               </View>
 
               <View style={styles.form}>
-                {clerkPublishableKey ? (
-                  <GoogleLoginButton
-                    onAuthenticated={(authenticatedEmail) =>
-                      navigateForEmail(router, authenticatedEmail)
-                    }
-                  />
-                ) : (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.googleButton,
-                      pressed && styles.pressed,
-                    ]}
-                    onPress={() =>
-                      Alert.alert(
-                        "Google sign in is not configured",
-                        "Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to your local environment, then restart Expo.",
-                      )
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel="Continue with Google"
-                  >
-                    <Text style={styles.googleButtonText}>
-                      Continue with Google
-                    </Text>
-                  </Pressable>
+                {!isVerification && (
+                  <>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.googleButton,
+                        pressed && !isSubmitting && styles.pressed,
+                      ]}
+                      onPress={handleGoogleLogin}
+                      disabled={isSubmitting}
+                      accessibilityRole="button"
+                      accessibilityLabel="Continue with Google"
+                      accessibilityState={{
+                        disabled: isSubmitting,
+                        busy: isSubmitting,
+                      }}
+                    >
+                      {isSubmitting ? (
+                        <ActivityIndicator color={KFitColors.accent} />
+                      ) : (
+                        <Text style={styles.googleButtonText}>
+                          Continue with Google
+                        </Text>
+                      )}
+                    </Pressable>
+
+                    <View
+                      style={styles.separatorRow}
+                      accessibilityElementsHidden
+                    >
+                      <View style={styles.separatorLine} />
+                      <Text style={styles.separatorText}>
+                        OR {mode === "sign-up" ? "SIGN UP" : "SIGN IN"} WITH EMAIL
+                      </Text>
+                      <View style={styles.separatorLine} />
+                    </View>
+
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Email</Text>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          focusedField === "email" && styles.inputFocused,
+                        ]}
+                        placeholder="Enter your email"
+                        placeholderTextColor={KFitColors.mutedText}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        autoComplete="email"
+                        textContentType="emailAddress"
+                        value={email}
+                        onChangeText={setEmail}
+                        onFocus={() => setFocusedField("email")}
+                        onBlur={() => setFocusedField(null)}
+                        accessibilityLabel="Email"
+                        returnKeyType="next"
+                      />
+                    </View>
+
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Password</Text>
+                      <View
+                        style={[
+                          styles.passwordContainer,
+                          focusedField === "password" &&
+                            styles.passwordContainerFocused,
+                        ]}
+                      >
+                        <TextInput
+                          style={styles.passwordInput}
+                          placeholder="Enter your password"
+                          placeholderTextColor={KFitColors.mutedText}
+                          secureTextEntry={!showPassword}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          autoComplete={
+                            mode === "sign-up"
+                              ? "new-password"
+                              : "current-password"
+                          }
+                          textContentType={
+                            mode === "sign-up" ? "newPassword" : "password"
+                          }
+                          value={password}
+                          onChangeText={setPassword}
+                          onFocus={() => setFocusedField("password")}
+                          onBlur={() => setFocusedField(null)}
+                          accessibilityLabel="Password"
+                          returnKeyType="done"
+                          onSubmitEditing={submit}
+                        />
+                        <Pressable
+                          onPress={() =>
+                            setShowPassword((visible) => !visible)
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            showPassword ? "Hide password" : "Show password"
+                          }
+                          accessibilityState={{ expanded: showPassword }}
+                          style={({ pressed }) => [
+                            styles.visibilityButton,
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          <Text style={styles.visibilityText}>
+                            {showPassword ? "HIDE" : "SHOW"}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </>
                 )}
 
-                <View style={styles.separatorRow} accessibilityElementsHidden>
-                  <View style={styles.separatorLine} />
-                  <Text style={styles.separatorText}>OR SIGN IN WITH EMAIL</Text>
-                  <View style={styles.separatorLine} />
-                </View>
-
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Username or email</Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      focusedField === "email" && styles.inputFocused,
-                    ]}
-                    placeholder="Enter your username or email"
-                    placeholderTextColor={KFitColors.mutedText}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="username"
-                    textContentType="username"
-                    value={email}
-                    onChangeText={setEmail}
-                    onFocus={() => setFocusedField("email")}
-                    onBlur={() => setFocusedField(null)}
-                    accessibilityLabel="Username or email"
-                    returnKeyType="next"
-                  />
-                </View>
-
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Password</Text>
-                  <View
-                    style={[
-                      styles.passwordContainer,
-                      focusedField === "password" &&
-                        styles.passwordContainerFocused,
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.passwordInput}
-                      placeholder="Enter your password"
-                      placeholderTextColor={KFitColors.mutedText}
-                      secureTextEntry={!showPassword}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      autoComplete="current-password"
-                      textContentType="password"
-                      value={password}
-                      onChangeText={setPassword}
-                      onFocus={() => setFocusedField("password")}
-                      onBlur={() => setFocusedField(null)}
-                      accessibilityLabel="Password"
-                      returnKeyType="done"
-                      onSubmitEditing={
-                        __DEV__ ? handleLogin : undefined
-                      }
-                    />
+                {isVerification && (
+                  <>
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Verification code</Text>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          focusedField === "verification" &&
+                            styles.inputFocused,
+                        ]}
+                        placeholder="Enter the email code"
+                        placeholderTextColor={KFitColors.mutedText}
+                        keyboardType="number-pad"
+                        autoComplete="one-time-code"
+                        value={verificationCode}
+                        onChangeText={setVerificationCode}
+                        onFocus={() => setFocusedField("verification")}
+                        onBlur={() => setFocusedField(null)}
+                        accessibilityLabel="Email verification code"
+                        returnKeyType="done"
+                        onSubmitEditing={handleVerifyEmail}
+                      />
+                    </View>
                     <Pressable
-                      onPress={() => setShowPassword((visible) => !visible)}
+                      onPress={handleResendVerificationCode}
+                      disabled={isSubmitting}
                       accessibilityRole="button"
-                      accessibilityLabel={
-                        showPassword ? "Hide password" : "Show password"
-                      }
-                      accessibilityState={{ expanded: showPassword }}
                       style={({ pressed }) => [
-                        styles.visibilityButton,
+                        styles.secondaryAction,
                         pressed && styles.pressed,
                       ]}
                     >
-                      <Text style={styles.visibilityText}>
-                        {showPassword ? "HIDE" : "SHOW"}
-                      </Text>
+                      <Text style={styles.signupText}>Resend code</Text>
                     </Pressable>
-                  </View>
-                </View>
+                  </>
+                )}
+
+                {authError && (
+                  <Text style={styles.errorText} accessibilityRole="alert">
+                    {authError}
+                  </Text>
+                )}
 
                 <Pressable
-                  onPress={() =>
-                    Alert.alert(
-                      "Forgot Password",
-                      "Password recovery is coming soon.",
-                    )
-                  }
-                  accessibilityRole="link"
                   style={({ pressed }) => [
-                    styles.forgotButton,
-                    pressed && styles.pressed,
+                    styles.loginButton,
+                    pressed && !isSubmitting && styles.loginButtonPressed,
                   ]}
+                  onPress={submit}
+                  disabled={isSubmitting}
+                  accessibilityRole="button"
+                  accessibilityLabel={submitLabel}
+                  accessibilityState={{
+                    disabled: isSubmitting,
+                    busy: isSubmitting,
+                  }}
                 >
-                  <Text style={styles.forgotText}>Forgot Password?</Text>
+                  {isSubmitting ? (
+                    <ActivityIndicator color={KFitColors.background} />
+                  ) : (
+                    <Text style={styles.loginButtonText}>{submitLabel}</Text>
+                  )}
                 </Pressable>
-
-                {__DEV__ ? (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.loginButton,
-                      pressed && styles.loginButtonPressed,
-                    ]}
-                    onPress={handleLogin}
-                    accessibilityRole="button"
-                    accessibilityLabel="Sign in"
-                    accessibilityHint="Signs in to your K-FIT account"
-                  >
-                    <Text style={styles.loginButtonText}>SIGN IN</Text>
-                  </Pressable>
-                ) : clerkPublishableKey ? (
-                  <ClerkCredentialLoginButton
-                    email={email}
-                    password={password}
-                    onAuthenticated={(authenticatedEmail) =>
-                      navigateForEmail(router, authenticatedEmail)
-                    }
-                  />
-                ) : (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.loginButton,
-                      pressed && styles.loginButtonPressed,
-                    ]}
-                    onPress={handleLogin}
-                    accessibilityRole="button"
-                    accessibilityLabel="Sign in"
-                    accessibilityHint="Signs in to your K-FIT account"
-                  >
-                    <Text style={styles.loginButtonText}>SIGN IN</Text>
-                  </Pressable>
-                )}
               </View>
 
               <View style={styles.signupRow}>
                 <Text style={styles.secondaryText}>
-                  Don&apos;t have an account?{" "}
+                  {isVerification
+                    ? "Already have an account? "
+                    : mode === "sign-up"
+                    ? "Already have an account? "
+                    : "Don’t have an account? "}
                 </Text>
                 <Pressable
-                  onPress={() =>
-                    Alert.alert("Sign Up", "Registration is coming soon.")
-                  }
-                  accessibilityRole="link"
+                  onPress={() => {
+                    setAuthError(null);
+                    setMode(
+                      isVerification || mode === "sign-up"
+                        ? "sign-in"
+                        : "sign-up",
+                    );
+                  }}
+                  accessibilityRole="button"
                   style={({ pressed }) => [
                     styles.signupButton,
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Text style={styles.signupText}>Sign Up.</Text>
+                  <Text style={styles.signupText}>
+                    {isVerification || mode === "sign-up"
+                      ? "Sign in"
+                      : "Sign up"}
+                  </Text>
                 </Pressable>
               </View>
             </View>
           </View>
 
-          <Text style={styles.footer}>© 2025 K-FIT. All rights reserved.</Text>
+          <Text style={styles.footer}>K-FIT Member Portal</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -472,6 +658,13 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: KFitColors.background,
+  },
+  statusContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.three,
+    padding: Spacing.four,
   },
   scrollContent: {
     flexGrow: 1,
@@ -628,18 +821,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 1,
   },
-  forgotButton: {
-    alignSelf: "flex-end",
-    minHeight: 48,
-    justifyContent: "center",
-    paddingHorizontal: Spacing.one,
-    marginTop: -Spacing.two,
-  },
-  forgotText: {
-    color: KFitColors.mutedText,
-    fontSize: 13,
-    fontWeight: "600",
-  },
   loginButton: {
     minHeight: 58,
     borderRadius: 12,
@@ -652,6 +833,20 @@ const styles = StyleSheet.create({
   },
   loginButtonPressed: {
     opacity: 0.86,
+  },
+  errorText: {
+    color: KFitColors.error,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  secondaryAction: {
+    minHeight: 44,
+    alignSelf: "flex-start",
+    justifyContent: "center",
+  },
+  statusAction: {
+    minHeight: 44,
+    justifyContent: "center",
   },
   loginButtonText: {
     color: KFitColors.background,

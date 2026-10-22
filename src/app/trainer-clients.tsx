@@ -6,11 +6,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import TrainerBottomNav from '@/components/TrainerBottomNav';
+import { useLogout } from '@/hooks/use-logout';
 
 export default function TrainerClientsScreen() {
-  const router = useRouter();
+  const { isSigningOut, logout } = useLogout();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -21,7 +21,7 @@ export default function TrainerClientsScreen() {
             <View style={styles.avatar}>
               <Text style={styles.avatarInitials}>MR</Text>
             </View>
-            <TouchableOpacity onPress={() => router.replace('/')}>
+            <TouchableOpacity disabled={isSigningOut} onPress={logout}>
               <Text style={styles.logout}>Logout</Text>
             </TouchableOpacity>
           </View>
