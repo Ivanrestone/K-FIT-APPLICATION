@@ -1,9 +1,12 @@
 import { KFitColors, Spacing } from "@/constants/theme";
-import { useAuth, useSSO } from "@clerk/expo";
+import { useAuth, useClerk, useSSO } from "@clerk/expo";
 import { useSignIn, useSignUp } from "@clerk/expo/legacy";
 import { createMemberSupabaseClient } from "@/utils/supabase";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { Image } from "expo-image";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,6 +21,10 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+// Closes the in-app browser tab on Android after OAuth completes so the
+// WebBrowser session resolves and control returns to startSSOFlow.
+WebBrowser.maybeCompleteAuthSession();
 
 const logo = require("../../assets/images/logo.jpg");
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
@@ -43,25 +50,62 @@ function getErrorMessage(error: unknown) {
 }
 
 function getExistingSessionId(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  if ("existingSession" in value) {
+    const existingSession = value.existingSession;
+    if (
+      typeof existingSession === "object" &&
+      existingSession !== null &&
+      "sessionId" in existingSession &&
+      typeof existingSession.sessionId === "string"
+    ) {
+      return existingSession.sessionId;
+    }
+  }
+
+  if (!("errors" in value) || !Array.isArray(value.errors)) {
+    return null;
+  }
+
+  for (const error of value.errors) {
+    if (
+      typeof error !== "object" ||
+      error === null ||
+      !("code" in error) ||
+      error.code !== "identifier_already_signed_in" ||
+      !("meta" in error) ||
+      typeof error.meta !== "object" ||
+      error.meta === null ||
+      !("sessionId" in error.meta) ||
+      typeof error.meta.sessionId !== "string"
+    ) {
+      continue;
+    }
+
+    return error.meta.sessionId;
+  }
+
+  return null;
+}
+
+function isIdentifierAlreadySignedInError(value: unknown): boolean {
   if (
     typeof value !== "object" ||
     value === null ||
-    !("existingSession" in value)
+    !("errors" in value) ||
+    !Array.isArray(value.errors)
   ) {
-    return null;
+    return false;
   }
 
-  const existingSession = value.existingSession;
-  if (
-    typeof existingSession !== "object" ||
-    existingSession === null ||
-    !("sessionId" in existingSession) ||
-    typeof existingSession.sessionId !== "string"
-  ) {
-    return null;
-  }
-
-  return existingSession.sessionId;
+  const firstError = value.errors[0];
+  return typeof firstError === "object" &&
+    firstError !== null &&
+    "code" in firstError &&
+    firstError.code === "identifier_already_signed_in";
 }
 
 export default function HomeScreen() {
@@ -92,8 +136,9 @@ function MissingClerkConfiguration() {
 
 function ConfiguredHomeScreen() {
   const router = useRouter();
+  const clerk = useClerk();
   const { width, height, fontScale } = useWindowDimensions();
-  const { getToken, isLoaded, isSignedIn, signOut, userId } = useAuth();
+  const { getToken, isLoaded, isSignedIn, signOut } = useAuth();
   const {
     isLoaded: isSignInLoaded,
     setActive: activateSignIn,
@@ -111,6 +156,7 @@ function ConfiguredHomeScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isForceLoggingOut, setIsForceLoggingOut] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [provisionError, setProvisionError] = useState<string | null>(null);
@@ -125,9 +171,7 @@ function ConfiguredHomeScreen() {
   const clientResult = useMemo(() => {
     try {
       return {
-        client: createMemberSupabaseClient(() =>
-          isSignedIn ? getToken() : Promise.resolve(null)
-        ),
+        client: createMemberSupabaseClient(getToken),
         error: null,
       };
     } catch {
@@ -136,10 +180,10 @@ function ConfiguredHomeScreen() {
         error: "Supabase profile access is not configured.",
       };
     }
-  }, [getToken, isSignedIn]);
+  }, [getToken]);
 
   const provisionAndRoute = useCallback(async () => {
-    if (!userId || !clientResult.client) {
+    if (!clientResult.client) {
       setProvisionError(
         clientResult.error ?? "Your signed in account is not available.",
       );
@@ -153,6 +197,23 @@ function ConfiguredHomeScreen() {
         "provision-user",
       );
       if (error) {
+        if (error instanceof FunctionsHttpError && error.context) {
+          try {
+            const body = await error.context.json();
+            if (
+              body &&
+              typeof body === "object" &&
+              "error" in body &&
+              typeof body.error === "string"
+            ) {
+              throw new Error(body.error);
+            }
+          } catch (inner) {
+            if (inner instanceof Error && inner.message !== error.message) {
+              throw inner;
+            }
+          }
+        }
         throw error;
       }
       if (
@@ -175,32 +236,74 @@ function ConfiguredHomeScreen() {
     } finally {
       setIsProvisioning(false);
     }
-  }, [clientResult, router, userId]);
+  }, [clientResult, router]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !userId) {
+    if (!isLoaded || !isSignedIn) {
       return;
     }
-    void Promise.resolve().then(provisionAndRoute);
-  }, [isLoaded, isSignedIn, provisionAndRoute, userId]);
+    // Clerk marks new sessions as 'pending' when session tasks are configured
+    // in the dashboard (e.g. email verification, org membership). K-Fit does
+    // not use Clerk session tasks — getToken() works on pending sessions and
+    // provisionAndRoute() succeeds regardless of session.status.
+    void Promise.resolve().then(() => {
+      return provisionAndRoute();
+    });
+  }, [isLoaded, isSignedIn, provisionAndRoute]);
 
   const handleGoogleLogin = async () => {
     setIsSubmitting(true);
     setAuthError(null);
+    let ssoResult: Awaited<ReturnType<typeof startSSOFlow>> | null = null;
     try {
-      const { authSessionResult, createdSessionId, setActive } =
-        await startSSOFlow({
-          strategy: "oauth_google",
-          oidcPrompt: "select_account",
-        });
+      ssoResult = await startSSOFlow({
+        strategy: "oauth_google",
+        // Redirect to the registered sso-callback route so Expo Router
+        // doesn't crash with "Unmatched Route" on the default deep-link.
+        redirectUrl: Linking.createURL("/sso-callback"),
+        oidcPrompt: "select_account",
+      });
+      const {
+        authSessionResult,
+        createdSessionId,
+        setActive,
+        signIn: ssoSignIn,
+        signUp: ssoSignUp,
+      } = ssoResult;
       if (authSessionResult?.type === "cancel") {
         return;
       }
-      if (!createdSessionId || !setActive) {
+      const sessionId = createdSessionId ??
+        getExistingSessionId(ssoSignIn) ??
+        getExistingSessionId(ssoSignUp);
+      if (!sessionId) {
         throw new Error("Google sign in did not complete. Please try again.");
       }
-      await setActive({ session: createdSessionId });
+      // Await setActive so the session is fully committed. Do NOT call
+      // provisionAndRoute() here — getToken() may not be ready immediately
+      // after setActive resolves. Instead, let the isSignedIn useEffect
+      // below handle routing once React state has fully propagated and
+      // sso-callback has redirected back to the index screen.
+      if (setActive) {
+        await setActive({ session: sessionId });
+      } else {
+        await clerk.setActive({ session: sessionId });
+      }
     } catch (error) {
+      if (isIdentifierAlreadySignedInError(error)) {
+        const existingSessionId = getExistingSessionId(error) ??
+          getExistingSessionId(ssoResult?.signIn) ??
+          getExistingSessionId(ssoResult?.signUp);
+        try {
+          if (existingSessionId) {
+            await clerk.setActive({ session: existingSessionId });
+          }
+          await provisionAndRoute();
+        } catch (recoveryError) {
+          setProvisionError(getErrorMessage(recoveryError));
+        }
+        return;
+      }
       setAuthError(getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
@@ -220,13 +323,30 @@ function ConfiguredHomeScreen() {
     setIsSubmitting(true);
     setAuthError(null);
     try {
-      const attempt = await signIn.create({
-        identifier: email.trim(),
-        password,
-      });
-      const sessionId = attempt.status === "complete"
-        ? attempt.createdSessionId
-        : getExistingSessionId(attempt);
+      let attempt: Awaited<ReturnType<typeof signIn.create>>;
+      try {
+        attempt = await signIn.create({
+          identifier: email.trim(),
+          password,
+        });
+      } catch (error) {
+        if (isIdentifierAlreadySignedInError(error)) {
+          const existingSessionId = getExistingSessionId(error) ??
+            getExistingSessionId(signIn);
+          try {
+            if (existingSessionId) {
+              await clerk.setActive({ session: existingSessionId });
+            }
+            await provisionAndRoute();
+          } catch (recoveryError) {
+            setProvisionError(getErrorMessage(recoveryError));
+          }
+          return;
+        }
+        throw error;
+      }
+      const sessionId = getExistingSessionId(attempt) ??
+        (attempt.status === "complete" ? attempt.createdSessionId : null);
       if (!sessionId) {
         throw new Error(
           "This account needs another verification step. Complete it in Clerk and try again.",
@@ -326,6 +446,23 @@ function ConfiguredHomeScreen() {
       await signOut();
     } catch (error) {
       setProvisionError(getErrorMessage(error));
+    }
+  };
+
+  const handleForceLogout = async () => {
+    setIsForceLoggingOut(true);
+    setAuthError(null);
+    try {
+      await signOut();
+      setEmail("");
+      setPassword("");
+      setVerificationCode("");
+      setMode("sign-in");
+      setProvisionError(null);
+    } catch (error) {
+      setAuthError(getErrorMessage(error));
+    } finally {
+      setIsForceLoggingOut(false);
     }
   };
 
@@ -608,9 +745,9 @@ function ConfiguredHomeScreen() {
                   </>
                 )}
 
-                {authError && (
+                {(authError || provisionError) && (
                   <Text style={styles.errorText} accessibilityRole="alert">
-                    {authError}
+                    {authError ?? provisionError}
                   </Text>
                 )}
 
@@ -670,6 +807,20 @@ function ConfiguredHomeScreen() {
           </View>
 
           <Text style={styles.footer}>K-FIT Member Portal</Text>
+          <Pressable
+            onPress={handleForceLogout}
+            disabled={isForceLoggingOut}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isForceLoggingOut }}
+            style={({ pressed }) => [
+              styles.forceLogoutButton,
+              pressed && !isForceLoggingOut && styles.pressed,
+            ]}
+          >
+            <Text style={styles.forceLogoutText}>
+              {isForceLoggingOut ? "Signing out…" : "Force Logout"}
+            </Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -894,6 +1045,17 @@ const styles = StyleSheet.create({
     color: KFitColors.accent,
     fontSize: 13,
     fontWeight: "700",
+  },
+  forceLogoutButton: {
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: Spacing.two,
+  },
+  forceLogoutText: {
+    color: KFitColors.mutedText,
+    fontSize: 13,
+    textDecorationLine: "underline",
   },
   signupButton: {
     minHeight: 44,
