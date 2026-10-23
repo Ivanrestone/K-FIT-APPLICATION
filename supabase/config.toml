@@ -415,13 +415,13 @@ enabled = true
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
 
 [functions.create-checkout-session]
-verify_jwt = true
+verify_jwt = false
 
 [functions.cancel-subscription]
-verify_jwt = true
+verify_jwt = false
 
 [functions.provision-user]
-verify_jwt = true
+verify_jwt = false
 
 [functions.paymongo-webhook]
 verify_jwt = false

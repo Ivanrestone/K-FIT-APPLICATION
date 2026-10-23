@@ -64,17 +64,10 @@ function AuthenticatedSubscriptionPaywall({
     setStartingFee(feeType);
     setActionMessage(null);
     try {
-      // invoke returns { data, error, response } where response is the raw
-      // fetch Response — the unconsumed body is available to read on error
-      // paths (supabase-js throws before reading it on non-2xx responses).
-      const {
-        data,
-        error,
-        response: rawResponse,
-      } = await (access.supabase.functions.invoke as (
-        fn: string,
-        opts: object
-      ) => Promise<{ data: unknown; error: unknown; response: Response | undefined }>)(
+      // The Edge Function always returns HTTP 200 — errors come back as
+      // { success: false, error: "..." } in the body so there is never a
+      // FunctionsHttpError and we can always read data directly.
+      const { data, error } = await access.supabase.functions.invoke(
         "create-checkout-session",
         {
           body: {
@@ -85,37 +78,36 @@ function AuthenticatedSubscriptionPaywall({
         },
       );
 
+      // Network / relay error (not an HTTP error from our function)
       if (error) {
-        // Read the JSON body from rawResponse (the unconsumed Response).
-        // This is the same object as FunctionsHttpError.context but accessed
-        // directly from the invoke return value to avoid any instanceof issue.
-        let message = "Could not start checkout.";
-        try {
-          if (rawResponse) {
-            const body: unknown = await rawResponse.json();
-            message =
-              typeof body === "object" &&
-              body !== null &&
-              "error" in body &&
-              typeof (body as { error: unknown }).error === "string"
-                ? (body as { error: string }).error
-                : (error instanceof Error ? error.message : message);
-          } else {
-            message = error instanceof Error ? error.message : message;
-          }
-        } catch {
-          message = error instanceof Error ? error.message : message;
-        }
-        Alert.alert("Checkout Error", message);
-        setActionMessage(message);
+        const msg = error instanceof Error
+          ? error.message
+          : "Could not reach checkout service.";
+        Alert.alert("Checkout Error", msg);
+        setActionMessage(msg);
+        return;
+      }
+
+      // Application-level error returned as { success: false, error }
+      const responseData = data as Record<string, unknown> | null;
+      if (
+        !responseData ||
+        responseData.success === false ||
+        typeof responseData.error === "string"
+      ) {
+        const msg = typeof responseData?.error === "string"
+          ? responseData.error
+          : "Could not start checkout.";
+        Alert.alert("Checkout Error", msg);
+        setActionMessage(msg);
         return;
       }
 
       const rawUrl =
-        (typeof data === "object" && data !== null && "checkout_url" in data && typeof data.checkout_url === "string")
-          ? (data as { checkout_url: string }).checkout_url
-          : (typeof data === "object" && data !== null && "checkoutUrl" in data && typeof data.checkoutUrl === "string")
-            ? (data as { checkoutUrl: string }).checkoutUrl
+        typeof responseData.checkout_url === "string"
+          ? responseData.checkout_url
+          : typeof responseData.checkoutUrl === "string"
+            ? responseData.checkoutUrl
             : null;
 
       if (!rawUrl) {
@@ -125,27 +117,7 @@ function AuthenticatedSubscriptionPaywall({
         return;
       }
 
-      let checkoutUrl: URL;
-      try {
-        checkoutUrl = new URL(rawUrl);
-      } catch {
-        const msg = "The payment service returned a malformed checkout URL.";
-        Alert.alert("Checkout Error", msg);
-        setActionMessage(msg);
-        return;
-      }
-
-      if (
-        checkoutUrl.protocol !== "https:" ||
-        checkoutUrl.hostname !== "checkout.paymongo.com"
-      ) {
-        const msg = "The payment service returned an untrusted checkout URL.";
-        Alert.alert("Checkout Error", msg);
-        setActionMessage(msg);
-        return;
-      }
-
-      await WebBrowser.openBrowserAsync(checkoutUrl.toString());
+      await WebBrowser.openBrowserAsync(rawUrl);
       access.refresh();
       setActionMessage(
         "Checkout opened. Access updates after PayMongo confirms payment.",

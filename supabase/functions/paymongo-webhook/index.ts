@@ -28,6 +28,11 @@ async function handleWebhook(request: Request): Promise<Response> {
       request.headers.get("paymongo-signature") ??
       request.headers.get("X-Paymongo-Signature");
 
+    if (!signature) {
+      console.error("Missing Paymongo-Signature header.");
+      return jsonResponse({ error: "Missing Paymongo-Signature header in request." }, 400);
+    }
+
     let signatureIsValid: boolean;
     try {
       signatureIsValid = await verifyPayMongoSignature(
@@ -41,7 +46,7 @@ async function handleWebhook(request: Request): Promise<Response> {
     }
 
     if (!signatureIsValid) {
-      console.error("Invalid PayMongo webhook signature received.");
+      console.error("Invalid PayMongo webhook signature received:", signature);
       return jsonResponse({ error: "Invalid webhook signature." }, 400);
     }
   } else {
@@ -59,16 +64,24 @@ async function handleWebhook(request: Request): Promise<Response> {
 
   const parsed = parseWebhookPaidSession(payload);
   if (!parsed) {
-    // If this is another PayMongo event type, acknowledge it without error
+    // If this is another PayMongo event type or a generic test event without K-Fit metadata,
+    // acknowledge with 200 so PayMongo marks the delivery as successful without retrying.
     if (isRecord(payload) && isRecord(payload.data)) {
       const eventType = isRecord(payload.data.attributes) &&
           typeof payload.data.attributes.type === "string"
         ? payload.data.attributes.type
         : payload.data.type;
-      if (
-        typeof eventType === "string" &&
-        eventType !== "checkout_session.payment.paid"
-      ) {
+
+      if (eventType === "checkout_session.payment.paid") {
+        console.warn("Received paid checkout session without K-Fit metadata (likely a dashboard test event). Acknowledged.");
+        return jsonResponse({
+          received: true,
+          ignored: true,
+          reason: "Missing K-Fit user_id or plan_type metadata.",
+        });
+      }
+
+      if (typeof eventType === "string") {
         return jsonResponse({ received: true, ignored: true, event_type: eventType });
       }
     }

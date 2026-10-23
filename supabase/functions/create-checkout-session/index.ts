@@ -22,6 +22,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+// Always return HTTP 200 for errors so supabase-js never wraps the response
+// in FunctionsHttpError. This lets the frontend read data.error reliably on
+// every JS runtime (including Hermes), without needing to parse error bodies.
+function errorJson(message: string): Response {
+  return jsonResponse({ success: false, error: message });
+}
+
 async function createCheckout(request: Request): Promise<Response> {
   const verifiedUserId = getVerifiedClerkUserId(request);
 
@@ -29,7 +36,7 @@ async function createCheckout(request: Request): Promise<Response> {
   try {
     body = await request.json();
   } catch {
-    return jsonResponse({ error: "Request body must be valid JSON." }, 400);
+    return errorJson("Request body must be valid JSON.");
   }
 
   const rawFeeType = isRecord(body)
@@ -37,7 +44,7 @@ async function createCheckout(request: Request): Promise<Response> {
     : null;
   const feeType = parseFeeType(rawFeeType);
   if (!feeType) {
-    return jsonResponse({ error: "feeType must be app or gym." }, 400);
+    return errorJson("feeType must be app or gym.");
   }
 
   const bodyUserId = isRecord(body) && typeof body.user_id === "string"
@@ -45,7 +52,7 @@ async function createCheckout(request: Request): Promise<Response> {
     : null;
   const userId = verifiedUserId || bodyUserId;
   if (!userId) {
-    return jsonResponse({ error: "A signed-in session is required." }, 401);
+    return errorJson("A signed-in session is required.");
   }
 
   let admin;
@@ -53,7 +60,7 @@ async function createCheckout(request: Request): Promise<Response> {
     admin = createAdminClient();
   } catch (error) {
     console.error("Supabase server credentials are unavailable:", error);
-    return jsonResponse({ error: "Payment service is not configured." }, 500);
+    return errorJson("Payment service is not configured.");
   }
 
   const { data: user, error: userError } = await admin
@@ -64,18 +71,16 @@ async function createCheckout(request: Request): Promise<Response> {
 
   if (userError) {
     console.error("Could not load checkout user role:", userError.message);
-    return jsonResponse({ error: "Could not verify account access." }, 500);
+    return errorJson("Could not verify account access.");
   }
   if (!user) {
-    return jsonResponse({
-      error: "Your account is not provisioned for subscriptions.",
-    }, 404);
+    return errorJson("Your account is not provisioned for subscriptions.");
   }
   if (
     (feeType === "gym" && user.role !== "member") ||
     (feeType === "app" && user.role !== "member" && user.role !== "coach")
   ) {
-    return jsonResponse({ error: "This account cannot buy that plan." }, 403);
+    return errorJson("This account cannot buy that plan.");
   }
 
   const subscriptionTable = feeType === "app"
@@ -92,25 +97,17 @@ async function createCheckout(request: Request): Promise<Response> {
       "Could not load checkout subscription:",
       subscriptionError.message,
     );
-    return jsonResponse(
-      { error: "Could not verify subscription status." },
-      500,
-    );
+    return errorJson("Could not verify subscription status.");
   }
   if (!subscription) {
-    return jsonResponse({
-      error: "Your subscription record is not provisioned.",
-    }, 404);
+    return errorJson("Your subscription record is not provisioned.");
   }
 
   const expiresAt = subscription.expires_at
     ? Date.parse(subscription.expires_at)
     : Number.NaN;
   if (subscription.active && !Number.isFinite(expiresAt)) {
-    return jsonResponse({
-      error:
-        "Subscription status is incomplete. Contact your gym administrator.",
-    }, 409);
+    return errorJson("Subscription status is incomplete. Contact your gym administrator.");
   }
   if (
     subscription.active &&
@@ -118,9 +115,7 @@ async function createCheckout(request: Request): Promise<Response> {
     Number.isFinite(expiresAt) &&
     expiresAt > Date.now()
   ) {
-    return jsonResponse({
-      error: "This canceled plan remains active until its paid-through date.",
-    }, 409);
+    return errorJson("This canceled plan remains active until its paid-through date.");
   }
 
   const { data: plans, error: planError } = await admin
@@ -134,15 +129,10 @@ async function createCheckout(request: Request): Promise<Response> {
 
   if (planError) {
     console.error("Could not load active checkout plan:", planError.message);
-    return jsonResponse(
-      { error: "Could not load the current plan price." },
-      500,
-    );
+    return errorJson("Could not load the current plan price.");
   }
   if (!plans || plans.length !== 1) {
-    return jsonResponse({
-      error: "This plan is currently unavailable for purchase.",
-    }, 409);
+    return errorJson("This plan is currently unavailable for purchase.");
   }
 
   const plan = plans[0];
@@ -153,15 +143,13 @@ async function createCheckout(request: Request): Promise<Response> {
     amountCentavos === null
   ) {
     console.error("The active checkout plan contains invalid pricing data.");
-    return jsonResponse({ error: "The current plan price is invalid." }, 500);
+    return errorJson("The current plan price is invalid.");
   }
 
   const secretKey = Deno.env.get("PAYMONGO_SECRET_KEY");
   if (!secretKey?.startsWith("sk_test_")) {
     console.error("PAYMONGO_SECRET_KEY must be a rotated test-mode key.");
-    return jsonResponse({
-      error: "Payment service is not configured for test mode.",
-    }, 500);
+    return errorJson("Payment service is not configured for test mode.");
   }
 
   const title = feeType === "app"
@@ -207,9 +195,7 @@ async function createCheckout(request: Request): Promise<Response> {
     );
   } catch (error) {
     console.error("PayMongo Checkout Session request failed:", error);
-    return jsonResponse({
-      error: "Could not connect to PayMongo. Please try again.",
-    }, 502);
+    return errorJson("Could not connect to PayMongo. Please try again.");
   }
 
   if (!paymongoResponse.ok) {
@@ -237,52 +223,42 @@ async function createCheckout(request: Request): Promise<Response> {
         paymongoResponse.status,
       );
     }
-    return jsonResponse({ error: paymongoError }, 502);
+    return errorJson(paymongoError);
   }
 
   let payload: unknown;
   try {
     payload = await paymongoResponse.json();
   } catch {
-    return jsonResponse({
-      error: "PayMongo returned an invalid checkout response.",
-    }, 502);
+    return errorJson("PayMongo returned an invalid checkout response.");
   }
 
   if (!isRecord(payload) || !isRecord(payload.data)) {
-    return jsonResponse({
-      error: "PayMongo returned an invalid checkout response.",
-    }, 502);
+    return errorJson("PayMongo returned an invalid checkout response.");
   }
 
   const attributes = payload.data.attributes;
   const checkoutUrl = isRecord(attributes) ? attributes.checkout_url : null;
   const sessionId = payload.data.id;
   if (typeof checkoutUrl !== "string" || typeof sessionId !== "string") {
-    return jsonResponse({
-      error: "PayMongo returned an incomplete checkout response.",
-    }, 502);
+    return errorJson("PayMongo returned an incomplete checkout response.");
   }
 
   let parsedCheckoutUrl: URL;
   try {
     parsedCheckoutUrl = new URL(checkoutUrl);
   } catch {
-    return jsonResponse(
-      { error: "PayMongo returned an invalid checkout URL." },
-      502,
-    );
+    return errorJson("PayMongo returned an invalid checkout URL.");
   }
   if (
     parsedCheckoutUrl.protocol !== "https:" ||
     parsedCheckoutUrl.hostname !== "checkout.paymongo.com"
   ) {
-    return jsonResponse({
-      error: "PayMongo returned an untrusted checkout URL.",
-    }, 502);
+    return errorJson("PayMongo returned an untrusted checkout URL.");
   }
 
   return jsonResponse({
+    success: true,
     checkout_url: checkoutUrl,
     checkoutUrl,
     sessionId,
@@ -294,7 +270,7 @@ async function handleRequest(request: Request): Promise<Response> {
     return new Response(null, { headers: corsHeaders });
   }
   if (request.method !== "POST") {
-    return jsonResponse({ error: "Method not allowed." }, 405);
+    return errorJson("Method not allowed.");
   }
 
   return createCheckout(request);
@@ -303,6 +279,6 @@ async function handleRequest(request: Request): Promise<Response> {
 Deno.serve((request) =>
   handleRequest(request).catch((error: unknown) => {
     console.error("Unexpected checkout function error:", error);
-    return jsonResponse({ error: "Could not process checkout request." }, 500);
+    return errorJson("Could not process checkout request.");
   })
 );
