@@ -131,85 +131,111 @@ async function createHmacHex(value: string, secret: string): Promise<string> {
   ).join("");
 }
 
-export function parsePaidCheckoutEvent(value: unknown): PaidCheckout | null {
+export type WebhookPaidSession = {
+  sessionId: string;
+  userId: string;
+  planType: FeeType;
+  pricingPlanId?: string | null;
+  amountCentavos?: number | null;
+  paidAt: string;
+};
+
+export function parseWebhookPaidSession(value: unknown): WebhookPaidSession | null {
   if (!isRecord(value) || !isRecord(value.data)) {
     return null;
   }
 
-  const event = value.data;
-  if (
-    event.type !== "checkout_session.payment.paid" ||
-    event.livemode !== false ||
-    !isRecord(event.data) ||
-    event.data.type !== "checkout_session" ||
-    typeof event.data.id !== "string" ||
-    !isRecord(event.data.attributes)
-  ) {
+  const data = value.data;
+  let eventType: string | null = null;
+  let sessionObj: Record<string, unknown> | null = null;
+
+  if (isRecord(data.attributes) && typeof data.attributes.type === "string") {
+    eventType = data.attributes.type;
+    if (isRecord(data.attributes.data)) {
+      sessionObj = data.attributes.data;
+    }
+  } else if (typeof data.type === "string") {
+    eventType = data.type;
+    if (isRecord(data.data)) {
+      sessionObj = data.data;
+    }
+  }
+
+  if (eventType !== "checkout_session.payment.paid" || !sessionObj) {
     return null;
   }
 
-  const attributes = event.data.attributes;
-  if (
-    attributes.status === "expired" ||
-    !isRecord(attributes.metadata) ||
-    !Array.isArray(attributes.payments)
-  ) {
+  const sessionId = typeof sessionObj.id === "string" ? sessionObj.id : "";
+  const sessionAttributes = isRecord(sessionObj.attributes) ? sessionObj.attributes : {};
+  const metadata = isRecord(sessionAttributes.metadata) ? sessionAttributes.metadata : {};
+
+  const rawUserId = metadata.user_id ?? metadata.kfit_user_id;
+  const userId = typeof rawUserId === "string" ? rawUserId.trim() : null;
+  if (!userId) {
     return null;
   }
 
-  const metadata = attributes.metadata;
-  const feeType = parseFeeType(metadata.kfit_fee_type);
-  const userId = metadata.kfit_user_id;
-  const pricingPlanId = metadata.kfit_pricing_plan_id;
-  const amountValue = metadata.kfit_amount_centavos;
-  if (
-    !feeType ||
-    typeof userId !== "string" ||
-    !userId.trim() ||
-    userId.length > 255 ||
-    typeof pricingPlanId !== "string" ||
-    !UUID_PATTERN.test(pricingPlanId) ||
-    typeof amountValue !== "string" ||
-    !/^[1-9]\d*$/.test(amountValue)
-  ) {
+  const rawPlanType = metadata.plan_type ?? metadata.feeType ?? metadata.kfit_fee_type;
+  const planType = parseFeeType(rawPlanType);
+  if (!planType) {
     return null;
   }
 
-  const amountCentavos = Number(amountValue);
-  const paidPayments = attributes.payments.filter((payment) =>
-    isRecord(payment) &&
-    isRecord(payment.attributes) &&
-    payment.attributes.status === "paid"
-  );
-  if (
-    !Number.isSafeInteger(amountCentavos) ||
-    amountCentavos <= 0 ||
-    paidPayments.length !== 1
-  ) {
-    return null;
+  const rawPricingPlanId = metadata.kfit_pricing_plan_id;
+  const pricingPlanId = typeof rawPricingPlanId === "string" && UUID_PATTERN.test(rawPricingPlanId)
+    ? rawPricingPlanId
+    : null;
+
+  const rawAmount = metadata.kfit_amount_centavos;
+  let amountCentavos: number | null = null;
+  if (typeof rawAmount === "string" && /^[1-9]\d*$/.test(rawAmount)) {
+    amountCentavos = Number(rawAmount);
+  } else if (typeof rawAmount === "number" && Number.isSafeInteger(rawAmount) && rawAmount > 0) {
+    amountCentavos = rawAmount;
   }
 
-  const paidPayment = paidPayments[0];
-  if (!isRecord(paidPayment) || !isRecord(paidPayment.attributes)) {
-    return null;
+  let paidAt: string | null = null;
+  if (Array.isArray(sessionAttributes.payments) && sessionAttributes.payments.length > 0) {
+    const firstPayment = sessionAttributes.payments[0];
+    if (isRecord(firstPayment) && isRecord(firstPayment.attributes)) {
+      if (amountCentavos === null && typeof firstPayment.attributes.amount === "number") {
+        amountCentavos = firstPayment.attributes.amount;
+      }
+      paidAt = parsePaidAt(firstPayment.attributes.paid_at);
+    }
+  }
+  if (!paidAt) {
+    paidAt = parsePaidAt(sessionAttributes.paid_at) ?? new Date().toISOString();
   }
 
-  const paidAttributes = paidPayment.attributes;
-  const paidAt = parsePaidAt(paidAttributes.paid_at);
+  return {
+    sessionId,
+    userId,
+    planType,
+    pricingPlanId,
+    amountCentavos,
+    paidAt,
+  };
+}
+
+export function parsePaidCheckoutEvent(value: unknown): PaidCheckout | null {
+  const parsed = parseWebhookPaidSession(value);
   if (
-    paidAttributes.currency !== "PHP" ||
-    paidAttributes.amount !== amountCentavos ||
-    !paidAt
+    !parsed ||
+    !parsed.pricingPlanId ||
+    !parsed.amountCentavos ||
+    !parsed.sessionId
   ) {
     return null;
   }
 
   return {
-    sessionId: event.data.id,
-    userId,
-    pricingPlanId,
-    feeType,
-    amountCentavos,
-    paidAt,
+    sessionId: parsed.sessionId,
+    userId: parsed.userId,
+    pricingPlanId: parsed.pricingPlanId,
+    feeType: parsed.planType,
+    amountCentavos: parsed.amountCentavos,
+    paidAt: parsed.paidAt,
   };
 }
+

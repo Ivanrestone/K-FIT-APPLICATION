@@ -57,54 +57,106 @@ function AuthenticatedSubscriptionPaywall({
 
   const startCheckout = useCallback(async (feeType: SubscriptionPlanType) => {
     if (!access.supabase) {
-      setActionMessage("Payment service is unavailable. Please try again.");
+      Alert.alert("Checkout Error", "Payment service is unavailable. Please try again.");
       return;
     }
 
     setStartingFee(feeType);
     setActionMessage(null);
     try {
-      const { data, error } = await access.supabase.functions.invoke(
+      // invoke returns { data, error, response } where response is the raw
+      // fetch Response — the unconsumed body is available to read on error
+      // paths (supabase-js throws before reading it on non-2xx responses).
+      const {
+        data,
+        error,
+        response: rawResponse,
+      } = await (access.supabase.functions.invoke as (
+        fn: string,
+        opts: object
+      ) => Promise<{ data: unknown; error: unknown; response: Response | undefined }>)(
         "create-checkout-session",
-        { body: { feeType } },
+        {
+          body: {
+            feeType,
+            plan_type: feeType,
+            user_id: access.data?.userId,
+          },
+        },
       );
+
       if (error) {
-        throw new Error(error.message || "Could not start checkout.");
-      }
-      if (
-        typeof data !== "object" ||
-        data === null ||
-        !("checkoutUrl" in data) ||
-        typeof data.checkoutUrl !== "string"
-      ) {
-        throw new Error("The payment service returned an invalid checkout URL.");
+        // Read the JSON body from rawResponse (the unconsumed Response).
+        // This is the same object as FunctionsHttpError.context but accessed
+        // directly from the invoke return value to avoid any instanceof issue.
+        let message = "Could not start checkout.";
+        try {
+          if (rawResponse) {
+            const body: unknown = await rawResponse.json();
+            message =
+              typeof body === "object" &&
+              body !== null &&
+              "error" in body &&
+              typeof (body as { error: unknown }).error === "string"
+                ? (body as { error: string }).error
+                : (error instanceof Error ? error.message : message);
+          } else {
+            message = error instanceof Error ? error.message : message;
+          }
+        } catch {
+          message = error instanceof Error ? error.message : message;
+        }
+        Alert.alert("Checkout Error", message);
+        setActionMessage(message);
+        return;
       }
 
-      const checkoutUrl = new URL(data.checkoutUrl);
+      const rawUrl =
+        (typeof data === "object" && data !== null && "checkout_url" in data && typeof data.checkout_url === "string")
+          ? (data as { checkout_url: string }).checkout_url
+          : (typeof data === "object" && data !== null && "checkoutUrl" in data && typeof data.checkoutUrl === "string")
+            ? (data as { checkoutUrl: string }).checkoutUrl
+            : null;
+
+      if (!rawUrl) {
+        const msg = "The payment service returned an invalid checkout URL.";
+        Alert.alert("Checkout Error", msg);
+        setActionMessage(msg);
+        return;
+      }
+
+      let checkoutUrl: URL;
+      try {
+        checkoutUrl = new URL(rawUrl);
+      } catch {
+        const msg = "The payment service returned a malformed checkout URL.";
+        Alert.alert("Checkout Error", msg);
+        setActionMessage(msg);
+        return;
+      }
+
       if (
         checkoutUrl.protocol !== "https:" ||
         checkoutUrl.hostname !== "checkout.paymongo.com"
       ) {
-        throw new Error("The payment service returned an untrusted checkout URL.");
+        const msg = "The payment service returned an untrusted checkout URL.";
+        Alert.alert("Checkout Error", msg);
+        setActionMessage(msg);
+        return;
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(
-        checkoutUrl.toString(),
-        "k-fit://member-membership",
-      );
+      await WebBrowser.openBrowserAsync(checkoutUrl.toString());
       access.refresh();
       setActionMessage(
-        result.type === "success"
-          ? "Checkout returned to K-Fit. Access updates after PayMongo confirms payment."
-          : "Checkout was closed. Access changes only after PayMongo confirms payment.",
+        "Checkout opened. Access updates after PayMongo confirms payment.",
       );
     } catch (error) {
+      const msg = error instanceof Error
+        ? error.message
+        : "Could not start checkout. Please try again.";
+      Alert.alert("Checkout Error", msg);
       access.refresh();
-      setActionMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not start checkout. Please try again.",
-      );
+      setActionMessage(msg);
     } finally {
       setStartingFee(null);
     }
