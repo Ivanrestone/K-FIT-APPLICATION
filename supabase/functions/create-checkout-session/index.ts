@@ -23,10 +23,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 async function createCheckout(request: Request): Promise<Response> {
-  const userId = getVerifiedClerkUserId(request);
-  if (!userId) {
-    return jsonResponse({ error: "A signed-in session is required." }, 401);
-  }
+  const verifiedUserId = getVerifiedClerkUserId(request);
 
   let body: unknown;
   try {
@@ -35,9 +32,20 @@ async function createCheckout(request: Request): Promise<Response> {
     return jsonResponse({ error: "Request body must be valid JSON." }, 400);
   }
 
-  const feeType = isRecord(body) ? parseFeeType(body.feeType) : null;
+  const rawFeeType = isRecord(body)
+    ? (body.plan_type ?? body.feeType)
+    : null;
+  const feeType = parseFeeType(rawFeeType);
   if (!feeType) {
     return jsonResponse({ error: "feeType must be app or gym." }, 400);
+  }
+
+  const bodyUserId = isRecord(body) && typeof body.user_id === "string"
+    ? body.user_id.trim()
+    : null;
+  const userId = verifiedUserId || bodyUserId;
+  if (!userId) {
+    return jsonResponse({ error: "A signed-in session is required." }, 401);
   }
 
   let admin;
@@ -172,18 +180,21 @@ async function createCheckout(request: Request): Promise<Response> {
         body: JSON.stringify({
           data: {
             attributes: {
+              send_email_receipt: true,
               line_items: [{
                 name: title,
                 amount: amountCentavos,
                 currency: "PHP",
                 quantity: 1,
               }],
-              payment_method_types: ["card", "gcash", "qrph"],
+              payment_method_types: ["card", "gcash", "paymaya", "qrph"],
               pass_on_fees: false,
               success_url: "k-fit://member-membership?payment=success",
               cancel_url: "k-fit://member-membership?payment=cancelled",
               reference_number: `KF-${feeType}-${crypto.randomUUID()}`,
               metadata: {
+                user_id: userId,
+                plan_type: feeType,
                 kfit_user_id: userId,
                 kfit_fee_type: feeType,
                 kfit_pricing_plan_id: plan.id,
@@ -202,13 +213,31 @@ async function createCheckout(request: Request): Promise<Response> {
   }
 
   if (!paymongoResponse.ok) {
-    console.error(
-      "PayMongo rejected Checkout Session request:",
-      paymongoResponse.status,
-    );
-    return jsonResponse({
-      error: "PayMongo could not start checkout. Please try again.",
-    }, 502);
+    let paymongoError = "PayMongo could not start checkout. Please try again.";
+    try {
+      const errBody: unknown = await paymongoResponse.json();
+      console.error(
+        "PayMongo rejected Checkout Session:",
+        paymongoResponse.status,
+        JSON.stringify(errBody),
+      );
+      // PayMongo error shape: { errors: [{ code, detail }] }
+      if (
+        isRecord(errBody) &&
+        Array.isArray(errBody.errors) &&
+        errBody.errors.length > 0 &&
+        isRecord(errBody.errors[0]) &&
+        typeof errBody.errors[0].detail === "string"
+      ) {
+        paymongoError = `PayMongo: ${errBody.errors[0].detail}`;
+      }
+    } catch {
+      console.error(
+        "PayMongo rejected Checkout Session:",
+        paymongoResponse.status,
+      );
+    }
+    return jsonResponse({ error: paymongoError }, 502);
   }
 
   let payload: unknown;
@@ -253,7 +282,11 @@ async function createCheckout(request: Request): Promise<Response> {
     }, 502);
   }
 
-  return jsonResponse({ checkoutUrl, sessionId });
+  return jsonResponse({
+    checkout_url: checkoutUrl,
+    checkoutUrl,
+    sessionId,
+  });
 }
 
 async function handleRequest(request: Request): Promise<Response> {
