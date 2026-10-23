@@ -93,23 +93,41 @@ export async function verifyPayMongoSignature(
       return false;
     }
 
-    expectedSignature = await createHmacHex(
-      `${timestamp}.${rawBody}`,
-      secret,
-    );
-    receivedSignature = testSignature;
+    const targetSignature = testSignature.toLowerCase();
+    const bodyCandidates = [
+      rawBody,
+      rawBody.trim(),
+      rawBody.replace(/\r\n/g, "\n"),
+      rawBody.replace(/\r\n/g, "\n").trim(),
+    ];
+
+    for (const candidate of bodyCandidates) {
+      const candidateHmac = await createHmacHex(
+        `${timestamp}.${candidate}`,
+        secret,
+      );
+      if (safeHexEqual(candidateHmac, targetSignature)) {
+        return true;
+      }
+    }
+    return false;
   } else {
     if (!/^[\da-f]{64}$/i.test(signature)) {
       return false;
     }
-    expectedSignature = await createHmacHex(rawBody, secret);
-    receivedSignature = signature;
+    const targetSignature = signature.toLowerCase();
+    const candidateHmac = await createHmacHex(rawBody, secret);
+    return safeHexEqual(candidateHmac, targetSignature);
   }
+}
 
-  let difference = expectedSignature.length ^ receivedSignature.length;
-  for (let index = 0; index < expectedSignature.length; index += 1) {
-    difference |= expectedSignature.charCodeAt(index) ^
-      receivedSignature.toLowerCase().charCodeAt(index);
+function safeHexEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let difference = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    difference |= a.charCodeAt(index) ^ b.charCodeAt(index);
   }
   return difference === 0;
 }
