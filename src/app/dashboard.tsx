@@ -1,7 +1,9 @@
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
+import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
+import * as Speech from "expo-speech";
 
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -36,6 +38,8 @@ type TurnstileEvent = {
   timestamp: string;
 };
 
+type FeatherIconName = keyof typeof Feather.glyphMap;
+
 /* ------------------------------------------------------------------ */
 /* Realtime gate stream                                                */
 /* ------------------------------------------------------------------ */
@@ -63,7 +67,7 @@ const GATES = ["Gate A", "Gate B", "Main Entrance", "Studio Wing"];
 type QuickRoute = {
   title: string;
   subtitle: string;
-  emoji: string;
+  icon: FeatherIconName;
   route: string;
 };
 
@@ -71,43 +75,43 @@ const QUICK_ROUTES: QuickRoute[] = [
   {
     title: "Manage Members",
     subtitle: "View and manage gym members",
-    emoji: "👥",
+    icon: "users",
     route: "/members",
   },
   {
     title: "Races & Challenges",
     subtitle: "Run challenges and view the leaderboard",
-    emoji: "🏆",
+    icon: "award",
     route: "/challenges",
   },
   {
     title: "Attendance",
     subtitle: "Check-ins and class attendance",
-    emoji: "📅",
+    icon: "calendar",
     route: "/attendance",
   },
   {
     title: "Trainers",
     subtitle: "Manage trainers and PT sessions",
-    emoji: "🏋️",
+    icon: "user-check",
     route: "/trainers",
   },
   {
     title: "Memberships",
     subtitle: "Plans and renewals",
-    emoji: "💳",
+    icon: "credit-card",
     route: "/memberships",
   },
   {
     title: "Payments",
     subtitle: "View revenue and collect dues",
-    emoji: "💵",
+    icon: "dollar-sign",
     route: "/payments",
   },
   {
     title: "Gate Scanner",
     subtitle: "Scan member passes at the door",
-    emoji: "📷",
+    icon: "camera",
     route: "/admin-scanner",
   },
 ];
@@ -622,6 +626,91 @@ function FacilityMetrics({
 }
 
 /* ------------------------------------------------------------------ */
+/* Attention item (icon + text + count)                                */
+/* ------------------------------------------------------------------ */
+function AttentionItem({
+  icon,
+  tone,
+  title,
+  subtitle,
+  count,
+}: {
+  icon: FeatherIconName;
+  tone: string;
+  title: string;
+  subtitle: string;
+  count: number;
+}) {
+  return (
+    <View style={styles.attentionItem}>
+      <View style={[styles.attentionIcon, { backgroundColor: tone + "1A" }]}>
+        <Feather name={icon} size={18} color={tone} />
+      </View>
+      <View style={styles.attentionContent}>
+        <Text style={styles.attentionTitle}>{title}</Text>
+        <Text style={styles.attentionSubtitle}>{subtitle}</Text>
+      </View>
+      <Text style={styles.attentionCount}>{count}</Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Sound effects + voice announcements                                 */
+/* ------------------------------------------------------------------ */
+/**
+ * Preloads the short sound files and exposes play helpers.
+ * The helpers read `enabled` from a ref, so they are safe to call from the
+ * gate-stream subscription (which would otherwise see a stale value).
+ */
+function useSoundEffects(enabled: boolean) {
+  const scanIn = useAudioPlayer(require("@/assets/sounds/scan-in.wav"));
+  const scanOut = useAudioPlayer(require("@/assets/sounds/scan-out.wav"));
+  const alertChime = useAudioPlayer(require("@/assets/sounds/alert.wav"));
+  const warning = useAudioPlayer(require("@/assets/sounds/warning.wav"));
+
+  const enabledRef = useRef(enabled);
+  useEffect(() => {
+    enabledRef.current = enabled;
+    if (!enabled) Speech.stop();
+  }, [enabled]);
+
+  // Let sounds play even when the iPhone silent switch is on
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+    return () => {
+      Speech.stop();
+    };
+  }, []);
+
+  const play = (
+    player: { seekTo: (s: number) => unknown; play: () => void },
+    force = false,
+  ) => {
+    if (!force && !enabledRef.current) return;
+    try {
+      player.seekTo(0);
+      player.play();
+    } catch (error) {
+      console.warn("Sound failed to play:", error);
+    }
+  };
+
+  return {
+    playScan: (direction: "IN" | "OUT") =>
+      play(direction === "IN" ? scanIn : scanOut),
+    playWarning: () => play(warning),
+    playAlert: () => play(alertChime),
+    preview: () => play(scanIn, true),
+    speak: (text: string) => {
+      if (!enabledRef.current) return;
+      Speech.stop();
+      Speech.speak(text, { rate: 0.95 });
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Dashboard Screen                                                    */
 /* ------------------------------------------------------------------ */
 export default function DashboardScreen() {
@@ -645,6 +734,16 @@ export default function DashboardScreen() {
 
   /* ---------------- Turnstile stream log ---------------- */
   const [streamLog, setStreamLog] = useState<TurnstileEvent[]>([]);
+
+  /* ---------------- Sound ---------------- */
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const sounds = useSoundEffects(soundEnabled);
+
+  const handleToggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    if (next) sounds.preview();
+  };
 
   const activeInsideRef = useRef(activeInside);
   const capacityRef = useRef(capacity);
@@ -676,6 +775,12 @@ export default function DashboardScreen() {
     );
     activeInsideRef.current = next;
     setActiveInside(next);
+
+    const capNow = capacityRef.current;
+    const crossedIntoHigh =
+      (next / capNow) * 100 >= 90 && (current / capNow) * 100 < 90;
+    if (crossedIntoHigh) sounds.playWarning();
+    else sounds.playScan(direction);
     setGateScans((n) => n + 1);
     setLastUpdated(Date.now());
     setIsLive(true);
@@ -780,6 +885,8 @@ export default function DashboardScreen() {
   const dispatchBroadcast = () => {
     const message = broadcastText.trim() || "Gym floor closing in 30 minutes.";
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    sounds.playAlert();
+    sounds.speak(message);
     setShowBroadcast(false);
     setBroadcastText("");
 
@@ -838,12 +945,33 @@ export default function DashboardScreen() {
             <View style={styles.headerActions}>
               <TouchableOpacity
                 accessibilityRole="button"
+                accessibilityLabel={
+                  soundEnabled ? "Mute sounds" : "Turn sounds on"
+                }
+                style={[
+                  styles.broadcastButton,
+                  soundEnabled && styles.soundButtonOn,
+                ]}
+                onPress={handleToggleSound}
+                activeOpacity={0.7}
+              >
+                <Feather
+                  name={soundEnabled ? "volume-2" : "volume-x"}
+                  size={15}
+                  color={
+                    soundEnabled ? KFitColors.accent : KFitColors.mutedText
+                  }
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                accessibilityRole="button"
                 accessibilityLabel="Compose push alert"
                 style={styles.broadcastButton}
                 onPress={() => setShowBroadcast(true)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.broadcastEmoji}>📢</Text>
+                <Feather name="bell" size={15} color={KFitColors.accent} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -853,7 +981,7 @@ export default function DashboardScreen() {
                 onPress={() => router.push("/challenges" as any)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.broadcastEmoji}>🏆</Text>
+                <Feather name="award" size={15} color={KFitColors.accent} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -863,7 +991,7 @@ export default function DashboardScreen() {
                 onPress={() => router.push("/members")}
                 activeOpacity={0.8}
               >
-                <Text style={styles.addButtonText}>+</Text>
+                <Feather name="plus" size={18} color={KFitColors.onAccent} />
               </TouchableOpacity>
             </View>
           </View>
@@ -889,78 +1017,31 @@ export default function DashboardScreen() {
             streamLog={streamLog}
           />
 
-          {/* Revenue Overview */}
-          <Text style={styles.sectionTitle}>Revenue Overview</Text>
-
-          <View style={styles.chartCard}>
-            <View style={styles.chartHeader}>
-              <Text style={styles.chartTitle}>Monthly Revenue</Text>
-              <Text style={styles.chartPeriod}>Last 6 months</Text>
-            </View>
-
-            <View style={styles.chartPlaceholder}>
-              {[
-                { label: "Jun", h: "40%" },
-                { label: "Jul", h: "55%" },
-                { label: "Aug", h: "45%" },
-                { label: "Sep", h: "70%" },
-                { label: "Oct", h: "60%" },
-                { label: "Nov", h: "85%", active: true },
-              ].map((bar) => (
-                <View key={bar.label} style={styles.barContainer}>
-                  <View
-                    style={[
-                      styles.bar,
-                      bar.active && styles.barActive,
-                      { height: bar.h as `${number}%` },
-                    ]}
-                  />
-                  <Text style={styles.barLabel}>{bar.label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
           {/* Attention Needed */}
           <Text style={styles.sectionTitle}>Attention Needed</Text>
 
           <View style={styles.attentionCard}>
-            <View style={styles.attentionItem}>
-              <View style={styles.attentionIcon}>
-                <Text style={styles.attentionIconText}>⚠️</Text>
-              </View>
-              <View style={styles.attentionContent}>
-                <Text style={styles.attentionTitle}>
-                  12 Membership Renewals
-                </Text>
-                <Text style={styles.attentionSubtitle}>Expiring this week</Text>
-              </View>
-              <Text style={styles.attentionCount}>12</Text>
-            </View>
-
-            <View style={styles.attentionItem}>
-              <View style={styles.attentionIcon}>
-                <Text style={styles.attentionIconText}>💳</Text>
-              </View>
-              <View style={styles.attentionContent}>
-                <Text style={styles.attentionTitle}>5 Unpaid Invoices</Text>
-                <Text style={styles.attentionSubtitle}>Total: $1,250</Text>
-              </View>
-              <Text style={styles.attentionCount}>5</Text>
-            </View>
-
-            <View style={styles.attentionItem}>
-              <View style={styles.attentionIcon}>
-                <Text style={styles.attentionIconText}>📈</Text>
-              </View>
-              <View style={styles.attentionContent}>
-                <Text style={styles.attentionTitle}>
-                  3 Classes Near Capacity
-                </Text>
-                <Text style={styles.attentionSubtitle}>Yoga, HIIT, Spin</Text>
-              </View>
-              <Text style={styles.attentionCount}>3</Text>
-            </View>
+            <AttentionItem
+              icon="alert-triangle"
+              tone={KFitColors.error}
+              title="12 Membership Renewals"
+              subtitle="Expiring this week"
+              count={12}
+            />
+            <AttentionItem
+              icon="credit-card"
+              tone={KFitColors.accent}
+              title="5 Unpaid Invoices"
+              subtitle="Total: $1,250"
+              count={5}
+            />
+            <AttentionItem
+              icon="trending-up"
+              tone={KFitColors.accent}
+              title="3 Classes Near Capacity"
+              subtitle="Yoga, HIIT, Spin"
+              count={3}
+            />
           </View>
 
           {/* Upcoming Sessions */}
@@ -1035,23 +1116,30 @@ export default function DashboardScreen() {
               accessibilityRole="button"
               accessibilityLabel={item.title}
             >
-              <Text style={styles.actionIcon}>{item.emoji}</Text>
+              <View style={styles.actionIconBox}>
+                <Feather name={item.icon} size={18} color={KFitColors.accent} />
+              </View>
               <View style={styles.actionContent}>
                 <Text style={styles.actionTitle}>{item.title}</Text>
                 <Text style={styles.actionSubtitle}>{item.subtitle}</Text>
               </View>
-              <Text style={styles.arrow}>›</Text>
+              <Feather
+                name="chevron-right"
+                size={20}
+                color={KFitColors.mutedText}
+              />
             </TouchableOpacity>
           ))}
 
           <Text style={styles.footer}>K-FIT · Gym Management Dashboard</Text>
         </ScrollView>
       </View>
+
       {/* Live push alert banner */}
       {toastMessage && (
         <View style={styles.toast}>
           <View style={styles.toastIcon}>
-            <Text style={styles.toastIconText}>📢</Text>
+            <Feather name="bell" size={18} color={KFitColors.onAccent} />
           </View>
           <View style={styles.toastBody}>
             <View style={styles.toastHeaderRow}>
@@ -1084,7 +1172,10 @@ export default function DashboardScreen() {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>📢 Dispatch Push Alert</Text>
+              <View style={styles.modalTitleRow}>
+                <Feather name="bell" size={16} color={KFitColors.accent} />
+                <Text style={styles.modalTitle}>Dispatch Push Alert</Text>
+              </View>
               <TouchableOpacity
                 onPress={() => setShowBroadcast(false)}
                 accessibilityRole="button"
@@ -1245,8 +1336,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  broadcastEmoji: {
-    fontSize: 14,
+  soundButtonOn: {
+    borderColor: KFitColors.accent,
+    backgroundColor: KFitColors.accent + "1A",
   },
 
   addButton: {
@@ -1257,13 +1349,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     elevation: 3,
-  },
-
-  addButtonText: {
-    color: KFitColors.onAccent,
-    fontSize: 18,
-    fontWeight: "800",
-    lineHeight: 20,
   },
 
   /* ---------------- Facility metrics ---------------- */
@@ -1410,20 +1495,6 @@ const styles = StyleSheet.create({
     marginLeft: -4,
   },
 
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: KFitColors.accent,
-  },
-
-  pausedDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: KFitColors.mutedText,
-  },
-
   occupancyEyebrow: {
     color: KFitColors.accent,
     fontSize: 10,
@@ -1447,13 +1518,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: KFitColors.accent,
     backgroundColor: KFitColors.accent + "1A",
-  },
-
-  occupancyStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: KFitColors.accent,
   },
 
   occupancyStatusText: {
@@ -1773,74 +1837,12 @@ const styles = StyleSheet.create({
     color: KFitColors.error,
   },
 
-  /* ---------------- Revenue / Attention / Sessions ---------------- */
+  /* ---------------- Attention / Sessions ---------------- */
   sectionTitle: {
     color: KFitColors.text,
     fontSize: 18,
     fontWeight: "bold",
     marginBottom: 16,
-    marginTop: 8,
-  },
-
-  chartCard: {
-    backgroundColor: KFitColors.surface,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    marginBottom: 24,
-  },
-
-  chartHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 16,
-  },
-
-  chartTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: KFitColors.text,
-  },
-
-  chartPeriod: {
-    fontSize: 12,
-    color: KFitColors.mutedText,
-    flexShrink: 1,
-    textAlign: "right",
-  },
-
-  chartPlaceholder: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    height: 120,
-    paddingHorizontal: 4,
-  },
-
-  barContainer: {
-    flex: 1,
-    alignItems: "center",
-    height: "100%",
-    justifyContent: "flex-end",
-  },
-
-  bar: {
-    width: 24,
-    backgroundColor: KFitColors.border,
-    borderRadius: 4,
-  },
-
-  barActive: {
-    backgroundColor: KFitColors.accent,
-  },
-
-  barLabel: {
-    fontSize: 11,
-    color: KFitColors.mutedText,
     marginTop: 8,
   },
 
@@ -1869,10 +1871,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 12,
     backgroundColor: KFitColors.border,
-  },
-
-  attentionIconText: {
-    fontSize: 16,
   },
 
   attentionContent: {
@@ -1992,8 +1990,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  actionIcon: {
-    fontSize: 22,
+  actionIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "1A",
   },
 
   actionContent: {
@@ -2012,12 +2015,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 3,
     flexShrink: 1,
-  },
-
-  arrow: {
-    color: KFitColors.mutedText,
-    fontSize: 24,
-    flexShrink: 0,
   },
 
   footer: {
@@ -2052,10 +2049,6 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent,
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  toastIconText: {
-    fontSize: 18,
   },
 
   toastBody: {
@@ -2111,6 +2104,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+
+  modalTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
 
   modalTitle: {
