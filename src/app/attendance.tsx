@@ -1,4 +1,3 @@
-import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
@@ -249,363 +248,348 @@ export default function AttendanceScreen() {
       <View style={styles.mainContainer}>
         <Sidebar activeRoute="/attendance" />
 
-        {/* Header + scrollable content */}
-        <View style={styles.main}>
-          <AppHeader />
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={[styles.header, isWide && styles.headerWide]}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.eyebrow}>LIVE ATTENDANCE</Text>
+              <Text style={styles.headerTitle}>Attendance & check-ins</Text>
+              <Text style={styles.headerSubtitle}>
+                Know who's here. Keep the club moving.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() =>
+                Alert.alert("Export", "Attendance export is coming soon.")
+              }
+              style={({ pressed }) => [
+                styles.exportButton,
+                pressed && styles.pressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Export attendance"
+            >
+              <Ionicons
+                name="download-outline"
+                size={16}
+                color={KFitColors.text}
+              />
+              <Text style={styles.exportButtonText}>Export attendance</Text>
+            </Pressable>
+          </View>
 
-          <ScrollView
-            style={styles.content}
-            contentContainerStyle={styles.contentContainer}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Page title */}
-            <View style={[styles.header, isWide && styles.headerWide]}>
-              <View style={styles.headerLeft}>
-                <Text style={styles.eyebrow}>LIVE ATTENDANCE</Text>
-                <Text style={styles.headerTitle}>Attendance & check-ins</Text>
-                <Text style={styles.headerSubtitle}>
-                  Know who's here. Keep the club moving.
+          {/* Stats */}
+          <View style={styles.statsGrid}>
+            {stats.map((s) => (
+              <View
+                key={s.label}
+                style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+              >
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel} numberOfLines={1}>
+                    {s.label}
+                  </Text>
+                  <View style={styles.statIconBox}>
+                    <Ionicons
+                      name={s.icon}
+                      size={14}
+                      color={KFitColors.accent}
+                    />
+                  </View>
+                </View>
+                <Text style={styles.statNumber}>{s.value}</Text>
+                {s.bar !== undefined && (
+                  <View style={styles.barTrack}>
+                    <View style={[styles.barFill, { width: `${s.bar}%` }]} />
+                  </View>
+                )}
+                <Text style={styles.statSubtitle} numberOfLines={2}>
+                  {s.sub}
                 </Text>
               </View>
+            ))}
+          </View>
+
+          {/* Member check-in */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Member check-in</Text>
+            <Text style={styles.sectionSubtitle}>
+              Member ID or name. Try FM-1042 or "Noah".
+            </Text>
+
+            <View style={styles.searchContainer}>
+              <Ionicons
+                name="search"
+                size={18}
+                color={KFitColors.mutedText}
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="FM-1042"
+                placeholderTextColor={KFitColors.mutedText}
+                value={memberQuery}
+                onChangeText={setMemberQuery}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                onSubmitEditing={handleCheckIn}
+                returnKeyType="done"
+              />
+              {memberQuery.length > 0 && (
+                <Pressable
+                  onPress={() => setMemberQuery("")}
+                  hitSlop={10}
+                  accessibilityLabel="Clear"
+                >
+                  <Ionicons
+                    name="close-circle"
+                    size={18}
+                    color={KFitColors.mutedText}
+                  />
+                </Pressable>
+              )}
+            </View>
+
+            <View style={styles.checkInActions}>
               <Pressable
-                onPress={() =>
-                  Alert.alert("Export", "Attendance export is coming soon.")
-                }
+                onPress={() => router.push("/admin-scanner" as any)}
                 style={({ pressed }) => [
-                  styles.exportButton,
+                  styles.qrButton,
                   pressed && styles.pressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Export attendance"
+                accessibilityLabel="Scan QR code"
+              >
+                <Ionicons name="qr-code" size={16} color={KFitColors.accent} />
+                <Text style={styles.qrButtonText}>Scan QR code</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleCheckIn}
+                style={({ pressed }) => [
+                  styles.checkInButton,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Check in"
               >
                 <Ionicons
-                  name="download-outline"
-                  size={16}
-                  color={KFitColors.text}
+                  name="log-in-outline"
+                  size={18}
+                  color={KFitColors.onAccent}
                 />
-                <Text style={styles.exportButtonText}>Export attendance</Text>
+                <Text style={styles.checkInButtonText}>Check in</Text>
               </Pressable>
             </View>
+          </View>
 
-            {/* Stats */}
-            <View style={styles.statsGrid}>
-              {stats.map((s) => (
-                <View
-                  key={s.label}
-                  style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
-                >
-                  <View style={styles.statTop}>
-                    <Text style={styles.statLabel} numberOfLines={1}>
-                      {s.label}
-                    </Text>
-                    <View style={styles.statIconBox}>
-                      <Ionicons
-                        name={s.icon}
-                        size={14}
-                        color={KFitColors.accent}
-                      />
-                    </View>
-                  </View>
-                  <Text style={styles.statNumber}>{s.value}</Text>
-                  {s.bar !== undefined && (
-                    <View style={styles.barTrack}>
-                      <View style={[styles.barFill, { width: `${s.bar}%` }]} />
-                    </View>
-                  )}
-                  <Text style={styles.statSubtitle} numberOfLines={2}>
-                    {s.sub}
+          {/* Latest check-in */}
+          {latest && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Latest check-in</Text>
+              <View style={styles.checkInCard}>
+                <View style={styles.checkInAvatar}>
+                  <Text style={styles.avatarTextLg}>
+                    {initials(latest.memberName)}
                   </Text>
                 </View>
-              ))}
-            </View>
-
-            {/* Member check-in */}
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Member check-in</Text>
-              <Text style={styles.sectionSubtitle}>
-                Member ID or name. Try FM-1042 or "Noah".
-              </Text>
-
-              <View style={styles.searchContainer}>
-                <Ionicons
-                  name="search"
-                  size={18}
-                  color={KFitColors.mutedText}
-                  style={styles.searchIcon}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="FM-1042"
-                  placeholderTextColor={KFitColors.mutedText}
-                  value={memberQuery}
-                  onChangeText={setMemberQuery}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  onSubmitEditing={handleCheckIn}
-                  returnKeyType="done"
-                />
-                {memberQuery.length > 0 && (
-                  <Pressable
-                    onPress={() => setMemberQuery("")}
-                    hitSlop={10}
-                    accessibilityLabel="Clear"
-                  >
+                <View style={styles.checkInDetails}>
+                  <Text style={styles.checkInName}>{latest.memberName}</Text>
+                  <Text style={styles.checkInId}>
+                    {latest.memberId} • {latest.plan}
+                  </Text>
+                  <View style={styles.metaItem}>
                     <Ionicons
-                      name="close-circle"
-                      size={18}
+                      name="time-outline"
+                      size={12}
                       color={KFitColors.mutedText}
                     />
-                  </Pressable>
-                )}
+                    <Text style={styles.checkInTime}>{latest.checkIn}</Text>
+                  </View>
+                </View>
+                <StatusBadge status={latest.status} />
               </View>
+            </View>
+          )}
 
-              <View style={styles.checkInActions}>
+          {/* Records */}
+          <View style={styles.recordsSection}>
+            <Text style={styles.sectionTitle}>Attendance records</Text>
+
+            <View style={styles.recordsTabs}>
+              <TabChip
+                label={`In club (${inClub})`}
+                active={tab === "club"}
+                onPress={() => setTab("club")}
+              />
+              <TabChip
+                label="All check-ins"
+                active={tab === "all"}
+                onPress={() => setTab("all")}
+              />
+            </View>
+
+            <View style={styles.searchContainer}>
+              <Ionicons
+                name="search"
+                size={18}
+                color={KFitColors.mutedText}
+                style={styles.searchIcon}
+              />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search member or ID"
+                placeholderTextColor={KFitColors.mutedText}
+                value={recordSearch}
+                onChangeText={setRecordSearch}
+                autoCorrect={false}
+              />
+              {recordSearch.length > 0 && (
                 <Pressable
-                  onPress={() => router.push("/admin-scanner" as any)}
-                  style={({ pressed }) => [
-                    styles.qrButton,
-                    pressed && styles.pressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Scan QR code"
+                  onPress={() => setRecordSearch("")}
+                  hitSlop={10}
+                  accessibilityLabel="Clear search"
                 >
                   <Ionicons
-                    name="qr-code"
-                    size={16}
-                    color={KFitColors.accent}
-                  />
-                  <Text style={styles.qrButtonText}>Scan QR code</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={handleCheckIn}
-                  style={({ pressed }) => [
-                    styles.checkInButton,
-                    pressed && styles.pressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Check in"
-                >
-                  <Ionicons
-                    name="log-in-outline"
+                    name="close-circle"
                     size={18}
-                    color={KFitColors.onAccent}
+                    color={KFitColors.mutedText}
                   />
-                  <Text style={styles.checkInButtonText}>Check in</Text>
                 </Pressable>
+              )}
+            </View>
+
+            <View style={styles.dateFilter}>
+              <View style={styles.metaItem}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={KFitColors.accent}
+                />
+                <Text style={styles.dateText}>Today, {today}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons
+                  name="funnel-outline"
+                  size={13}
+                  color={KFitColors.mutedText}
+                />
+                <Text style={styles.filterText}>All activities</Text>
               </View>
             </View>
 
-            {/* Latest check-in */}
-            {latest && (
-              <View style={styles.card}>
-                <Text style={styles.sectionTitle}>Latest check-in</Text>
-                <View style={styles.checkInCard}>
-                  <View style={styles.checkInAvatar}>
-                    <Text style={styles.avatarTextLg}>
-                      {initials(latest.memberName)}
-                    </Text>
-                  </View>
-                  <View style={styles.checkInDetails}>
-                    <Text style={styles.checkInName}>{latest.memberName}</Text>
-                    <Text style={styles.checkInId}>
-                      {latest.memberId} • {latest.plan}
-                    </Text>
-                    <View style={styles.metaItem}>
-                      <Ionicons
-                        name="time-outline"
-                        size={12}
-                        color={KFitColors.mutedText}
-                      />
-                      <Text style={styles.checkInTime}>{latest.checkIn}</Text>
-                    </View>
-                  </View>
-                  <StatusBadge status={latest.status} />
-                </View>
+            {isWide && (
+              <View style={styles.tableHeader}>
+                <Text style={[styles.headerText, { flex: 2 }]}>MEMBER</Text>
+                <Text style={[styles.headerText, { flex: 1 }]}>CHECK IN</Text>
+                <Text style={[styles.headerText, { flex: 1 }]}>CHECK OUT</Text>
+                <Text style={[styles.headerText, { flex: 1.4 }]}>ACTIVITY</Text>
+                <Text style={[styles.headerText, { flex: 1 }]}>DURATION</Text>
+                <Text style={[styles.headerText, { flex: 1.2 }]}>STATUS</Text>
+                <View style={{ width: 96 }} />
               </View>
             )}
 
-            {/* Records */}
-            <View style={styles.recordsSection}>
-              <Text style={styles.sectionTitle}>Attendance records</Text>
-
-              <View style={styles.recordsTabs}>
-                <TabChip
-                  label={`In club (${inClub})`}
-                  active={tab === "club"}
-                  onPress={() => setTab("club")}
-                />
-                <TabChip
-                  label="All check-ins"
-                  active={tab === "all"}
-                  onPress={() => setTab("all")}
-                />
-              </View>
-
-              <View style={styles.searchContainer}>
-                <Ionicons
-                  name="search"
-                  size={18}
-                  color={KFitColors.mutedText}
-                  style={styles.searchIcon}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search member or ID"
-                  placeholderTextColor={KFitColors.mutedText}
-                  value={recordSearch}
-                  onChangeText={setRecordSearch}
-                  autoCorrect={false}
-                />
-                {recordSearch.length > 0 && (
-                  <Pressable
-                    onPress={() => setRecordSearch("")}
-                    hitSlop={10}
-                    accessibilityLabel="Clear search"
-                  >
-                    <Ionicons
-                      name="close-circle"
-                      size={18}
-                      color={KFitColors.mutedText}
-                    />
-                  </Pressable>
-                )}
-              </View>
-
-              <View style={styles.dateFilter}>
-                <View style={styles.metaItem}>
+            <View style={styles.attendanceList}>
+              {visibleRecords.length === 0 ? (
+                <View style={styles.emptyState}>
                   <Ionicons
-                    name="calendar-outline"
-                    size={14}
-                    color={KFitColors.accent}
-                  />
-                  <Text style={styles.dateText}>Today, {today}</Text>
-                </View>
-                <View style={styles.metaItem}>
-                  <Ionicons
-                    name="funnel-outline"
-                    size={13}
+                    name="people-outline"
+                    size={34}
                     color={KFitColors.mutedText}
                   />
-                  <Text style={styles.filterText}>All activities</Text>
-                </View>
-              </View>
-
-              {isWide && (
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.headerText, { flex: 2 }]}>MEMBER</Text>
-                  <Text style={[styles.headerText, { flex: 1 }]}>CHECK IN</Text>
-                  <Text style={[styles.headerText, { flex: 1 }]}>
-                    CHECK OUT
+                  <Text style={styles.emptyTitle}>No records found</Text>
+                  <Text style={styles.emptySub}>
+                    Check someone in or change the filter.
                   </Text>
-                  <Text style={[styles.headerText, { flex: 1.4 }]}>
-                    ACTIVITY
-                  </Text>
-                  <Text style={[styles.headerText, { flex: 1 }]}>DURATION</Text>
-                  <Text style={[styles.headerText, { flex: 1.2 }]}>STATUS</Text>
-                  <View style={{ width: 96 }} />
                 </View>
-              )}
-
-              <View style={styles.attendanceList}>
-                {visibleRecords.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Ionicons
-                      name="people-outline"
-                      size={34}
-                      color={KFitColors.mutedText}
-                    />
-                    <Text style={styles.emptyTitle}>No records found</Text>
-                    <Text style={styles.emptySub}>
-                      Check someone in or change the filter.
-                    </Text>
-                  </View>
-                ) : isWide ? (
-                  visibleRecords.map((r) => (
-                    <View key={r.id} style={styles.tableRow}>
-                      <View style={[styles.memberInfo, { flex: 2 }]}>
-                        <View style={styles.memberAvatar}>
-                          <Text style={styles.avatarText}>
-                            {initials(r.memberName)}
-                          </Text>
-                        </View>
-                        <View style={styles.memberDetails}>
-                          <Text style={styles.memberName} numberOfLines={1}>
-                            {r.memberName}
-                          </Text>
-                          <Text style={styles.memberId}>{r.memberId}</Text>
-                        </View>
+              ) : isWide ? (
+                visibleRecords.map((r) => (
+                  <View key={r.id} style={styles.tableRow}>
+                    <View style={[styles.memberInfo, { flex: 2 }]}>
+                      <View style={styles.memberAvatar}>
+                        <Text style={styles.avatarText}>
+                          {initials(r.memberName)}
+                        </Text>
                       </View>
-                      <Text style={[styles.tableText, { flex: 1 }]}>
-                        {r.checkIn}
-                      </Text>
-                      <Text style={[styles.tableText, { flex: 1 }]}>
-                        {r.checkOut}
-                      </Text>
-                      <Text style={[styles.tableText, { flex: 1.4 }]}>
-                        {r.activity}
-                      </Text>
-                      <Text style={[styles.tableText, { flex: 1 }]}>
-                        {r.duration}
-                      </Text>
-                      <View style={{ flex: 1.2, alignItems: "flex-start" }}>
-                        <StatusBadge status={r.status} />
-                      </View>
-                      <View style={{ width: 96, alignItems: "flex-end" }}>
-                        {r.status === "In progress" && (
-                          <CheckOutButton
-                            onPress={() => handleCheckOut(r.id)}
-                          />
-                        )}
+                      <View style={styles.memberDetails}>
+                        <Text style={styles.memberName} numberOfLines={1}>
+                          {r.memberName}
+                        </Text>
+                        <Text style={styles.memberId}>{r.memberId}</Text>
                       </View>
                     </View>
-                  ))
-                ) : (
-                  visibleRecords.map((r) => (
-                    <View key={r.id} style={styles.attendanceCard}>
-                      <View style={styles.cardTop}>
-                        <View style={styles.memberAvatar}>
-                          <Text style={styles.avatarText}>
-                            {initials(r.memberName)}
-                          </Text>
-                        </View>
-                        <View style={styles.memberDetails}>
-                          <Text style={styles.memberName} numberOfLines={1}>
-                            {r.memberName}
-                          </Text>
-                          <Text style={styles.memberId}>{r.memberId}</Text>
-                        </View>
-                        <StatusBadge status={r.status} />
-                      </View>
-
-                      <View style={styles.infoGrid}>
-                        <Info label="CHECK IN" value={r.checkIn} />
-                        <Info label="CHECK OUT" value={r.checkOut} />
-                        <Info label="ACTIVITY" value={r.activity} />
-                        <Info label="DURATION" value={r.duration} />
-                      </View>
-
+                    <Text style={[styles.tableText, { flex: 1 }]}>
+                      {r.checkIn}
+                    </Text>
+                    <Text style={[styles.tableText, { flex: 1 }]}>
+                      {r.checkOut}
+                    </Text>
+                    <Text style={[styles.tableText, { flex: 1.4 }]}>
+                      {r.activity}
+                    </Text>
+                    <Text style={[styles.tableText, { flex: 1 }]}>
+                      {r.duration}
+                    </Text>
+                    <View style={{ flex: 1.2, alignItems: "flex-start" }}>
+                      <StatusBadge status={r.status} />
+                    </View>
+                    <View style={{ width: 96, alignItems: "flex-end" }}>
                       {r.status === "In progress" && (
-                        <CheckOutButton
-                          full
-                          onPress={() => handleCheckOut(r.id)}
-                        />
+                        <CheckOutButton onPress={() => handleCheckOut(r.id)} />
                       )}
                     </View>
-                  ))
-                )}
-              </View>
+                  </View>
+                ))
+              ) : (
+                visibleRecords.map((r) => (
+                  <View key={r.id} style={styles.attendanceCard}>
+                    <View style={styles.cardTop}>
+                      <View style={styles.memberAvatar}>
+                        <Text style={styles.avatarText}>
+                          {initials(r.memberName)}
+                        </Text>
+                      </View>
+                      <View style={styles.memberDetails}>
+                        <Text style={styles.memberName} numberOfLines={1}>
+                          {r.memberName}
+                        </Text>
+                        <Text style={styles.memberId}>{r.memberId}</Text>
+                      </View>
+                      <StatusBadge status={r.status} />
+                    </View>
 
-              <Text style={styles.footerText}>
-                Showing {visibleRecords.length} of {records.length} check-ins
-              </Text>
+                    <View style={styles.infoGrid}>
+                      <Info label="CHECK IN" value={r.checkIn} />
+                      <Info label="CHECK OUT" value={r.checkOut} />
+                      <Info label="ACTIVITY" value={r.activity} />
+                      <Info label="DURATION" value={r.duration} />
+                    </View>
+
+                    {r.status === "In progress" && (
+                      <CheckOutButton
+                        full
+                        onPress={() => handleCheckOut(r.id)}
+                      />
+                    )}
+                  </View>
+                ))
+              )}
             </View>
 
-            <View style={styles.footer}>
-              <Text style={styles.footerBrand}>K-FIT · Gym Management</Text>
-            </View>
-          </ScrollView>
-        </View>
+            <Text style={styles.footerText}>
+              Showing {visibleRecords.length} of {records.length} check-ins
+            </Text>
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerBrand}>K-FIT · Gym Management</Text>
+          </View>
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
@@ -693,7 +677,6 @@ function CheckOutButton({
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: KFitColors.background },
   mainContainer: { flex: 1, flexDirection: "row" },
-  main: { flex: 1, backgroundColor: KFitColors.background },
   content: { flex: 1, backgroundColor: KFitColors.background },
   contentContainer: { paddingBottom: 128 },
   pressed: { opacity: 0.7 },

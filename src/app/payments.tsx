@@ -1,6 +1,7 @@
 import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -18,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
+type IconName = keyof typeof Ionicons.glyphMap;
 type InvoiceStatus = "Paid" | "Pending" | "Overdue";
 type PaymentMethod = "Google Pay" | "NFC Card Tap" | "Cash";
 
@@ -72,9 +74,29 @@ const POS_ITEMS: PosItem[] = [
   },
 ];
 
-const PAYMENT_METHODS: { method: PaymentMethod; label: string }[] = [
-  { method: "Google Pay", label: "📱 Google Pay" },
-  { method: "NFC Card Tap", label: "💳 Credit card NFC" },
+const PAYMENT_METHODS: {
+  method: PaymentMethod;
+  label: string;
+  icon: IconName;
+}[] = [
+  { method: "Google Pay", label: "Google Pay", icon: "logo-google" },
+  { method: "NFC Card Tap", label: "Credit card NFC", icon: "card-outline" },
+];
+
+const REVENUE_MIX: {
+  icon: IconName;
+  label: string;
+  amount: string;
+  pct: number;
+}[] = [
+  { icon: "people", label: "Memberships", amount: "$37,840", pct: 78 },
+  { icon: "barbell", label: "Personal training", amount: "$8,400", pct: 17 },
+  {
+    icon: "storefront",
+    label: "Day passes & retail",
+    amount: "$2,680",
+    pct: 5,
+  },
 ];
 
 const initialInvoices: Invoice[] = [
@@ -245,10 +267,16 @@ export default function PaymentsScreen() {
               </View>
               <View style={styles.headerButtons}>
                 <TouchableOpacity style={styles.exportButton}>
+                  <Ionicons
+                    name="download-outline"
+                    size={15}
+                    color={KFitColors.text}
+                  />
                   <Text style={styles.exportButtonText}>Export</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.createButton}>
-                  <Text style={styles.createButtonText}>+ Create invoice</Text>
+                  <Ionicons name="add" size={16} color={KFitColors.onAccent} />
+                  <Text style={styles.createButtonText}>Create invoice</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -300,7 +328,13 @@ export default function PaymentsScreen() {
                     <Text style={styles.posTitle}>POS terminal</Text>
                   </View>
                   <View style={styles.nfcBadge}>
-                    <Text style={styles.nfcBadgeText}>NFC TAP READY 💳</Text>
+                    <Ionicons
+                      name="wifi"
+                      size={12}
+                      color={KFitColors.accent}
+                      style={styles.nfcIcon}
+                    />
+                    <Text style={styles.nfcBadgeText}>NFC TAP READY</Text>
                   </View>
                 </View>
 
@@ -346,13 +380,18 @@ export default function PaymentsScreen() {
 
                 {/* Payment methods */}
                 <View style={styles.payRow}>
-                  {PAYMENT_METHODS.map(({ method, label }) => (
+                  {PAYMENT_METHODS.map(({ method, label, icon }) => (
                     <TouchableOpacity
                       key={method}
                       activeOpacity={0.8}
                       style={styles.payButton}
                       onPress={() => processPosPayment(method)}
                     >
+                      <Ionicons
+                        name={icon}
+                        size={16}
+                        color={KFitColors.accent}
+                      />
                       <Text style={styles.payButtonText}>{label}</Text>
                     </TouchableOpacity>
                   ))}
@@ -363,8 +402,13 @@ export default function PaymentsScreen() {
                   style={styles.cashButton}
                   onPress={() => processPosPayment("Cash")}
                 >
+                  <Ionicons
+                    name="cash-outline"
+                    size={18}
+                    color={KFitColors.onAccent}
+                  />
                   <Text style={styles.cashButtonText}>
-                    💵 Complete cash transaction
+                    Complete cash transaction
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -383,9 +427,16 @@ export default function PaymentsScreen() {
                 </View>
 
                 {outstandingInvoices.length === 0 ? (
-                  <Text style={styles.emptyText}>
-                    All invoices are settled. 🎉
-                  </Text>
+                  <View style={styles.emptyRow}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color={KFitColors.accent}
+                    />
+                    <Text style={styles.emptyText}>
+                      All invoices are settled.
+                    </Text>
+                  </View>
                 ) : (
                   outstandingInvoices.map((invoice) => (
                     <View key={invoice.id} style={styles.dueRow}>
@@ -461,29 +512,14 @@ export default function PaymentsScreen() {
               <Text style={styles.sectionTitleTight}>Revenue mix</Text>
               <Text style={styles.mixPeriod}>October 2026</Text>
               <View style={styles.mixGrid}>
-                {[
-                  {
-                    icon: "👥",
-                    label: "Memberships",
-                    amount: "$37,840",
-                    pct: 78,
-                  },
-                  {
-                    icon: "💪",
-                    label: "Personal training",
-                    amount: "$8,400",
-                    pct: 17,
-                  },
-                  {
-                    icon: "🏪",
-                    label: "Day passes & retail",
-                    amount: "$2,680",
-                    pct: 5,
-                  },
-                ].map((m) => (
+                {REVENUE_MIX.map((m) => (
                   <View key={m.label} style={styles.mixCard}>
                     <View style={styles.mixIconContainer}>
-                      <Text style={styles.mixIcon}>{m.icon}</Text>
+                      <Ionicons
+                        name={m.icon}
+                        size={20}
+                        color={KFitColors.accent}
+                      />
                     </View>
                     <Text style={styles.mixLabel}>{m.label}</Text>
                     <Text style={styles.mixAmount}>{m.amount}</Text>
@@ -514,7 +550,12 @@ export default function PaymentsScreen() {
             {/* Search and Filters */}
             <View style={styles.searchSection}>
               <View style={styles.searchContainer}>
-                <Text style={styles.searchIcon}>🔍</Text>
+                <Ionicons
+                  name="search"
+                  size={18}
+                  color={KFitColors.mutedText}
+                  style={styles.searchIcon}
+                />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Search Invoice or member"
@@ -522,6 +563,19 @@ export default function PaymentsScreen() {
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery("")}
+                    hitSlop={10}
+                    accessibilityLabel="Clear search"
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={KFitColors.mutedText}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
 
               <ScrollView
@@ -636,7 +690,11 @@ export default function PaymentsScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.receiptCard}>
             <View style={styles.receiptCheck}>
-              <Text style={styles.receiptCheckText}>✓</Text>
+              <Ionicons
+                name="checkmark"
+                size={26}
+                color={KFitColors.onAccent}
+              />
             </View>
             <Text style={styles.receiptTitle}>Transaction complete</Text>
             <Text style={styles.receiptSubtitle}>
@@ -673,7 +731,12 @@ export default function PaymentsScreen() {
                 style={styles.receiptSecondary}
                 onPress={downloadReceipt}
               >
-                <Text style={styles.receiptSecondaryText}>📥 Download PDF</Text>
+                <Ionicons
+                  name="download-outline"
+                  size={16}
+                  color={KFitColors.text}
+                />
+                <Text style={styles.receiptSecondaryText}>Download PDF</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.receiptPrimary}
@@ -713,6 +776,9 @@ const styles = StyleSheet.create({
   headerSubtitle: { fontSize: 14, color: KFitColors.mutedText },
   headerButtons: { flexDirection: "row", gap: 12 },
   exportButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     borderWidth: 1,
     borderColor: KFitColors.border,
     borderRadius: 8,
@@ -721,6 +787,9 @@ const styles = StyleSheet.create({
   },
   exportButtonText: { fontSize: 14, fontWeight: "600", color: KFitColors.text },
   createButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: KFitColors.accent,
     borderRadius: 8,
     paddingHorizontal: 16,
@@ -798,6 +867,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   nfcBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
@@ -805,6 +877,7 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.accent + "55",
     backgroundColor: KFitColors.accent + "1A",
   },
+  nfcIcon: { transform: [{ rotate: "90deg" }] },
   nfcBadgeText: { fontSize: 11, fontWeight: "700", color: KFitColors.accent },
   fieldLabel: {
     fontSize: 10,
@@ -853,7 +926,10 @@ const styles = StyleSheet.create({
   payRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   payButton: {
     flex: 1,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
@@ -862,7 +938,10 @@ const styles = StyleSheet.create({
   },
   payButtonText: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
   cashButton: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     paddingVertical: 14,
     borderRadius: 10,
     backgroundColor: KFitColors.accent,
@@ -898,7 +977,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: KFitColors.warning,
   },
-  emptyText: { fontSize: 13, color: KFitColors.mutedText, paddingVertical: 8 },
+  emptyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+  },
+  emptyText: { fontSize: 13, color: KFitColors.mutedText },
   dueRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -958,11 +1043,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 10,
   },
-  receiptCheckText: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: KFitColors.onAccent,
-  },
   receiptTitle: { fontSize: 18, fontWeight: "bold", color: KFitColors.text },
   receiptSubtitle: {
     fontSize: 12,
@@ -1014,7 +1094,10 @@ const styles = StyleSheet.create({
   receiptActions: { flexDirection: "row", gap: 8, width: "100%" },
   receiptSecondary: {
     flex: 1,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
@@ -1029,6 +1112,7 @@ const styles = StyleSheet.create({
   receiptPrimary: {
     flex: 1,
     alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 12,
     borderRadius: 10,
     backgroundColor: KFitColors.accent,
@@ -1099,7 +1183,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 12,
   },
-  mixIcon: { fontSize: 20 },
   mixLabel: { fontSize: 13, color: KFitColors.mutedText, marginBottom: 4 },
   mixAmount: {
     fontSize: 20,
@@ -1153,7 +1236,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 16,
   },
-  searchIcon: { fontSize: 16, marginRight: 12 },
+  searchIcon: { marginRight: 10 },
   searchInput: { flex: 1, height: 44, fontSize: 14, color: KFitColors.text },
   filterScroll: { marginBottom: 16 },
   filterContainer: { gap: 8 },
