@@ -1,3 +1,11 @@
+import MemberBottomNav from "@/components/MemberBottomNav";
+import { KFitColors, Spacing } from "@/constants/theme";
+import { useLogout } from "@/hooks/use-logout";
+import { useMemberProfile } from "@/hooks/use-member-profile";
+import { useAuth } from "@clerk/expo";
+import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ImageBackground,
@@ -5,29 +13,181 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TextInputProps,
   TouchableOpacity,
   View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '@clerk/expo';
-import { useRouter } from 'expo-router';
-import MemberBottomNav from '@/components/MemberBottomNav';
-import { KFitColors, Spacing } from '@/constants/theme';
-import { useLogout } from '@/hooks/use-logout';
-import { useMemberProfile } from '@/hooks/use-member-profile';
-import { useState } from 'react';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+// Clears the floating nav (dock + raised QR button + safe area).
+const NAV_CLEARANCE = 140;
+
+type FeatherName = keyof typeof Feather.glyphMap;
+
+/* ---------------------------- Small building blocks ---------------------------- */
+
+function Section({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: FeatherName;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        {icon ? (
+          <Feather name={icon} size={16} color={KFitColors.accent} />
+        ) : null}
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  last,
+}: {
+  label: string;
+  value: string;
+  last?: boolean;
+}) {
+  return (
+    <>
+      <View style={styles.infoRow}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoValue}>{value}</Text>
+      </View>
+      {!last ? <View style={styles.divider} /> : null}
+    </>
+  );
+}
+
+function EditableRow({
+  label,
+  value,
+  editing,
+  draft,
+  onChangeDraft,
+  last,
+  inputProps,
+}: {
+  label: string;
+  value?: string | null;
+  editing: boolean; // true only when in edit mode AND this field is missing
+  draft: string;
+  onChangeDraft: (v: string) => void;
+  last?: boolean;
+  inputProps?: TextInputProps;
+}) {
+  return (
+    <>
+      <View style={styles.infoRow}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        {editing ? (
+          <TextInput
+            style={styles.profileInput}
+            value={draft}
+            onChangeText={onChangeDraft}
+            placeholderTextColor={KFitColors.mutedText}
+            accessibilityLabel={label}
+            {...inputProps}
+          />
+        ) : (
+          <Text style={styles.infoValue}>
+            {value?.trim() || "Not provided"}
+          </Text>
+        )}
+      </View>
+      {!last ? <View style={styles.divider} /> : null}
+    </>
+  );
+}
+
+function LinkRow({
+  label,
+  value,
+  last,
+  onPress,
+}: {
+  label: string;
+  value?: string;
+  last?: boolean;
+  onPress?: () => void;
+}) {
+  return (
+    <>
+      <TouchableOpacity
+        style={styles.linkRow}
+        onPress={onPress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+      >
+        <Text style={styles.linkLabel}>{label}</Text>
+        <View style={styles.linkRight}>
+          {value ? <Text style={styles.linkValue}>{value}</Text> : null}
+          <Feather
+            name="chevron-right"
+            size={18}
+            color={KFitColors.mutedText}
+          />
+        </View>
+      </TouchableOpacity>
+      {!last ? <View style={styles.dividerInset} /> : null}
+    </>
+  );
+}
+
+function GoldButton({
+  label,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.goldButton, disabled && styles.disabled]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
+    >
+      <ImageBackground
+        source={require("../../assets/images/gold-texture.jpg")}
+        resizeMode="cover"
+        style={styles.goldButtonBg}
+        imageStyle={styles.goldButtonImage}
+      >
+        <Text style={styles.goldButtonText}>{label}</Text>
+      </ImageBackground>
+    </TouchableOpacity>
+  );
+}
+
+/* ---------------------------------- Screens ---------------------------------- */
 
 export default function MemberProfileScreen() {
-  return process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY
-    ? <ConfiguredMemberProfileScreen />
-    : <ProfileStatusScreen message="Clerk sign in is not configured." />;
+  return process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ? (
+    <ConfiguredMemberProfileScreen />
+  ) : (
+    <ProfileStatusScreen message="Clerk sign in is not configured." />
+  );
 }
 
 function ProfileStatusScreen({
   message,
   onRetry,
   isLoading = false,
-  actionLabel = 'Retry',
+  actionLabel = "Retry",
 }: {
   message: string;
   onRetry?: () => void;
@@ -35,22 +195,16 @@ function ProfileStatusScreen({
   actionLabel?: string;
 }) {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.mainContainer}>
         <View style={styles.statusContent}>
           {isLoading ? <ActivityIndicator color={KFitColors.accent} /> : null}
-          <Text style={styles.sectionTitle}>
-            {isLoading ? 'Loading your profile' : 'Profile unavailable'}
+          <Text style={styles.statusTitle}>
+            {isLoading ? "Loading your profile" : "Profile unavailable"}
           </Text>
           <Text style={styles.statusMessage}>{message}</Text>
           {onRetry ? (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={onRetry}
-              accessibilityRole="button"
-            >
-              <Text style={styles.editButtonText}>{actionLabel}</Text>
-            </TouchableOpacity>
+            <GoldButton label={actionLabel} onPress={onRetry} />
           ) : null}
         </View>
         <MemberBottomNav activeRoute="/member-profile" />
@@ -76,68 +230,81 @@ function ConfiguredMemberProfileScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isRequestingCoach, setIsRequestingCoach] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [emailDraft, setEmailDraft] = useState('');
-  const [firstNameDraft, setFirstNameDraft] = useState('');
-  const [lastNameDraft, setLastNameDraft] = useState('');
+  const [emailDraft, setEmailDraft] = useState("");
+  const [firstNameDraft, setFirstNameDraft] = useState("");
+  const [lastNameDraft, setLastNameDraft] = useState("");
+
+  const today = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+    [],
+  );
 
   if (isLoading) {
-    return (
-      <ProfileStatusScreen
-        message="Loading your profile…"
-        isLoading
-      />
-    );
+    return <ProfileStatusScreen message="Loading your profile…" isLoading />;
   }
   if (error) {
     return <ProfileStatusScreen message={error} onRetry={() => void load()} />;
   }
-  const effectiveProfile = profile ?? (!isSignedIn ? {
-    id: 'demo_member',
-    role: 'member' as const,
-    email: 'member@gmail.com',
-    firstName: 'Demo',
-    lastName: 'Member',
-  } : null);
+
+  const effectiveProfile =
+    profile ??
+    (!isSignedIn
+      ? {
+          id: "demo_member",
+          role: "member" as const,
+          email: "member@gmail.com",
+          firstName: "Demo",
+          lastName: "Member",
+        }
+      : null);
 
   if (!effectiveProfile) {
     return (
       <ProfileStatusScreen
-        message={isSignedIn
-          ? 'Your account profile is not available. Retry or contact your gym administrator.'
-          : 'Sign in to view your member profile.'}
-        onRetry={isSignedIn ? () => void load() : () => router.replace('/')}
-        actionLabel={isSignedIn ? 'Retry' : 'Sign in'}
+        message={
+          isSignedIn
+            ? "Your account profile is not available. Retry or contact your gym administrator."
+            : "Sign in to view your member profile."
+        }
+        onRetry={isSignedIn ? () => void load() : () => router.replace("/")}
+        actionLabel={isSignedIn ? "Retry" : "Sign in"}
       />
     );
   }
 
-  const fullName = [effectiveProfile.firstName, effectiveProfile.lastName]
-    .filter((name): name is string => Boolean(name?.trim()))
-    .join(' ');
-  const initials = [effectiveProfile.firstName, effectiveProfile.lastName]
-    .filter((name): name is string => Boolean(name?.trim()))
-    .map((name) => name.trim().charAt(0).toUpperCase())
-    .join('')
-    .slice(0, 2) || 'KF';
-  const hasMissingProfileFields = !effectiveProfile.email?.trim() ||
-    !effectiveProfile.firstName?.trim() ||
-    !effectiveProfile.lastName?.trim();
+  const nameParts = [
+    effectiveProfile.firstName,
+    effectiveProfile.lastName,
+  ].filter((n): n is string => Boolean(n?.trim()));
+  const fullName = nameParts.join(" ");
+  const initials =
+    nameParts
+      .map((n) => n.trim().charAt(0).toUpperCase())
+      .join("")
+      .slice(0, 2) || "KF";
+
+  const missingFirst = !effectiveProfile.firstName?.trim();
+  const missingLast = !effectiveProfile.lastName?.trim();
+  const missingEmail = !effectiveProfile.email?.trim();
+  const hasMissingProfileFields = missingFirst || missingLast || missingEmail;
 
   const beginEdit = () => {
-    setEmailDraft(effectiveProfile.email ?? '');
-    setFirstNameDraft(effectiveProfile.firstName ?? '');
-    setLastNameDraft(effectiveProfile.lastName ?? '');
+    setEmailDraft(effectiveProfile.email ?? "");
+    setFirstNameDraft(effectiveProfile.firstName ?? "");
+    setLastNameDraft(effectiveProfile.lastName ?? "");
     setActionError(null);
     setIsEditing(true);
   };
 
   const saveProfile = async () => {
-    if (
-      !emailDraft.trim() &&
-      !firstNameDraft.trim() &&
-      !lastNameDraft.trim()
-    ) {
-      setActionError('Enter at least one missing profile detail.');
+    if (!emailDraft.trim() && !firstNameDraft.trim() && !lastNameDraft.trim()) {
+      setActionError("Enter at least one missing profile detail.");
       return;
     }
     setIsSaving(true);
@@ -149,9 +316,9 @@ function ConfiguredMemberProfileScreen() {
         lastName: lastNameDraft,
       });
       setIsEditing(false);
-    } catch (error) {
+    } catch (e) {
       setActionError(
-        error instanceof Error ? error.message : 'Could not save your profile.',
+        e instanceof Error ? e.message : "Could not save your profile.",
       );
     } finally {
       setIsSaving(false);
@@ -163,38 +330,69 @@ function ConfiguredMemberProfileScreen() {
     setActionError(null);
     try {
       await submitCoachRequest();
-    } catch (error) {
+    } catch (e) {
       setActionError(
-        error instanceof Error ? error.message : 'Could not submit your request.',
+        e instanceof Error ? e.message : "Could not submit your request.",
       );
     } finally {
       setIsRequestingCoach(false);
     }
   };
 
+  const coachStatusText =
+    coachRequest?.status === "pending"
+      ? "Your request to become a Coach is pending review."
+      : coachRequest?.status === "approved"
+        ? "Your request to become a Coach was approved."
+        : coachRequest?.status === "rejected"
+          ? "Your previous Coach request was declined."
+          : "Request Coach status to let the gym review your account.";
+
+  const canRequestCoach =
+    coachRequest?.status !== "pending" && coachRequest?.status !== "approved";
+
+  const quickActions: { label: string; icon: FeatherName; route: string }[] = [
+    { label: "Workouts", icon: "zap", route: "/member-workout" },
+    { label: "Progress", icon: "activity", route: "/member-dashboard" },
+    { label: "Billing", icon: "credit-card", route: "/member-membership" },
+    { label: "Check-in", icon: "map-pin", route: "/member-checkin" },
+  ];
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.mainContainer}>
-        <ScrollView style={styles.content}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={{ paddingBottom: NAV_CLEARANCE }}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.brand}>FORM ATHLETICS</Text>
-            <TouchableOpacity disabled={isSigningOut} onPress={logout}>
-              <Text style={styles.logout}>
-                {isSigningOut ? 'Signing out…' : 'Logout'}
+            <View>
+              <Text style={styles.brand}>FORM ATHLETICS</Text>
+              <Text style={styles.brandSubtitle}>
+                FORM / Brooklyn · Performance club
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              disabled={isSigningOut}
+              onPress={logout}
+              accessibilityRole="button"
+              accessibilityLabel="Log out"
+            >
+              <Feather name="log-out" size={14} color={KFitColors.error} />
+              <Text style={styles.logoutText}>
+                {isSigningOut ? "Signing out…" : "Logout"}
               </Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.subHeader}>
-            <Text style={styles.brandSubtitle}>FORM / Brooklyn</Text>
-            <Text style={styles.brandClub}>Performance club</Text>
-            <Text style={styles.date}>Tuesday, October 20, 2026</Text>
-          </View>
+          <Text style={styles.date}>{today}</Text>
 
-          {/* Profile Header */}
+          {/* Profile hero */}
           <View style={styles.profileHeader}>
             <ImageBackground
-              source={require('../../assets/images/gold-texture.jpg')}
+              source={require("../../assets/images/gold-texture.jpg")}
               resizeMode="cover"
               style={styles.avatar}
               imageStyle={styles.avatarImage}
@@ -202,317 +400,207 @@ function ConfiguredMemberProfileScreen() {
               <Text style={styles.avatarInitials}>{initials}</Text>
             </ImageBackground>
             <Text style={styles.profileName}>
-              {fullName || 'Name not provided'}
+              {fullName || "Name not provided"}
             </Text>
-            <Text style={styles.profileLabel}>
-              {effectiveProfile.role.charAt(0).toUpperCase() + effectiveProfile.role.slice(1)}
-            </Text>
+            <View style={styles.roleChip}>
+              <Text style={styles.roleChipText}>
+                {effectiveProfile.role.charAt(0).toUpperCase() +
+                  effectiveProfile.role.slice(1)}
+              </Text>
+            </View>
           </View>
 
-          {/* Personal Information */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Personal Information</Text>
-            <View style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>First Name</Text>
-                {isEditing && !effectiveProfile.firstName?.trim() ? (
-                  <TextInput
-                    style={styles.profileInput}
-                    value={firstNameDraft}
-                    onChangeText={setFirstNameDraft}
-                    placeholder="Enter your first name"
-                    accessibilityLabel="First name"
-                  />
-                ) : (
-                  <Text style={styles.infoValue}>
-                    {effectiveProfile.firstName?.trim() || 'Not provided'}
-                  </Text>
-                )}
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Last Name</Text>
-                {isEditing && !effectiveProfile.lastName?.trim() ? (
-                  <TextInput
-                    style={styles.profileInput}
-                    value={lastNameDraft}
-                    onChangeText={setLastNameDraft}
-                    placeholder="Enter your last name"
-                    accessibilityLabel="Last name"
-                  />
-                ) : (
-                  <Text style={styles.infoValue}>
-                    {effectiveProfile.lastName?.trim() || 'Not provided'}
-                  </Text>
-                )}
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Email</Text>
-                {isEditing && !effectiveProfile.email?.trim() ? (
-                  <TextInput
-                    style={styles.profileInput}
-                    value={emailDraft}
-                    onChangeText={setEmailDraft}
-                    placeholder="Enter your email"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    accessibilityLabel="Email address"
-                  />
-                ) : (
-                  <Text style={styles.infoValue}>
-                    {effectiveProfile.email?.trim() || 'Not provided'}
-                  </Text>
-                )}
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Phone</Text>
-                <Text style={styles.infoValue}>+1 (917) 555-0142</Text>
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Date of Birth</Text>
-                <Text style={styles.infoValue}>June 12, 1996</Text>
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Height</Text>
-                <Text style={styles.infoValue}>178 cm</Text>
-              </View>
+          {/* Quick actions */}
+          <View style={styles.actionsGrid}>
+            {quickActions.map((a) => (
+              <TouchableOpacity
+                key={a.label}
+                style={styles.actionCard}
+                activeOpacity={0.8}
+                onPress={() => router.replace(a.route as any)}
+                accessibilityRole="button"
+                accessibilityLabel={a.label}
+              >
+                <View style={styles.actionIconBox}>
+                  <Feather name={a.icon} size={18} color={KFitColors.accent} />
+                </View>
+                <Text style={styles.actionLabel}>{a.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Personal information */}
+          <Section title="Personal Information" icon="user">
+            <View style={styles.card}>
+              <EditableRow
+                label="First Name"
+                value={effectiveProfile.firstName}
+                editing={isEditing && missingFirst}
+                draft={firstNameDraft}
+                onChangeDraft={setFirstNameDraft}
+                inputProps={{ placeholder: "Enter your first name" }}
+              />
+              <EditableRow
+                label="Last Name"
+                value={effectiveProfile.lastName}
+                editing={isEditing && missingLast}
+                draft={lastNameDraft}
+                onChangeDraft={setLastNameDraft}
+                inputProps={{ placeholder: "Enter your last name" }}
+              />
+              <EditableRow
+                label="Email"
+                value={effectiveProfile.email}
+                editing={isEditing && missingEmail}
+                draft={emailDraft}
+                onChangeDraft={setEmailDraft}
+                inputProps={{
+                  placeholder: "Enter your email",
+                  keyboardType: "email-address",
+                  autoCapitalize: "none",
+                  autoCorrect: false,
+                }}
+              />
+              <InfoRow label="Phone" value="+1 (917) 555-0142" />
+              <InfoRow label="Date of Birth" value="June 12, 1996" />
+              <InfoRow label="Height" value="178 cm" last />
             </View>
+
             {hasMissingProfileFields ? (
               <View style={styles.profileActions}>
                 {isEditing ? (
-                  <TouchableOpacity
-                    style={[styles.saveButtonWrapper, isSaving && styles.disabledButton]}
-                    onPress={saveProfile}
-                    disabled={isSaving}
-                    accessibilityRole="button"
-                  >
-                    <ImageBackground
-                      source={require('../../assets/images/gold-texture.jpg')}
-                      resizeMode="cover"
-                      style={styles.saveButtonBg}
-                      imageStyle={styles.saveButtonImage}
+                  <>
+                    <GoldButton
+                      label={isSaving ? "Saving…" : "Save profile"}
+                      onPress={saveProfile}
+                      disabled={isSaving}
+                    />
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      onPress={() => {
+                        setActionError(null);
+                        setIsEditing(false);
+                      }}
+                      disabled={isSaving}
+                      accessibilityRole="button"
                     >
-                      <Text style={styles.saveButtonText}>
-                        {isSaving ? 'Saving…' : 'Save profile'}
-                      </Text>
-                    </ImageBackground>
-                  </TouchableOpacity>
+                      <Text style={styles.cancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                  </>
                 ) : (
                   <TouchableOpacity
-                    style={styles.editButton}
+                    style={styles.textButton}
                     onPress={beginEdit}
                     accessibilityRole="button"
                   >
-                    <Text style={styles.editButtonText}>
+                    <Feather
+                      name="edit-2"
+                      size={14}
+                      color={KFitColors.accent}
+                    />
+                    <Text style={styles.textButtonLabel}>
                       Edit missing details
                     </Text>
                   </TouchableOpacity>
                 )}
-                {isEditing ? (
-                  <TouchableOpacity
-                    style={styles.cancelEditButton}
-                    onPress={() => {
-                      setActionError(null);
-                      setIsEditing(false);
-                    }}
-                    disabled={isSaving}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.cancelEditButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                ) : null}
               </View>
             ) : null}
+
             {actionError ? (
-              <Text style={styles.statusMessage} accessibilityRole="alert">
+              <Text style={styles.errorText} accessibilityRole="alert">
                 {actionError}
               </Text>
             ) : null}
-          </View>
+          </Section>
 
-          {effectiveProfile.role === 'member' ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Coach status</Text>
-              <View style={styles.infoCard}>
-                <Text style={styles.statusMessage}>
-                  {coachRequest?.status === 'pending'
-                    ? 'Your request to become a Coach is pending review.'
-                    : coachRequest?.status === 'approved'
-                    ? 'Your request to become a Coach was approved.'
-                    : coachRequest?.status === 'rejected'
-                    ? 'Your previous Coach request was declined.'
-                    : 'Request Coach status to let the gym review your account.'}
-                </Text>
-                {coachRequest?.status !== 'pending' &&
-                coachRequest?.status !== 'approved' ? (
-                  <TouchableOpacity
-                    style={[styles.requestButton, isRequestingCoach && styles.disabledButton]}
-                    onPress={requestCoachStatus}
-                    disabled={isRequestingCoach}
-                    accessibilityRole="button"
-                    accessibilityState={{ disabled: isRequestingCoach }}
-                  >
-                    <ImageBackground
-                      source={require('../../assets/images/gold-texture.jpg')}
-                      resizeMode="cover"
-                      style={styles.requestButtonBg}
-                      imageStyle={styles.requestButtonImage}
-                    >
-                      <Text style={styles.requestButtonText}>
-                        {isRequestingCoach
-                          ? 'Submitting…'
-                          : 'Request to become a Coach'}
-                      </Text>
-                    </ImageBackground>
-                  </TouchableOpacity>
+          {/* Coach status */}
+          {effectiveProfile.role === "member" ? (
+            <Section title="Coach Status" icon="award">
+              <View style={styles.card}>
+                <Text style={styles.bodyText}>{coachStatusText}</Text>
+                {canRequestCoach ? (
+                  <View style={{ marginTop: Spacing.three }}>
+                    <GoldButton
+                      label={
+                        isRequestingCoach
+                          ? "Submitting…"
+                          : "Request to become a Coach"
+                      }
+                      onPress={requestCoachStatus}
+                      disabled={isRequestingCoach}
+                    />
+                  </View>
                 ) : null}
               </View>
               {actionError && !isEditing ? (
-                <Text style={styles.statusMessage} accessibilityRole="alert">
+                <Text style={styles.errorText} accessibilityRole="alert">
                   {actionError}
                 </Text>
               ) : null}
-            </View>
+            </Section>
           ) : null}
 
-          {/* Emergency Contact */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Emergency Contact</Text>
-            <View style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Name</Text>
-                <Text style={styles.infoValue}>Casey Lee</Text>
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Phone</Text>
-                <Text style={styles.infoValue}>(917) 555-0173</Text>
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Relationship</Text>
-                <Text style={styles.infoValue}>Spouse</Text>
-              </View>
+          {/* Membership */}
+          <Section title="Membership Details" icon="credit-card">
+            <View style={styles.card}>
+              <InfoRow label="Plan" value="Performance" />
+              <InfoRow label="Member Since" value="September 11, 2016" />
+              <InfoRow label="Renewal Date" value="November 01, 2026" />
+              <InfoRow label="Sessions Used" value="18 / 20" last />
             </View>
-            <TouchableOpacity style={styles.editButton}>
-              <Text style={styles.editButtonText}>Edit Emergency Contact</Text>
-            </TouchableOpacity>
-          </View>
+          </Section>
 
-          {/* Membership Details */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Membership Details</Text>
-            <View style={styles.infoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Plan</Text>
-                <Text style={styles.infoValue}>Performance</Text>
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Member Since</Text>
-                <Text style={styles.infoValue}>September 11, 2016</Text>
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Renewal Date</Text>
-                <Text style={styles.infoValue}>November 01, 2026</Text>
-              </View>
-              <View style={styles.infoDivider} />
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Sessions Used</Text>
-                <Text style={styles.infoValue}>18/20</Text>
-              </View>
+          {/* Emergency contact */}
+          <Section title="Emergency Contact" icon="phone-call">
+            <View style={styles.card}>
+              <InfoRow label="Name" value="Casey Lee" />
+              <InfoRow label="Phone" value="(917) 555-0173" />
+              <InfoRow label="Relationship" value="Spouse" last />
             </View>
-          </View>
+            <TouchableOpacity
+              style={styles.textButton}
+              accessibilityRole="button"
+            >
+              <Feather name="edit-2" size={14} color={KFitColors.accent} />
+              <Text style={styles.textButtonLabel}>Edit Emergency Contact</Text>
+            </TouchableOpacity>
+          </Section>
 
           {/* Address */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Address</Text>
-            <View style={styles.infoCard}>
-              <Text style={styles.addressText}>
-                214 Kent Avenue, Apt 48{'\n'}Brooklyn, NY 11249{'\n'}United States
+          <Section title="Address" icon="map-pin">
+            <View style={styles.card}>
+              <Text style={styles.bodyText}>
+                214 Kent Avenue, Apt 48{"\n"}Brooklyn, NY 11249{"\n"}United
+                States
               </Text>
             </View>
-            <TouchableOpacity style={styles.editButton}>
-              <Text style={styles.editButtonText}>Edit Address</Text>
+            <TouchableOpacity
+              style={styles.textButton}
+              accessibilityRole="button"
+            >
+              <Feather name="edit-2" size={14} color={KFitColors.accent} />
+              <Text style={styles.textButtonLabel}>Edit Address</Text>
             </TouchableOpacity>
-          </View>
+          </Section>
 
           {/* Preferences */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Preferences</Text>
-            <View style={styles.preferencesCard}>
-              <TouchableOpacity style={styles.preferenceItem}>
-                <Text style={styles.preferenceLabel}>Notifications</Text>
-                <Text style={styles.preferenceArrow}>›</Text>
-              </TouchableOpacity>
-              <View style={styles.preferenceDivider} />
-              <TouchableOpacity style={styles.preferenceItem}>
-                <Text style={styles.preferenceLabel}>Privacy Settings</Text>
-                <Text style={styles.preferenceArrow}>›</Text>
-              </TouchableOpacity>
-              <View style={styles.preferenceDivider} />
-              <TouchableOpacity style={styles.preferenceItem}>
-                <Text style={styles.preferenceLabel}>Language</Text>
-                <Text style={styles.preferenceValue}>English</Text>
-                <Text style={styles.preferenceArrow}>›</Text>
-              </TouchableOpacity>
+          <Section title="Preferences" icon="sliders">
+            <View style={styles.cardFlush}>
+              <LinkRow label="Notifications" />
+              <LinkRow label="Privacy Settings" />
+              <LinkRow label="Language" value="English" last />
             </View>
-          </View>
-
-          {/* Quick Actions */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <View style={styles.actionsGrid}>
-              <TouchableOpacity style={styles.actionCard}>
-                <Text style={styles.actionIcon}>📋</Text>
-                <Text style={styles.actionLabel}>My workouts</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionCard}>
-                <Text style={styles.actionIcon}>📊</Text>
-                <Text style={styles.actionLabel}>Progress</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionCard}>
-                <Text style={styles.actionIcon}>💳</Text>
-                <Text style={styles.actionLabel}>Billing</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionCard}>
-                <Text style={styles.actionIcon}>📅</Text>
-                <Text style={styles.actionLabel}>Schedule</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </Section>
 
           {/* Support */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Support</Text>
-            <View style={styles.supportCard}>
-              <TouchableOpacity style={styles.supportItem}>
-                <Text style={styles.supportLabel}>Help Center</Text>
-                <Text style={styles.supportArrow}>›</Text>
-              </TouchableOpacity>
-              <View style={styles.supportDivider} />
-              <TouchableOpacity style={styles.supportItem}>
-                <Text style={styles.supportLabel}>Contact Support</Text>
-                <Text style={styles.supportArrow}>›</Text>
-              </TouchableOpacity>
-              <View style={styles.supportDivider} />
-              <TouchableOpacity style={styles.supportItem}>
-                <Text style={styles.supportLabel}>Terms of Service</Text>
-                <Text style={styles.supportArrow}>›</Text>
-              </TouchableOpacity>
-              <View style={styles.supportDivider} />
-              <TouchableOpacity style={styles.supportItem}>
-                <Text style={styles.supportLabel}>Privacy Policy</Text>
-                <Text style={styles.supportArrow}>›</Text>
-              </TouchableOpacity>
+          <Section title="Support" icon="help-circle">
+            <View style={styles.cardFlush}>
+              <LinkRow label="Help Center" />
+              <LinkRow label="Contact Support" />
+              <LinkRow label="Terms of Service" />
+              <LinkRow label="Privacy Policy" last />
             </View>
-          </View>
+          </Section>
 
           {/* Footer */}
           <View style={styles.footer}>
@@ -520,336 +608,297 @@ function ConfiguredMemberProfileScreen() {
             <Text style={styles.footerVersion}>Version 1.0.0</Text>
           </View>
         </ScrollView>
+
         <MemberBottomNav activeRoute="/member-profile" />
       </View>
     </SafeAreaView>
   );
 }
 
+/* ---------------------------------- Styles ---------------------------------- */
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
+  safeArea: { flex: 1, backgroundColor: KFitColors.background },
+  mainContainer: { flex: 1, backgroundColor: KFitColors.background },
+  content: { flex: 1 },
+
+  /* Status */
   statusContent: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     padding: Spacing.four,
     gap: Spacing.three,
   },
+  statusTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
   statusMessage: {
     fontSize: 14,
-    color: '#6B7280',
+    color: KFitColors.mutedText,
     lineHeight: 20,
+    textAlign: "center",
   },
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    position: 'relative',
-  },
-  content: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingBottom: 100,
-  },
+
+  /* Header */
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 8,
+    paddingTop: 16,
   },
   brand: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  logout: {
-    fontSize: 14,
-    color: '#EF4444',
-    fontWeight: '600',
-  },
-  subHeader: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    color: KFitColors.text,
   },
   brandSubtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  brandClub: {
-    fontSize: 14,
-    color: '#9CA3AF',
+    fontSize: 12,
+    color: KFitColors.mutedText,
     marginTop: 2,
   },
-  date: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 8,
+  logoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
   },
-  profileHeader: {
-    alignItems: 'center',
+  logoutText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: KFitColors.error,
+  },
+  date: {
     paddingHorizontal: 20,
-    marginBottom: 24,
+    marginTop: 10,
+    fontSize: 12,
+    color: KFitColors.mutedText,
+  },
+
+  /* Hero */
+  profileHeader: {
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 20,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
     borderWidth: 2,
     borderColor: KFitColors.accentDark,
-    elevation: 4,
+    elevation: 6,
     shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
-  avatarImage: {
-    borderRadius: 40,
-  },
-  avatarInitials: {
-    color: '#121212',
-    fontSize: 28,
-    fontWeight: '900',
-  },
+  avatarImage: { borderRadius: 44 },
+  avatarInitials: { color: "#121212", fontSize: 30, fontWeight: "900" },
   profileName: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 4,
+    fontWeight: "800",
+    color: KFitColors.text,
+    marginBottom: 8,
   },
-  profileLabel: {
-    fontSize: 14,
-    color: KFitColors.accentDark,
-    fontWeight: '700',
-    marginBottom: 4,
+  roleChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: KFitColors.accent + "1F",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "40",
   },
-  profileId: {
+  roleChipText: {
     fontSize: 12,
-    color: '#9CA3AF',
+    fontWeight: "800",
+    color: KFitColors.accent,
   },
-  section: {
+
+  /* Quick actions */
+  actionsGrid: {
+    flexDirection: "row",
+    gap: 10,
     paddingHorizontal: 20,
     marginBottom: 24,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 16,
+  actionCard: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: KFitColors.surface,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
   },
-  infoCard: {
-    backgroundColor: '#F9FAFB',
+  actionIconBox: {
+    width: 38,
+    height: 38,
     borderRadius: 12,
-    padding: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "1F",
+    marginBottom: 8,
   },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
+  actionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: KFitColors.text,
   },
-  infoLabel: {
+
+  /* Sections & cards */
+  section: { paddingHorizontal: 20, marginBottom: 24 },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
+  card: {
+    backgroundColor: KFitColors.surface,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+  },
+  cardFlush: {
+    backgroundColor: KFitColors.surface,
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+  },
+  bodyText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: KFitColors.text,
+    lineHeight: 21,
+    paddingVertical: 10,
   },
+  errorText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: KFitColors.error,
+    lineHeight: 18,
+  },
+
+  /* Rows */
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 13,
+    gap: 12,
+  },
+  infoLabel: { fontSize: 14, color: KFitColors.mutedText },
   infoValue: {
     fontSize: 14,
-    color: '#111827',
-    fontWeight: '500',
+    color: KFitColors.text,
+    fontWeight: "600",
     flexShrink: 1,
-    textAlign: 'right',
+    textAlign: "right",
   },
   profileInput: {
     flex: 1,
     minWidth: 120,
     borderBottomWidth: 1,
     borderBottomColor: KFitColors.accent,
-    paddingVertical: Spacing.one,
-    color: '#111827',
+    paddingVertical: 4,
+    color: KFitColors.text,
     fontSize: 14,
-    textAlign: 'right',
+    textAlign: "right",
   },
-  infoDivider: {
+  divider: { height: 1, backgroundColor: KFitColors.border },
+  dividerInset: {
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: KFitColors.border,
+    marginLeft: 16,
   },
-  editButton: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
-  },
-  editButtonText: {
-    fontSize: 14,
-    color: KFitColors.accentDark,
-    fontWeight: '700',
-  },
-  profileActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    marginTop: 8,
-  },
-  saveButtonWrapper: {
-    borderRadius: 10,
-    overflow: 'hidden',
-    elevation: 3,
-    shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-  },
-  saveButtonBg: {
+  linkRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    minHeight: 52,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  saveButtonImage: {
-    borderRadius: 10,
+  linkLabel: { fontSize: 14, color: KFitColors.text, fontWeight: "500" },
+  linkRight: { flexDirection: "row", alignItems: "center", gap: 6 },
+  linkValue: { fontSize: 14, color: KFitColors.mutedText },
+
+  /* Buttons */
+  profileActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.three,
+    marginTop: 12,
   },
-  saveButtonText: {
-    color: '#121212',
+  textButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    marginTop: 12,
+    minHeight: 32,
+  },
+  textButtonLabel: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: "700",
+    color: KFitColors.accent,
   },
-  cancelEditButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  cancelEditButtonText: {
-    color: '#6B7280',
+  cancelButton: { paddingHorizontal: 12, paddingVertical: 10 },
+  cancelButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
+    color: KFitColors.mutedText,
   },
-  requestButton: {
+  goldButton: {
+    alignSelf: "flex-start",
     minHeight: 44,
-    justifyContent: 'center',
-    alignSelf: 'flex-start',
-    marginTop: Spacing.two,
-    borderRadius: 10,
-    overflow: 'hidden',
-    elevation: 3,
+    borderRadius: 12,
+    overflow: "hidden",
+    elevation: 4,
     shadowColor: KFitColors.accent,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
   },
-  requestButtonBg: {
+  goldButtonBg: {
+    minHeight: 44,
     paddingHorizontal: 18,
     paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
-  requestButtonImage: {
-    borderRadius: 10,
-  },
-  requestButtonText: {
-    color: '#121212',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  addressText: {
-    fontSize: 14,
-    color: '#111827',
-    lineHeight: 20,
-  },
-  preferencesCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  preferenceItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-  },
-  preferenceLabel: {
-    fontSize: 14,
-    color: '#111827',
-  },
-  preferenceValue: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginRight: 8,
-  },
-  preferenceArrow: {
-    fontSize: 24,
-    color: '#9CA3AF',
-  },
-  preferenceDivider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginLeft: 16,
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionCard: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-  },
-  actionIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  actionLabel: {
-    fontSize: 12,
-    color: '#111827',
-    fontWeight: '500',
-  },
-  supportCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  supportItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-  },
-  supportLabel: {
-    fontSize: 14,
-    color: '#111827',
-  },
-  supportArrow: {
-    fontSize: 24,
-    color: '#9CA3AF',
-  },
-  supportDivider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginLeft: 16,
-  },
-  footer: {
-    paddingHorizontal: 20,
-    paddingVertical: 32,
-    alignItems: 'center',
-  },
+  goldButtonImage: { borderRadius: 12 },
+  goldButtonText: { color: "#121212", fontSize: 14, fontWeight: "800" },
+  disabled: { opacity: 0.5 },
+
+  /* Footer */
+  footer: { paddingVertical: 24, alignItems: "center" },
   footerBrand: {
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: 'bold',
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    color: KFitColors.text,
   },
-  footerVersion: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 4,
-  },
+  footerVersion: { fontSize: 12, color: KFitColors.mutedText, marginTop: 4 },
 });

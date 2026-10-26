@@ -1,47 +1,252 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
-import { useLogout } from "@/hooks/use-logout";
 import { KFitColors } from "@/constants/theme";
+import { useLogout } from "@/hooks/use-logout";
+import { useMemberProfile } from "@/hooks/use-member-profile";
+import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useMemo, useState } from "react";
 import {
   ImageBackground,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Clears the floating nav (dock + raised QR button + safe area).
+const NAV_CLEARANCE = 140;
+
+type FeatherName = keyof typeof Feather.glyphMap;
+
+// Replace with real data from your workout API when available.
+const WORKOUT = {
+  title: "Lower body strength",
+  program: "Foundation Strength · Week 4 of 8",
+  level: "STRENGTH · INTERMEDIATE",
+  tagline: "Strong from the ground up.",
+  minutes: 55,
+  workingSets: 19,
+  equipment: "Barbells · Dumbbells · Machines",
+  coach: "Marcus Reed",
+  coachNote:
+    "Keep 2 reps in reserve. Controlled tempo and full range of motion come before load.",
+  effort: "RPE 7-8",
+  lastCompleted: "Oct 18 · 52 min",
+  warmup:
+    "Easy cycling for 3 minutes, then bodyweight squats, leg swings and dynamic hip mobility.",
+  finish: "Finish with 5 minutes of easy walking and lower-body stretching.",
+  exercises: [
+    {
+      name: "Barbell back squat",
+      muscle: "Quads",
+      tip: "Keep chest tall",
+      sets: "4",
+      reps: "9-10",
+      rest: "90s",
+      load: "70 kg",
+    },
+    {
+      name: "Romanian deadlift",
+      muscle: "Hamstrings",
+      tip: "Hinge at the hips",
+      sets: "3",
+      reps: "10",
+      rest: "75s",
+      load: "60 kg",
+    },
+    {
+      name: "Reverse lunge",
+      muscle: "Glutes",
+      tip: "Dumbbells each hand",
+      sets: "3",
+      reps: "10/side",
+      rest: "60s",
+      load: "12 kg",
+    },
+    {
+      name: "Seated leg curl",
+      muscle: "Hamstrings",
+      sets: "3",
+      reps: "12",
+      rest: "60s",
+      load: "30 kg",
+    },
+    {
+      name: "Standing calf raise",
+      muscle: "Calves",
+      sets: "4",
+      reps: "15",
+      rest: "60s",
+      load: "40 kg",
+    },
+    {
+      name: "Forearm plank",
+      muscle: "Core",
+      sets: "3",
+      reps: "60s",
+      rest: "60s",
+      load: "-",
+    },
+  ],
+};
+
+const PROGRAM = {
+  week: "Week 4",
+  name: "Foundation Strength",
+  description: "Build a strong base with four focused sessions per week.",
+  todayLabel: "Tue",
+  days: [
+    { day: "Mon", plan: "Upper body A" },
+    { day: "Tue", plan: "Lower body A" },
+    { day: "Wed", plan: "Active recovery 20" },
+    { day: "Thu", plan: "Upper body B" },
+    { day: "Fri", plan: "Lower body B" },
+    { day: "Sat", plan: "Optional mobility 20" },
+    { day: "Sun", plan: "Rest & recharge" },
+  ],
+};
+
+/* ---------------------------- Small building blocks ---------------------------- */
+
+function Section({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: FeatherName;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        {icon ? (
+          <Feather name={icon} size={16} color={KFitColors.accent} />
+        ) : null}
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function LinkRow({
+  label,
+  icon,
+  last,
+  onPress,
+}: {
+  label: string;
+  icon: FeatherName;
+  last?: boolean;
+  onPress?: () => void;
+}) {
+  return (
+    <>
+      <TouchableOpacity
+        style={styles.linkRow}
+        onPress={onPress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        <View style={styles.linkLeft}>
+          <View style={styles.linkIconBox}>
+            <Feather name={icon} size={16} color={KFitColors.accent} />
+          </View>
+          <Text style={styles.linkLabel}>{label}</Text>
+        </View>
+        <Feather name="chevron-right" size={18} color={KFitColors.mutedText} />
+      </TouchableOpacity>
+      {!last ? <View style={styles.dividerInset} /> : null}
+    </>
+  );
+}
+
+function Stat({ value, label }: { value: string | number; label: string }) {
+  return (
+    <View style={styles.stat}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+/* ---------------------------------- Screen ---------------------------------- */
+
 export default function MemberWorkoutScreen() {
+  const router = useRouter();
   const { isSigningOut, logout } = useLogout();
+  const { profile } = useMemberProfile();
+  const [notes, setNotes] = useState("");
+
+  const today = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+    [],
+  );
+
+  const firstName = profile?.firstName?.trim();
+  const go = (route: string) => router.replace(route as any);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.mainContainer}>
-        <ScrollView style={styles.content}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={{ paddingBottom: NAV_CLEARANCE }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.brand}>FORM ATHLETICS</Text>
-            <TouchableOpacity disabled={isSigningOut} onPress={logout}>
-              <Text style={styles.logout}>Logout</Text>
+            <View>
+              <Text style={styles.brand}>FORM ATHLETICS</Text>
+              <Text style={styles.brandSubtitle}>
+                FORM / Brooklyn · Performance club
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              disabled={isSigningOut}
+              onPress={logout}
+              accessibilityRole="button"
+              accessibilityLabel="Log out"
+            >
+              <Feather name="log-out" size={14} color={KFitColors.error} />
+              <Text style={styles.logoutText}>
+                {isSigningOut ? "Signing out…" : "Logout"}
+              </Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.subHeader}>
-            <Text style={styles.brandSubtitle}>FORM/Brooklyn</Text>
-            <Text style={styles.brandClub}>Performance club</Text>
-            <Text style={styles.date}>Tuesday, October 20, 2026</Text>
+          <Text style={styles.date}>{today}</Text>
+
+          {/* Workout hero */}
+          <View style={styles.hero}>
+            <Text style={styles.eyebrow}>
+              {firstName
+                ? `TODAY'S SESSION · ${firstName.toUpperCase()}`
+                : "TODAY'S SESSION"}
+            </Text>
+            <Text style={styles.heroTitle}>{WORKOUT.title}</Text>
+            <Text style={styles.heroSubtitle}>{WORKOUT.program}</Text>
           </View>
 
-          {/* Member Info */}
-          <View style={styles.memberInfo}>
-            <Text style={styles.memberLabel}>A Member</Text>
-            <Text style={styles.memberName}>Jordan Lee</Text>
-          </View>
-
-          {/* Start Workout Button */}
+          {/* Start workout */}
           <TouchableOpacity
             style={styles.startButtonWrapper}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
             accessibilityRole="button"
+            accessibilityLabel="Start workout"
+            onPress={() => {}}
           >
             <ImageBackground
               source={require("../../assets/images/gold-texture.jpg")}
@@ -49,695 +254,546 @@ export default function MemberWorkoutScreen() {
               style={styles.startButtonBg}
               imageStyle={styles.startButtonImage}
             >
-              <Text style={styles.startButtonText}>▷ Start workout</Text>
+              <Feather name="play" size={16} color="#121212" />
+              <Text style={styles.startButtonText}>Start workout</Text>
             </ImageBackground>
           </TouchableOpacity>
 
-          {/* Workout Title */}
-          <View style={styles.workoutHeader}>
-            <Text style={styles.workoutTitle}>Lower body strength</Text>
-            <Text style={styles.workoutSubtitle}>
-              Foundation Strength/Week 4 of 8
-            </Text>
-            <Text style={styles.workoutDate}>Tuesday, October 20</Text>
-          </View>
-
-          {/* Overview */}
-          <View style={styles.overviewSection}>
-            <Text style={styles.overviewNumber}>88</Text>
-            <Text style={styles.overviewLabel}>Overview</Text>
-          </View>
-
-          {/* Overview Cards */}
-          <View style={styles.section}>
-            <View style={styles.cardsGrid}>
-              <TouchableOpacity style={styles.card}>
-                <Text style={styles.cardTitle}>My workouts</Text>
-                <Text style={styles.cardArrow}>›</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.card}>
-                <Text style={styles.cardTitle}>Progress & profile</Text>
-                <Text style={styles.cardArrow}>›</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.card}>
-                <Text style={styles.cardTitle}>Membership & billing</Text>
-                <Text style={styles.cardArrow}>›</Text>
-              </TouchableOpacity>
+          {/* Session summary */}
+          <View style={styles.summaryCard}>
+            <Text style={styles.level}>{WORKOUT.level}</Text>
+            <Text style={styles.tagline}>{WORKOUT.tagline}</Text>
+            <View style={styles.statsRow}>
+              <Stat value={WORKOUT.exercises.length} label="exercises" />
+              <View style={styles.statDivider} />
+              <Stat value={WORKOUT.minutes} label="minutes" />
+              <View style={styles.statDivider} />
+              <Stat value={WORKOUT.workingSets} label="working sets" />
+            </View>
+            <View style={styles.equipmentRow}>
+              <Feather name="tool" size={13} color={KFitColors.mutedText} />
+              <Text style={styles.equipmentText}>{WORKOUT.equipment}</Text>
             </View>
           </View>
 
-          {/* Workout Details */}
-          <View style={styles.section}>
-            <View style={styles.workoutDetailsCard}>
-              <Text style={styles.workoutLevel}>STRENGTH/INTERMEDIATE</Text>
-              <Text style={styles.workoutDescription}>
-                Strong from the ground up.
-              </Text>
-              <View style={styles.workoutStats}>
-                <View style={styles.workoutStat}>
-                  <Text style={styles.workoutStatNumber}>5</Text>
-                  <Text style={styles.workoutStatLabel}>exercises</Text>
+          {/* Coach */}
+          <Section title="Today's Focus" icon="target">
+            <View style={styles.card}>
+              <View style={styles.coachRow}>
+                <View style={styles.coachIcon}>
+                  <Feather name="award" size={16} color={KFitColors.accent} />
                 </View>
-                <View style={styles.workoutStat}>
-                  <Text style={styles.workoutStatNumber}>55</Text>
-                  <Text style={styles.workoutStatLabel}>minutes</Text>
-                </View>
-                <View style={styles.workoutStat}>
-                  <Text style={styles.workoutStatNumber}>19</Text>
-                  <Text style={styles.workoutStatLabel}>working sets</Text>
+                <View>
+                  <Text style={styles.coachName}>{WORKOUT.coach}</Text>
+                  <Text style={styles.coachRole}>Your coach</Text>
                 </View>
               </View>
-              <Text style={styles.equipment}>
-                Barbells • Dumbbells • Machines
-              </Text>
+              <Text style={styles.quote}>“{WORKOUT.coachNote}”</Text>
             </View>
-          </View>
+          </Section>
 
-          {/* Today's Focus */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today&apos;s focus</Text>
-            <View style={styles.focusCard}>
-              <Text style={styles.focusText}>Marcus Reed</Text>
-              <Text style={styles.focusLabel}>Your coach</Text>
-              <Text style={styles.focusQuote}>
-                &ldquo;Keep 2 reps in reserve. Controlled tempo and full range of
-                motion come before load.&rdquo;
-              </Text>
-            </View>
-          </View>
-
-          {/* Target Effort */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Target effort</Text>
-            <View style={styles.effortCard}>
-              <Text style={styles.effortValue}>RPE 7-8</Text>
+          {/* Effort */}
+          <Section title="Target Effort" icon="activity">
+            <View style={[styles.card, styles.effortCard]}>
+              <Text style={styles.effortValue}>{WORKOUT.effort}</Text>
               <View style={styles.lastCompleted}>
-                <Text style={styles.lastCompletedLabel}>Last completed</Text>
-                <Text style={styles.lastCompletedDate}>Oct 18 • 52 min</Text>
+                <Text style={styles.lastCompletedLabel}>LAST COMPLETED</Text>
+                <Text style={styles.lastCompletedValue}>
+                  {WORKOUT.lastCompleted}
+                </Text>
               </View>
             </View>
-          </View>
+          </Section>
 
           {/* Warm-up */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Warm-up</Text>
-            <View style={styles.warmupCard}>
-              <Text style={styles.warmupText}>
-                Easy cycling for 3 minutes, then bodyweight squats, leg swings
-                and dynamic hip mobility.
-              </Text>
+          <Section title="Warm-up" icon="sunrise">
+            <View style={styles.card}>
+              <Text style={styles.bodyText}>{WORKOUT.warmup}</Text>
             </View>
-          </View>
+          </Section>
 
-          {/* Exercise Table */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>EXERCISE</Text>
-            <View style={styles.exerciseTable}>
+          {/* Exercises */}
+          <Section title="Exercises" icon="zap">
+            <View style={styles.cardFlush}>
               <View style={styles.tableHeader}>
-                <Text style={styles.tableHeaderText}>SETS</Text>
-                <Text style={styles.tableHeaderText}>REPS</Text>
-                <Text style={styles.tableHeaderText}>REST</Text>
-                <Text style={styles.tableHeaderText}>LOAD</Text>
+                <Text style={[styles.tableHeaderText, styles.colName]}>
+                  EXERCISE
+                </Text>
+                <Text style={[styles.tableHeaderText, styles.colData]}>
+                  SETS
+                </Text>
+                <Text style={[styles.tableHeaderText, styles.colData]}>
+                  REPS
+                </Text>
+                <Text style={[styles.tableHeaderText, styles.colData]}>
+                  REST
+                </Text>
+                <Text style={[styles.tableHeaderText, styles.colData]}>
+                  LOAD
+                </Text>
               </View>
-
-              <View style={styles.exerciseRow}>
-                <View style={styles.exerciseInfo}>
-                  <Text style={styles.exerciseName}>Barbell back squat</Text>
-                  <Text style={styles.exerciseMuscle}>Quads</Text>
-                  <Text style={styles.exerciseTip}>Keep chest tall</Text>
+              {WORKOUT.exercises.map((ex, i) => (
+                <View key={ex.name}>
+                  <View style={styles.exerciseRow}>
+                    <View style={styles.colName}>
+                      <Text style={styles.exerciseName}>{ex.name}</Text>
+                      <Text style={styles.exerciseMuscle}>{ex.muscle}</Text>
+                      {ex.tip ? (
+                        <Text style={styles.exerciseTip}>{ex.tip}</Text>
+                      ) : null}
+                    </View>
+                    <Text style={[styles.exerciseValue, styles.colData]}>
+                      {ex.sets}
+                    </Text>
+                    <Text style={[styles.exerciseValue, styles.colData]}>
+                      {ex.reps}
+                    </Text>
+                    <Text style={[styles.exerciseValue, styles.colData]}>
+                      {ex.rest}
+                    </Text>
+                    <Text style={[styles.exerciseValue, styles.colData]}>
+                      {ex.load}
+                    </Text>
+                  </View>
+                  {i < WORKOUT.exercises.length - 1 ? (
+                    <View style={styles.divider} />
+                  ) : null}
                 </View>
-                <View style={styles.exerciseData}>
-                  <Text style={styles.exerciseValue}>4</Text>
-                  <Text style={styles.exerciseValue}>9-10</Text>
-                  <Text style={styles.exerciseValue}>90s</Text>
-                  <Text style={styles.exerciseValue}>70kg</Text>
-                </View>
-              </View>
-
-              <View style={styles.exerciseRow}>
-                <View style={styles.exerciseInfo}>
-                  <Text style={styles.exerciseName}>Romanian deadlift</Text>
-                  <Text style={styles.exerciseMuscle}>Hamstrings</Text>
-                  <Text style={styles.exerciseTip}>Hinge at the hips</Text>
-                </View>
-                <View style={styles.exerciseData}>
-                  <Text style={styles.exerciseValue}>3</Text>
-                  <Text style={styles.exerciseValue}>10</Text>
-                  <Text style={styles.exerciseValue}>75s</Text>
-                  <Text style={styles.exerciseValue}>60 kg</Text>
-                </View>
-              </View>
-
-              <View style={styles.exerciseRow}>
-                <View style={styles.exerciseInfo}>
-                  <Text style={styles.exerciseName}>Reverse lunge</Text>
-                  <Text style={styles.exerciseMuscle}>Glutes</Text>
-                  <Text style={styles.exerciseTip}>Dumbbells each hand</Text>
-                </View>
-                <View style={styles.exerciseData}>
-                  <Text style={styles.exerciseValue}>3</Text>
-                  <Text style={styles.exerciseValue}>10/side</Text>
-                  <Text style={styles.exerciseValue}>60s</Text>
-                  <Text style={styles.exerciseValue}>12kg</Text>
-                </View>
-              </View>
-
-              <View style={styles.exerciseRow}>
-                <View style={styles.exerciseInfo}>
-                  <Text style={styles.exerciseName}>Seated leg curl</Text>
-                  <Text style={styles.exerciseMuscle}>Hamstrings</Text>
-                </View>
-                <View style={styles.exerciseData}>
-                  <Text style={styles.exerciseValue}>3</Text>
-                  <Text style={styles.exerciseValue}>12</Text>
-                  <Text style={styles.exerciseValue}>60s</Text>
-                  <Text style={styles.exerciseValue}>30 kg</Text>
-                </View>
-              </View>
-
-              <View style={styles.exerciseRow}>
-                <View style={styles.exerciseInfo}>
-                  <Text style={styles.exerciseName}>Standing calf raise</Text>
-                  <Text style={styles.exerciseMuscle}>Calves</Text>
-                </View>
-                <View style={styles.exerciseData}>
-                  <Text style={styles.exerciseValue}>4</Text>
-                  <Text style={styles.exerciseValue}>15</Text>
-                  <Text style={styles.exerciseValue}>60s</Text>
-                  <Text style={styles.exerciseValue}>40 kg</Text>
-                </View>
-              </View>
-
-              <View style={styles.exerciseRow}>
-                <View style={styles.exerciseInfo}>
-                  <Text style={styles.exerciseName}>Forearms plank</Text>
-                  <Text style={styles.exerciseMuscle}>Core</Text>
-                </View>
-                <View style={styles.exerciseData}>
-                  <Text style={styles.exerciseValue}>3</Text>
-                  <Text style={styles.exerciseValue}>60s</Text>
-                  <Text style={styles.exerciseValue}>60s</Text>
-                  <Text style={styles.exerciseValue}>-</Text>
-                </View>
-              </View>
+              ))}
             </View>
-          </View>
+          </Section>
 
           {/* Finish */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Finish</Text>
-            <View style={styles.finishCard}>
-              <Text style={styles.finishText}>
-                Finish with 5 minutes of easy walking and lower-body stretching
-              </Text>
+          <Section title="Finish" icon="flag">
+            <View style={styles.card}>
+              <Text style={styles.bodyText}>{WORKOUT.finish}</Text>
             </View>
-          </View>
+          </Section>
 
-          {/* Workout Notes */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Workout notes</Text>
-            <View style={styles.notesCard}>
-              <Text style={styles.notesPlaceholder}>
-                How are you feeling today? Add notes about your energy,
-                technique or any discomfort...
-              </Text>
+          {/* Notes */}
+          <Section title="Workout Notes" icon="edit-3">
+            <View style={styles.card}>
+              <TextInput
+                style={styles.notesInput}
+                value={notes}
+                onChangeText={setNotes}
+                multiline
+                textAlignVertical="top"
+                placeholder="How are you feeling today? Add notes about your energy, technique or any discomfort…"
+                placeholderTextColor={KFitColors.mutedText}
+                accessibilityLabel="Workout notes"
+              />
             </View>
-          </View>
+          </Section>
 
-          {/* Weekly Program */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your weekly program</Text>
-            <View style={styles.programCard}>
+          {/* Weekly program */}
+          <Section title="Your Weekly Program" icon="calendar">
+            <View style={styles.card}>
               <View style={styles.programHeader}>
-                <Text style={styles.programWeek}>Week 4</Text>
-                <Text style={styles.programName}>Foundation Strength</Text>
+                <Text style={styles.programWeek}>{PROGRAM.week}</Text>
+                <Text style={styles.programName}>{PROGRAM.name}</Text>
               </View>
               <Text style={styles.programDescription}>
-                Build a strong base with four focused sessions per week
+                {PROGRAM.description}
               </Text>
-              <View style={styles.programSchedule}>
-                <View style={styles.programDay}>
-                  <Text style={styles.programDayLabel}>Mon</Text>
-                  <Text style={styles.programDayValue}>Upper body A</Text>
-                </View>
-                <View style={styles.programDay}>
-                  <Text style={styles.programDayLabel}>Tue</Text>
-                  <Text
-                    style={[styles.programDayValue, styles.programDayToday]}
-                  >
-                    Lower body A
-                  </Text>
-                  <Text style={styles.programDayTodayLabel}>Today</Text>
-                </View>
-                <View style={styles.programDay}>
-                  <Text style={styles.programDayLabel}>Wed</Text>
-                  <Text style={styles.programDayValue}>Active recovery 20</Text>
-                </View>
-                <View style={styles.programDay}>
-                  <Text style={styles.programDayLabel}>Thu</Text>
-                  <Text style={styles.programDayValue}>Upper body B</Text>
-                </View>
-                <View style={styles.programDay}>
-                  <Text style={styles.programDayLabel}>Fri</Text>
-                  <Text style={styles.programDayValue}>Lower body B</Text>
-                </View>
-                <View style={styles.programDay}>
-                  <Text style={styles.programDayLabel}>Sat</Text>
-                  <Text style={styles.programDayValue}>
-                    Optional mobility 20
-                  </Text>
-                </View>
-                <View style={styles.programDay}>
-                  <Text style={styles.programDayLabel}>Sun</Text>
-                  <Text style={styles.programDayValue}>Rest & recharge</Text>
-                </View>
-              </View>
-              <TouchableOpacity style={styles.viewProgramButton}>
-                <Text style={styles.viewProgramButtonText}>
-                  View full program
-                </Text>
+
+              {PROGRAM.days.map((d, i) => {
+                const isToday = d.day === PROGRAM.todayLabel;
+                return (
+                  <View key={d.day}>
+                    <View
+                      style={[
+                        styles.programDay,
+                        isToday && styles.programDayActive,
+                      ]}
+                    >
+                      <Text style={styles.programDayLabel}>{d.day}</Text>
+                      <Text
+                        style={[
+                          styles.programDayValue,
+                          isToday && styles.programDayToday,
+                        ]}
+                      >
+                        {d.plan}
+                      </Text>
+                      {isToday ? (
+                        <View style={styles.todayChip}>
+                          <Text style={styles.todayChipText}>Today</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {i < PROGRAM.days.length - 1 ? (
+                      <View style={styles.divider} />
+                    ) : null}
+                  </View>
+                );
+              })}
+
+              <TouchableOpacity
+                style={styles.outlineButton}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                onPress={() => {}}
+              >
+                <Text style={styles.outlineButtonText}>View full program</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Section>
+
+          {/* Quick links */}
+          <Section title="More" icon="compass">
+            <View style={styles.cardFlush}>
+              <LinkRow
+                label="Progress"
+                icon="activity"
+                onPress={() => go("/member-dashboard")}
+              />
+              <LinkRow
+                label="Progress & profile"
+                icon="user"
+                onPress={() => go("/member-profile")}
+              />
+              <LinkRow
+                label="Membership & billing"
+                icon="credit-card"
+                onPress={() => go("/member-membership")}
+                last
+              />
+            </View>
+          </Section>
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerName}>Jordan Lee</Text>
-            <Text style={styles.footerLabel}>
-              FORM ATHLETICS MEMBER WORKSPACE
-            </Text>
+            <Text style={styles.footerBrand}>FORM ATHLETICS</Text>
+            <Text style={styles.footerVersion}>Member workspace</Text>
           </View>
         </ScrollView>
+
         <MemberBottomNav activeRoute="/member-workout" />
       </View>
     </SafeAreaView>
   );
 }
 
+/* ---------------------------------- Styles ---------------------------------- */
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-  mainContainer: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    position: "relative",
-  },
-  content: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    paddingBottom: 100,
-  },
+  safeArea: { flex: 1, backgroundColor: KFitColors.background },
+  mainContainer: { flex: 1, backgroundColor: KFitColors.background },
+  content: { flex: 1 },
+
+  /* Header */
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 8,
+    paddingTop: 16,
   },
   brand: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#111827",
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    color: KFitColors.text,
   },
-  logout: {
-    fontSize: 14,
-    color: "#EF4444",
-    fontWeight: "600",
+  brandSubtitle: { fontSize: 12, color: KFitColors.mutedText, marginTop: 2 },
+  logoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
   },
-  subHeader: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  brandSubtitle: {
-    fontSize: 16,
-    color: "#6B7280",
-    marginTop: 4,
-  },
-  brandClub: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    marginTop: 2,
-  },
+  logoutText: { fontSize: 12, fontWeight: "700", color: KFitColors.error },
   date: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    marginTop: 8,
-  },
-  memberInfo: {
     paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  memberLabel: {
+    marginTop: 10,
     fontSize: 12,
-    color: "#6B7280",
-    textTransform: "uppercase",
+    color: KFitColors.mutedText,
   },
-  memberName: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#111827",
-    marginTop: 4,
+
+  /* Hero */
+  hero: { paddingHorizontal: 20, marginTop: 20, marginBottom: 16 },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+    color: KFitColors.accent,
+    marginBottom: 6,
   },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: KFitColors.text,
+    marginBottom: 4,
+  },
+  heroSubtitle: { fontSize: 14, color: KFitColors.mutedText },
+
+  /* Start button */
   startButtonWrapper: {
     marginHorizontal: 20,
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
-    marginBottom: 24,
-    elevation: 3,
+    marginBottom: 20,
+    elevation: 4,
     shadowColor: KFitColors.accent,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
   },
   startButtonBg: {
+    minHeight: 54,
     paddingVertical: 16,
+    flexDirection: "row",
+    gap: 8,
     alignItems: "center",
     justifyContent: "center",
   },
-  startButtonImage: {
-    borderRadius: 12,
-  },
+  startButtonImage: { borderRadius: 14 },
   startButtonText: {
     color: "#121212",
     fontSize: 16,
     fontWeight: "800",
     letterSpacing: 0.3,
   },
-  workoutHeader: {
-    paddingHorizontal: 20,
+
+  /* Summary card */
+  summaryCard: {
+    marginHorizontal: 20,
     marginBottom: 24,
-  },
-  workoutTitle: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  workoutSubtitle: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginBottom: 4,
-  },
-  workoutDate: {
-    fontSize: 13,
-    color: "#9CA3AF",
-  },
-  overviewSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  overviewNumber: {
-    fontSize: 48,
-    fontWeight: "bold",
-    color: "#111827",
-  },
-  overviewLabel: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginTop: 4,
-  },
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  cardsGrid: {
-    gap: 12,
-  },
-  card: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#111827",
-  },
-  cardArrow: {
-    fontSize: 24,
-    color: "#9CA3AF",
-  },
-  workoutDetailsCard: {
-    backgroundColor: "#F9FAFB",
+    padding: 18,
     borderRadius: 16,
-    padding: 20,
+    backgroundColor: KFitColors.surface,
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "40",
   },
-  workoutLevel: {
-    fontSize: 12,
-    color: "#4F46E5",
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  workoutDescription: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 16,
-  },
-  workoutStats: {
-    flexDirection: "row",
-    marginBottom: 12,
-  },
-  workoutStat: {
-    flex: 1,
-  },
-  workoutStatNumber: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  workoutStatLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  equipment: {
-    fontSize: 13,
-    color: "#9CA3AF",
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 16,
-  },
-  focusCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    padding: 20,
-  },
-  focusText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  focusLabel: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginBottom: 12,
-  },
-  focusQuote: {
-    fontSize: 14,
-    color: "#6B7280",
-    fontStyle: "italic",
-    lineHeight: 20,
-  },
-  effortCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  effortValue: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#111827",
-  },
-  lastCompleted: {
-    alignItems: "flex-end",
-  },
-  lastCompletedLabel: {
+  level: {
     fontSize: 11,
-    color: "#9CA3AF",
-    textTransform: "uppercase",
+    fontWeight: "700",
+    letterSpacing: 1,
+    color: KFitColors.accent,
+    marginBottom: 6,
   },
-  lastCompletedDate: {
-    fontSize: 13,
-    color: "#6B7280",
+  tagline: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: KFitColors.text,
+    marginBottom: 16,
   },
-  warmupCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
+  statsRow: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
+  stat: { flex: 1, alignItems: "center" },
+  statValue: { fontSize: 24, fontWeight: "900", color: KFitColors.text },
+  statLabel: { fontSize: 12, color: KFitColors.mutedText, marginTop: 2 },
+  statDivider: { width: 1, height: 32, backgroundColor: KFitColors.border },
+  equipmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: KFitColors.border,
+  },
+  equipmentText: { fontSize: 13, color: KFitColors.mutedText },
+
+  /* Sections & cards */
+  section: { paddingHorizontal: 20, marginBottom: 24 },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionTitle: { fontSize: 16, fontWeight: "800", color: KFitColors.text },
+  card: {
+    backgroundColor: KFitColors.surface,
+    borderRadius: 16,
     padding: 16,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
   },
-  warmupText: {
-    fontSize: 14,
-    color: "#6B7280",
-    lineHeight: 20,
-  },
-  exerciseTable: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
+  cardFlush: {
+    backgroundColor: KFitColors.surface,
+    borderRadius: 16,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: KFitColors.border,
   },
+  bodyText: { fontSize: 14, color: KFitColors.text, lineHeight: 21 },
+  divider: { height: 1, backgroundColor: KFitColors.border },
+  dividerInset: {
+    height: 1,
+    backgroundColor: KFitColors.border,
+    marginLeft: 64,
+  },
+
+  /* Coach */
+  coachRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 14,
+  },
+  coachIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "1F",
+  },
+  coachName: { fontSize: 15, fontWeight: "700", color: KFitColors.text },
+  coachRole: { fontSize: 12, color: KFitColors.mutedText, marginTop: 1 },
+  quote: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontStyle: "italic",
+    color: KFitColors.mutedText,
+  },
+
+  /* Effort */
+  effortCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  effortValue: { fontSize: 22, fontWeight: "900", color: KFitColors.accent },
+  lastCompleted: { alignItems: "flex-end" },
+  lastCompletedLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    color: KFitColors.mutedText,
+  },
+  lastCompletedValue: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: KFitColors.text,
+    marginTop: 2,
+  },
+
+  /* Exercise table */
   tableHeader: {
     flexDirection: "row",
-    backgroundColor: "#E5E7EB",
+    alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
+    backgroundColor: KFitColors.accent + "1F",
   },
   tableHeaderText: {
-    flex: 1,
-    fontSize: 11,
-    color: "#6B7280",
-    fontWeight: "600",
-    textAlign: "center",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    color: KFitColors.accent,
   },
   exerciseRow: {
     flexDirection: "row",
-    paddingVertical: 16,
+    alignItems: "center",
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
   },
-  exerciseInfo: {
-    flex: 1,
-  },
+  colName: { flex: 1, paddingRight: 8 },
+  colData: { width: 44, textAlign: "center" },
   exerciseName: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 4,
+    fontWeight: "700",
+    color: KFitColors.text,
+    marginBottom: 3,
   },
-  exerciseMuscle: {
-    fontSize: 12,
-    color: "#4F46E5",
-    marginBottom: 2,
-  },
-  exerciseTip: {
-    fontSize: 11,
-    color: "#9CA3AF",
-  },
-  exerciseData: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "center",
-  },
-  exerciseValue: {
-    fontSize: 13,
-    color: "#111827",
-    minWidth: 40,
-    textAlign: "center",
-  },
-  finishCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 16,
-  },
-  finishText: {
+  exerciseMuscle: { fontSize: 12, color: KFitColors.accent, marginBottom: 2 },
+  exerciseTip: { fontSize: 11, color: KFitColors.mutedText },
+  exerciseValue: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
+
+  /* Notes */
+  notesInput: {
+    minHeight: 90,
     fontSize: 14,
-    color: "#6B7280",
     lineHeight: 20,
+    color: KFitColors.text,
+    padding: 0,
   },
-  notesCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 16,
-    minHeight: 80,
-  },
-  notesPlaceholder: {
-    fontSize: 14,
-    color: "#9CA3AF",
-  },
-  programCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    padding: 20,
-  },
+
+  /* Program */
   programHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
-  },
-  programWeek: {
-    fontSize: 14,
-    color: "#4F46E5",
-    fontWeight: "600",
-    marginRight: 8,
-  },
-  programName: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#111827",
-  },
-  programDescription: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginBottom: 16,
-  },
-  programSchedule: {
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 6,
+  },
+  programWeek: { fontSize: 13, fontWeight: "800", color: KFitColors.accent },
+  programName: { fontSize: 16, fontWeight: "800", color: KFitColors.text },
+  programDescription: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: KFitColors.mutedText,
+    marginBottom: 12,
   },
   programDay: {
     flexDirection: "row",
     alignItems: "center",
+    paddingVertical: 11,
   },
-  programDayLabel: {
-    width: 40,
-    fontSize: 13,
-    color: "#6B7280",
+  programDayActive: {
+    backgroundColor: KFitColors.accent + "14",
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
   },
-  programDayValue: {
-    flex: 1,
-    fontSize: 14,
-    color: "#111827",
-  },
-  programDayToday: {
-    color: KFitColors.accentDark,
-    fontWeight: "700",
-  },
-  programDayTodayLabel: {
-    fontSize: 11,
-    color: KFitColors.accentDark,
-    fontWeight: "700",
-    marginLeft: 8,
-  },
-  viewProgramButton: {
-    backgroundColor: "#111827",
-    borderRadius: 8,
+  programDayLabel: { width: 44, fontSize: 13, color: KFitColors.mutedText },
+  programDayValue: { flex: 1, fontSize: 14, color: KFitColors.text },
+  programDayToday: { color: KFitColors.accent, fontWeight: "800" },
+  todayChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: KFitColors.accent + "1F",
     borderWidth: 1,
-    borderColor: KFitColors.accentDark,
-    paddingVertical: 12,
-    alignItems: "center",
+    borderColor: KFitColors.accent + "40",
   },
-  viewProgramButtonText: {
-    color: KFitColors.accentLight,
+  todayChipText: { fontSize: 11, fontWeight: "800", color: KFitColors.accent },
+  outlineButton: {
+    marginTop: 16,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: KFitColors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  outlineButtonText: {
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
+    color: KFitColors.accent,
   },
-  footer: {
-    paddingHorizontal: 20,
-    paddingVertical: 32,
+
+  /* Link rows */
+  linkRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    minHeight: 56,
+    paddingHorizontal: 16,
   },
-  footerName: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#111827",
+  linkLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  linkIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "1F",
   },
-  footerLabel: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    marginTop: 4,
+  linkLabel: { fontSize: 14, color: KFitColors.text, fontWeight: "500" },
+
+  /* Footer */
+  footer: { paddingVertical: 24, alignItems: "center" },
+  footerBrand: {
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    color: KFitColors.text,
   },
+  footerVersion: { fontSize: 12, color: KFitColors.mutedText, marginTop: 4 },
 });
