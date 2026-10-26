@@ -2,7 +2,7 @@ import { useAuth } from "@clerk/expo";
 import { Button, Host } from "@expo/ui";
 import { useSubscriptionAccess, type PricingPlan, type SubscriptionPeriod, type SubscriptionPlanType } from "@/hooks/use-subscription-access";
 import { KFitColors, Spacing } from "@/constants/theme";
-import * as WebBrowser from "expo-web-browser";
+import { Linking } from "react-native";
 import { useCallback, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -139,7 +139,12 @@ function AuthenticatedSubscriptionPaywall({
       }
 
       console.log("Checkout URL received:", rawUrl);
-      await WebBrowser.openBrowserAsync(rawUrl);
+      // Use Linking.openURL instead of WebBrowser.openBrowserAsync.
+      // On Android, openBrowserAsync reuses the Chrome Custom Tab that Clerk
+      // left open for Google OAuth, causing the browser to show the stale
+      // Clerk sign-in page instead of the PayMongo checkout.
+      // Linking.openURL forces the full system browser, bypassing Custom Tabs.
+      await Linking.openURL(rawUrl);
       access.refresh();
       setActionMessage(
         "Checkout opened. Access updates after PayMongo confirms payment.",
