@@ -48,14 +48,11 @@ const NAV_ITEMS: NavItem[] = [
   { name: "Memo", short: "Memo", route: "/memo", icon: "document-text" },
 ];
 
-// These five get a slot in the floating dock; everything else lives under "More"
-const PRIMARY_ROUTES = [
-  "/dashboard",
-  "/members",
-  "/attendance",
-  "/trainers",
-  "/payments",
-];
+// Phone dock: 2 items LEFT of the QR button, 1 item RIGHT of it (+ "More" on the right).
+// Change these arrays to swap what is shown; everything else goes under "More".
+const LEFT_ROUTES = ["/dashboard", "/members"];
+const RIGHT_ROUTES = ["/payments"];
+const QR_ROUTE = "/admin-scanner";
 
 export default function Sidebar({ activeRoute }: SidebarProps) {
   const router = useRouter();
@@ -66,13 +63,18 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
   const isMobile = width < 768;
-  const primaryItems = NAV_ITEMS.filter((i) =>
-    PRIMARY_ROUTES.includes(i.route),
-  );
-  const secondaryItems = NAV_ITEMS.filter(
-    (i) => !PRIMARY_ROUTES.includes(i.route),
-  );
+
+  const leftItems = LEFT_ROUTES.map((r) =>
+    NAV_ITEMS.find((i) => i.route === r),
+  ).filter(Boolean) as NavItem[];
+  const rightItems = RIGHT_ROUTES.map((r) =>
+    NAV_ITEMS.find((i) => i.route === r),
+  ).filter(Boolean) as NavItem[];
+
+  const dockRoutes = [...LEFT_ROUTES, ...RIGHT_ROUTES, QR_ROUTE];
+  const secondaryItems = NAV_ITEMS.filter((i) => !dockRoutes.includes(i.route));
   const moreIsActive = secondaryItems.some((i) => i.route === activeRoute);
+  const qrActive = activeRoute === QR_ROUTE;
 
   const goTo = (route: string) => router.replace(route as any);
 
@@ -81,59 +83,90 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
     void logout();
   };
 
+  const renderDockItem = (item: NavItem) => {
+    const active = activeRoute === item.route;
+    return (
+      <Pressable
+        key={item.route}
+        style={({ pressed }) => [styles.dockItem, pressed && styles.pressed]}
+        onPress={() => goTo(item.route)}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: active }}
+        accessibilityLabel={item.name}
+      >
+        <View style={styles.dockIconBox}>
+          {active ? (
+            <ImageBackground
+              source={require("../../assets/images/gold-texture.jpg")}
+              resizeMode="cover"
+              style={styles.dockIconActivePill}
+              imageStyle={styles.dockIconActivePillImage}
+            >
+              <Ionicons
+                name={item.icon}
+                size={18}
+                color={KFitColors.onAccent}
+              />
+            </ImageBackground>
+          ) : (
+            <Ionicons name={item.icon} size={18} color={KFitColors.mutedText} />
+          )}
+        </View>
+        <Text
+          style={[styles.dockLabel, active && styles.dockLabelActive]}
+          numberOfLines={1}
+        >
+          {item.short}
+        </Text>
+      </Pressable>
+    );
+  };
+
   /* ------------------------------------------------------------------ */
-  /* Phone: floating glass dock + "More" sheet                           */
+  /* Phone: floating dock with center QR button + "More" sheet           */
   /* ------------------------------------------------------------------ */
   if (isMobile) {
     return (
       <>
         <View style={styles.dockWrap} pointerEvents="box-none">
+          {/* Raised center QR button */}
+          <View style={styles.qrWrap} pointerEvents="box-none">
+            <Pressable
+              onPress={() => goTo(QR_ROUTE)}
+              style={({ pressed }) => [
+                styles.qrOuter,
+                qrActive && styles.qrOuterActive,
+                pressed && styles.qrPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Open QR scanner"
+            >
+              <ImageBackground
+                source={require("../../assets/images/gold-texture.jpg")}
+                resizeMode="cover"
+                style={styles.qrInner}
+              >
+                {/* scanner corner brackets */}
+                <View style={[styles.qrCorner, styles.qrCornerTL]} />
+                <View style={[styles.qrCorner, styles.qrCornerTR]} />
+                <View style={[styles.qrCorner, styles.qrCornerBL]} />
+                <View style={[styles.qrCorner, styles.qrCornerBR]} />
+                <Ionicons
+                  name="qr-code"
+                  size={24}
+                  color={KFitColors.onAccent}
+                />
+              </ImageBackground>
+            </Pressable>
+          </View>
+
           <View style={styles.dock}>
-            {primaryItems.map((item) => {
-              const active = activeRoute === item.route;
-              return (
-                <Pressable
-                  key={item.route}
-                  style={({ pressed }) => [
-                    styles.dockItem,
-                    pressed && styles.pressed,
-                  ]}
-                  onPress={() => goTo(item.route)}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={item.name}
-                >
-                  <View style={styles.dockIconBox}>
-                    {active ? (
-                      <ImageBackground
-                        source={require("../../assets/images/gold-texture.jpg")}
-                        resizeMode="cover"
-                        style={styles.dockIconActivePill}
-                        imageStyle={styles.dockIconActivePillImage}
-                      >
-                        <Ionicons
-                          name={item.icon}
-                          size={18}
-                          color={KFitColors.onAccent}
-                        />
-                      </ImageBackground>
-                    ) : (
-                      <Ionicons
-                        name={item.icon}
-                        size={18}
-                        color={KFitColors.mutedText}
-                      />
-                    )}
-                  </View>
-                  <Text
-                    style={[styles.dockLabel, active && styles.dockLabelActive]}
-                    numberOfLines={1}
-                  >
-                    {item.short}
-                  </Text>
-                </Pressable>
-              );
-            })}
+            {leftItems.map(renderDockItem)}
+
+            {/* spacer under the QR button */}
+            <View style={styles.qrSpacer} pointerEvents="none" />
+
+            {rightItems.map(renderDockItem)}
 
             <Pressable
               style={({ pressed }) => [
@@ -265,7 +298,7 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
   }
 
   /* ------------------------------------------------------------------ */
-  /* Tablet / wide: side panel                                           */
+  /* Tablet / wide: side panel (unchanged)                               */
   /* ------------------------------------------------------------------ */
   const sidebarWidth = isCollapsed ? width * 0.08 : width * 0.2;
 
@@ -332,12 +365,7 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                   color={KFitColors.onAccent}
                 />
                 {!isCollapsed && (
-                  <Text
-                    style={[
-                      styles.navItemText,
-                      styles.navItemTextActive,
-                    ]}
-                  >
+                  <Text style={[styles.navItemText, styles.navItemTextActive]}>
                     {item.name}
                   </Text>
                 )}
@@ -356,9 +384,7 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                 color={KFitColors.mutedText}
               />
               {!isCollapsed && (
-                <Text style={styles.navItemText}>
-                  {item.name}
-                </Text>
+                <Text style={styles.navItemText}>{item.name}</Text>
               )}
             </TouchableOpacity>
           );
@@ -380,6 +406,9 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
   );
 }
 
+const QR_SIZE = 60;
+const CORNER = 9;
+
 const styles = StyleSheet.create({
   /* ---------------- Floating dock (phone) ---------------- */
   dockWrap: {
@@ -387,11 +416,13 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     bottom: 12,
+    paddingTop: QR_SIZE / 2 + 2, // room for the raised QR button
     zIndex: 30,
   },
 
   dock: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 3,
     paddingVertical: 5,
     paddingHorizontal: 4,
@@ -415,6 +446,10 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     paddingHorizontal: 2,
     borderRadius: 12,
+  },
+
+  qrSpacer: {
+    width: QR_SIZE + 8,
   },
 
   dockIconBox: {
@@ -456,6 +491,83 @@ const styles = StyleSheet.create({
 
   pressed: {
     opacity: 0.65,
+  },
+
+  /* ---------------- Center QR button ---------------- */
+  qrWrap: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 40,
+    elevation: 20,
+  },
+
+  qrOuter: {
+    width: QR_SIZE,
+    height: QR_SIZE,
+    borderRadius: QR_SIZE / 2,
+    borderWidth: 4,
+    borderColor: KFitColors.background,
+    backgroundColor: KFitColors.background,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    elevation: 12,
+  },
+
+  qrOuterActive: {
+    borderColor: KFitColors.accent,
+  },
+
+  qrPressed: {
+    transform: [{ scale: 0.94 }],
+  },
+
+  qrInner: {
+    flex: 1,
+    borderRadius: QR_SIZE / 2,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  qrCorner: {
+    position: "absolute",
+    width: CORNER,
+    height: CORNER,
+    borderColor: KFitColors.onAccent,
+    opacity: 0.85,
+  },
+  qrCornerTL: {
+    top: 11,
+    left: 11,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderTopLeftRadius: 3,
+  },
+  qrCornerTR: {
+    top: 11,
+    right: 11,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderTopRightRadius: 3,
+  },
+  qrCornerBL: {
+    bottom: 11,
+    left: 11,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderBottomLeftRadius: 3,
+  },
+  qrCornerBR: {
+    bottom: 11,
+    right: 11,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderBottomRightRadius: 3,
   },
 
   /* ---------------- "More" bottom sheet ---------------- */
