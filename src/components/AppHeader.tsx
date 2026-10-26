@@ -4,6 +4,8 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+    Image,
+    ImageBackground,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -54,8 +56,13 @@ export default function AppHeader({ onAddPress }: Props) {
       {/* Header bar */}
       <View style={styles.header}>
         <View style={styles.headerBrand}>
-          <View style={styles.brandIcon}>
-            <Text style={styles.brandIconText}>K</Text>
+          <View style={styles.brandIconWrapper}>
+            <Image
+              source={require("../../assets/images/logo.jpg")}
+              resizeMode="contain"
+              style={styles.brandLogo}
+              accessibilityLabel="K-Fit logo"
+            />
           </View>
           <View style={styles.headerText}>
             <View style={styles.brandTitleRow}>
@@ -92,11 +99,18 @@ export default function AppHeader({ onAddPress }: Props) {
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Add member"
-            style={styles.addButton}
+            style={styles.addButtonWrapper}
             onPress={onAddPress ?? (() => router.push("/members" as any))}
             activeOpacity={0.8}
           >
-            <Text style={styles.addButtonText}>+</Text>
+            <ImageBackground
+              source={require("../../assets/images/gold-texture.jpg")}
+              resizeMode="cover"
+              style={styles.addButton}
+              imageStyle={styles.addButtonImage}
+            >
+              <Text style={styles.addButtonText}>+</Text>
+            </ImageBackground>
           </TouchableOpacity>
         </View>
       </View>
@@ -193,20 +207,26 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 10,
   },
-  brandIcon: {
-    width: 32,
-    height: 32,
+  brandIconWrapper: {
+    width: 34,
+    height: 34,
     borderRadius: 8,
-    backgroundColor: KFitColors.accent,
+    overflow: "hidden",
+    backgroundColor: "#181818",
+    borderWidth: 1,
+    borderColor: KFitColors.border,
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
     elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    flexShrink: 0,
   },
-  brandIconText: {
-    color: KFitColors.onAccent,
-    fontSize: 16,
-    fontWeight: "900",
+  brandLogo: {
+    width: 34,
+    height: 34,
   },
   headerText: { flex: 1, minWidth: 0 },
   brandTitleRow: {
@@ -222,18 +242,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   versionBadge: {
-    backgroundColor: KFitColors.accent + "33",
+    backgroundColor: KFitColors.accentDark + "33",
     borderWidth: 1,
-    borderColor: KFitColors.accent + "66",
+    borderColor: KFitColors.accentDark,
     borderRadius: 999,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 2,
   },
   versionBadgeText: {
-    color: KFitColors.accent,
+    color: KFitColors.accentLight,
     fontSize: 9,
-    fontWeight: "700",
-    letterSpacing: 0.6,
+    fontWeight: "800",
+    letterSpacing: 0.8,
   },
   brandSubtitle: {
     color: KFitColors.mutedText,
@@ -257,19 +277,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   broadcastEmoji: { fontSize: 14 },
+  addButtonWrapper: {
+    borderRadius: 8,
+    overflow: "hidden",
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+  },
   addButton: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-    backgroundColor: KFitColors.accent,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 3,
+  },
+  addButtonImage: {
+    borderRadius: 8,
   },
   addButtonText: {
     color: KFitColors.onAccent,
     fontSize: 18,
-    fontWeight: "800",
+    fontWeight: "900",
     lineHeight: 20,
   },
 

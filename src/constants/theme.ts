@@ -64,8 +64,10 @@ export const Spacing = {
 export const KFitColors = {
   background: "#0A0A0A",
   surface: "#202020",
-  accent: "#B8F34A",
-  onAccent: "#0A0A0A",
+  accent: "#D4AF37",
+  accentLight: "#F3E5AB",
+  accentDark: "#996515",
+  onAccent: "#121212",
   text: "#FFFFFF",
   mutedText: "#B3B3B3",
   border: "#333333",

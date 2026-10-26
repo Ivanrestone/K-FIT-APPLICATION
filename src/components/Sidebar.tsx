@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  Image,
+  ImageBackground,
   Modal,
   Pressable,
   StyleSheet,
@@ -94,7 +96,6 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                   key={item.route}
                   style={({ pressed }) => [
                     styles.dockItem,
-                    active && styles.dockItemActive,
                     pressed && styles.pressed,
                   ]}
                   onPress={() => goTo(item.route)}
@@ -102,11 +103,28 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                   accessibilityState={{ selected: active }}
                   accessibilityLabel={item.name}
                 >
-                  <Ionicons
-                    name={item.icon}
-                    size={18}
-                    color={active ? KFitColors.onAccent : KFitColors.mutedText}
-                  />
+                  <View style={styles.dockIconBox}>
+                    {active ? (
+                      <ImageBackground
+                        source={require("../../assets/images/gold-texture.jpg")}
+                        resizeMode="cover"
+                        style={styles.dockIconActivePill}
+                        imageStyle={styles.dockIconActivePillImage}
+                      >
+                        <Ionicons
+                          name={item.icon}
+                          size={18}
+                          color={KFitColors.onAccent}
+                        />
+                      </ImageBackground>
+                    ) : (
+                      <Ionicons
+                        name={item.icon}
+                        size={18}
+                        color={KFitColors.mutedText}
+                      />
+                    )}
+                  </View>
                   <Text
                     style={[styles.dockLabel, active && styles.dockLabelActive]}
                     numberOfLines={1}
@@ -120,20 +138,34 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
             <Pressable
               style={({ pressed }) => [
                 styles.dockItem,
-                moreIsActive && styles.dockItemActive,
                 pressed && styles.pressed,
               ]}
               onPress={() => setIsMoreOpen(true)}
               accessibilityRole="button"
               accessibilityLabel="More admin navigation"
             >
-              <Ionicons
-                name="ellipsis-horizontal"
-                size={18}
-                color={
-                  moreIsActive ? KFitColors.onAccent : KFitColors.mutedText
-                }
-              />
+              <View style={styles.dockIconBox}>
+                {moreIsActive ? (
+                  <ImageBackground
+                    source={require("../../assets/images/gold-texture.jpg")}
+                    resizeMode="cover"
+                    style={styles.dockIconActivePill}
+                    imageStyle={styles.dockIconActivePillImage}
+                  >
+                    <Ionicons
+                      name="ellipsis-horizontal"
+                      size={18}
+                      color={KFitColors.onAccent}
+                    />
+                  </ImageBackground>
+                ) : (
+                  <Ionicons
+                    name="ellipsis-horizontal"
+                    size={18}
+                    color={KFitColors.mutedText}
+                  />
+                )}
+              </View>
               <Text
                 style={[
                   styles.dockLabel,
@@ -240,10 +272,24 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
   return (
     <View style={[styles.sidebar, { width: sidebarWidth }]}>
       <View style={styles.sidebarTop}>
-        {!isCollapsed && (
+        {isCollapsed ? (
+          <View style={styles.brandIconWrapper}>
+            <Image
+              source={require("../../assets/images/logo.jpg")}
+              resizeMode="contain"
+              style={styles.brandLogo}
+              accessibilityLabel="K-Fit logo"
+            />
+          </View>
+        ) : (
           <View style={styles.brandRow}>
-            <View style={styles.brandIcon}>
-              <Text style={styles.brandIconText}>K</Text>
+            <View style={styles.brandIconWrapper}>
+              <Image
+                source={require("../../assets/images/logo.jpg")}
+                resizeMode="contain"
+                style={styles.brandLogo}
+                accessibilityLabel="K-Fit logo"
+              />
             </View>
             <Text style={styles.brandText}>KFIT ADMIN</Text>
           </View>
@@ -267,25 +313,50 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
       <View style={styles.sidebarNav}>
         {NAV_ITEMS.map((item) => {
           const active = activeRoute === item.route;
-          return (
+          return active ? (
             <TouchableOpacity
               key={item.route}
-              style={[styles.navItem, active && styles.navItemActive]}
+              style={[styles.navItemWrapper, styles.navItemActive]}
+              onPress={() => goTo(item.route)}
+              accessibilityLabel={item.name}
+            >
+              <ImageBackground
+                source={require("../../assets/images/gold-texture.jpg")}
+                resizeMode="cover"
+                style={styles.navItemTexture}
+                imageStyle={styles.navItemTextureImage}
+              >
+                <Ionicons
+                  name={item.icon}
+                  size={18}
+                  color={KFitColors.onAccent}
+                />
+                {!isCollapsed && (
+                  <Text
+                    style={[
+                      styles.navItemText,
+                      styles.navItemTextActive,
+                    ]}
+                  >
+                    {item.name}
+                  </Text>
+                )}
+              </ImageBackground>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              key={item.route}
+              style={styles.navItem}
               onPress={() => goTo(item.route)}
               accessibilityLabel={item.name}
             >
               <Ionicons
                 name={item.icon}
                 size={18}
-                color={active ? KFitColors.onAccent : KFitColors.mutedText}
+                color={KFitColors.mutedText}
               />
               {!isCollapsed && (
-                <Text
-                  style={[
-                    styles.navItemText,
-                    active && styles.navItemTextActive,
-                  ]}
-                >
+                <Text style={styles.navItemText}>
                   {item.name}
                 </Text>
               )}
@@ -321,12 +392,13 @@ const styles = StyleSheet.create({
 
   dock: {
     flexDirection: "row",
-    gap: 4,
-    padding: 4,
+    gap: 3,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: KFitColors.border + "CC",
-    backgroundColor: "rgba(20, 20, 20, 0.94)",
+    backgroundColor: "rgba(20, 20, 20, 0.95)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.8,
@@ -336,34 +408,49 @@ const styles = StyleSheet.create({
 
   dockItem: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
-    gap: 2,
-    paddingVertical: 6,
+    gap: 3,
+    paddingVertical: 3,
     paddingHorizontal: 2,
     borderRadius: 12,
   },
 
-  dockItemActive: {
-    backgroundColor: KFitColors.accent,
-    transform: [{ scale: 1.05 }],
+  dockIconBox: {
+    width: 44,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  dockIconActivePill: {
+    width: 44,
+    height: 28,
+    borderRadius: 14,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
     shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
     shadowRadius: 6,
     elevation: 4,
   },
 
+  dockIconActivePillImage: {
+    borderRadius: 14,
+  },
+
   dockLabel: {
     color: KFitColors.mutedText,
-    fontSize: 9,
-    fontWeight: "800",
+    fontSize: 10,
+    fontWeight: "700",
     letterSpacing: -0.1,
   },
 
   dockLabelActive: {
-    color: KFitColors.onAccent,
+    color: KFitColors.accentLight,
     fontWeight: "900",
   },
 
@@ -482,19 +569,26 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 
-  brandIcon: {
+  brandIconWrapper: {
     width: 28,
     height: 28,
     borderRadius: 8,
-    backgroundColor: KFitColors.accent,
+    overflow: "hidden",
+    backgroundColor: "#181818",
+    borderWidth: 1,
+    borderColor: KFitColors.border,
     alignItems: "center",
     justifyContent: "center",
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
 
-  brandIconText: {
-    color: KFitColors.onAccent,
-    fontSize: 14,
-    fontWeight: "900",
+  brandLogo: {
+    width: 28,
+    height: 28,
   },
 
   brandText: {
@@ -513,6 +607,11 @@ const styles = StyleSheet.create({
     gap: 6,
   },
 
+  navItemWrapper: {
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+
   navItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -523,7 +622,25 @@ const styles = StyleSheet.create({
   },
 
   navItemActive: {
-    backgroundColor: KFitColors.accent,
+    borderRadius: 10,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+
+  navItemTexture: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 12,
+  },
+
+  navItemTextureImage: {
+    borderRadius: 10,
   },
 
   navItemText: {
@@ -534,7 +651,7 @@ const styles = StyleSheet.create({
 
   navItemTextActive: {
     color: KFitColors.onAccent,
-    fontWeight: "700",
+    fontWeight: "800",
   },
 
   logoutButton: {

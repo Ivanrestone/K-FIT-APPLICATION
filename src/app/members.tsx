@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
+  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -254,18 +255,25 @@ export default function MembersScreen() {
                 <Pressable
                   onPress={() => setModalOpen(true)}
                   style={({ pressed }) => [
-                    styles.addButton,
+                    styles.addButtonWrapper,
                     pressed && styles.pressed,
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel="Add member"
                 >
-                  <Ionicons
-                    name="person-add"
-                    size={16}
-                    color={KFitColors.onAccent}
-                  />
-                  <Text style={styles.addButtonText}>Add member</Text>
+                  <ImageBackground
+                    source={require("../../assets/images/gold-texture.jpg")}
+                    resizeMode="cover"
+                    style={styles.addButton}
+                    imageStyle={styles.addButtonImage}
+                  >
+                    <Ionicons
+                      name="person-add"
+                      size={16}
+                      color={KFitColors.onAccent}
+                    />
+                    <Text style={styles.addButtonText}>Add member</Text>
+                  </ImageBackground>
                 </Pressable>
               </View>
             </View>
@@ -623,16 +631,23 @@ export default function MembersScreen() {
               <Pressable
                 onPress={saveMember}
                 style={({ pressed }) => [
-                  styles.saveButton,
+                  styles.saveButtonWrapper,
                   pressed && styles.pressed,
                 ]}
               >
-                <Ionicons
-                  name="checkmark"
-                  size={16}
-                  color={KFitColors.onAccent}
-                />
-                <Text style={styles.saveButtonText}>Save & issue pass</Text>
+                <ImageBackground
+                  source={require("../../assets/images/gold-texture.jpg")}
+                  resizeMode="cover"
+                  style={styles.saveButton}
+                  imageStyle={styles.saveButtonImage}
+                >
+                  <Ionicons
+                    name="checkmark"
+                    size={16}
+                    color={KFitColors.onAccent}
+                  />
+                  <Text style={styles.saveButtonText}>Save & issue pass</Text>
+                </ImageBackground>
               </Pressable>
             </Pressable>
           </Pressable>
@@ -709,25 +724,30 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.surface,
   },
   importButtonText: { fontSize: 14, fontWeight: "700", color: KFitColors.text },
-  addButton: {
+  addButtonWrapper: {
     flex: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  addButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     minHeight: 44,
     paddingHorizontal: 16,
+  },
+  addButtonImage: {
     borderRadius: 12,
-    backgroundColor: KFitColors.accent,
-    shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
   addButtonText: {
     fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "900",
     color: KFitColors.onAccent,
   },
 
@@ -1014,19 +1034,30 @@ const styles = StyleSheet.create({
     color: KFitColors.mutedText,
   },
   planOptionTextOn: { color: KFitColors.accent },
+  saveButtonWrapper: {
+    marginTop: 16,
+    borderRadius: 12,
+    overflow: "hidden",
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
+  },
   saveButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    marginTop: 16,
     minHeight: 46,
+    paddingHorizontal: 16,
+  },
+  saveButtonImage: {
     borderRadius: 12,
-    backgroundColor: KFitColors.accent,
   },
   saveButtonText: {
     color: KFitColors.onAccent,
     fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "900",
   },
 });

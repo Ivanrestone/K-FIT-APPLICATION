@@ -5,6 +5,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+    Image,
     Modal,
     Pressable,
     StyleSheet,
@@ -106,8 +107,13 @@ export default function TrainerHeader({
             <Feather name="chevron-left" size={20} color={KFitColors.text} />
           </TouchableOpacity>
         ) : (
-          <View style={styles.brandIcon}>
-            <Text style={styles.brandIconText}>K</Text>
+          <View style={styles.brandIconWrapper}>
+            <Image
+              source={require("../../assets/images/logo.jpg")}
+              resizeMode="contain"
+              style={styles.brandLogo}
+              accessibilityLabel="K-Fit logo"
+            />
           </View>
         )}
 
@@ -270,18 +276,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: KFitColors.border,
   },
-  brandIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: KFitColors.accent,
+  brandIconWrapper: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: "#181818",
+    borderWidth: 1,
+    borderColor: KFitColors.border,
     alignItems: "center",
     justifyContent: "center",
   },
-  brandIconText: {
-    color: KFitColors.onAccent,
-    fontSize: 18,
-    fontWeight: "900",
+  brandLogo: {
+    width: 34,
+    height: 34,
   },
   titleBlock: { flex: 1, minWidth: 0 },
   brandTitle: {

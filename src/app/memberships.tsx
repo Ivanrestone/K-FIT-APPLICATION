@@ -2,6 +2,7 @@ import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
 import { useMemo, useState } from "react";
 import {
+  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -328,11 +329,18 @@ export default function MembershipsScreen() {
               accessibilityRole="button"
               accessibilityLabel="Add member"
               style={({ pressed }) => [
-                styles.addButton,
+                styles.addButtonWrapper,
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.addButtonText}>+ Add member</Text>
+              <ImageBackground
+                source={require("../../assets/images/gold-texture.jpg")}
+                resizeMode="cover"
+                style={styles.addButton}
+                imageStyle={styles.addButtonImage}
+              >
+                <Text style={styles.addButtonText}>+ Add member</Text>
+              </ImageBackground>
             </Pressable>
           </View>
 
@@ -611,10 +619,20 @@ export default function MembershipsScreen() {
               <Pressable style={styles.modalCancel} onPress={closeForm}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.modalSave} onPress={saveForm}>
-                <Text style={styles.modalSaveText}>
-                  {formMode === "add" ? "Save & issue pass" : "Save changes"}
-                </Text>
+              <Pressable
+                style={styles.modalSaveWrapper}
+                onPress={saveForm}
+              >
+                <ImageBackground
+                  source={require("../../assets/images/gold-texture.jpg")}
+                  resizeMode="cover"
+                  style={styles.modalSave}
+                  imageStyle={styles.modalSaveImage}
+                >
+                  <Text style={styles.modalSaveText}>
+                    {formMode === "add" ? "Save & issue pass" : "Save changes"}
+                  </Text>
+                </ImageBackground>
               </Pressable>
             </View>
           </View>
@@ -657,15 +675,25 @@ const styles = StyleSheet.create({
     color: KFitColors.mutedText,
     maxWidth: 520,
   },
-  addButton: {
-    backgroundColor: KFitColors.accent,
+  addButtonWrapper: {
     borderRadius: 10,
+    overflow: "hidden",
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  addButton: {
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
+  addButtonImage: {
+    borderRadius: 10,
+  },
   addButtonText: {
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "900",
     color: KFitColors.onAccent,
   },
 
@@ -957,16 +985,27 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.background,
   },
   modalCancelText: { fontSize: 14, fontWeight: "600", color: KFitColors.text },
-  modalSave: {
+  modalSaveWrapper: {
     flex: 1.4,
-    alignItems: "center",
-    paddingVertical: 12,
     borderRadius: 10,
-    backgroundColor: KFitColors.accent,
+    overflow: "hidden",
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modalSave: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+  },
+  modalSaveImage: {
+    borderRadius: 10,
   },
   modalSaveText: {
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "900",
     color: KFitColors.onAccent,
   },
 });

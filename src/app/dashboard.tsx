@@ -12,6 +12,8 @@ import {
   Animated,
   AppState,
   Easing,
+  Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -928,8 +930,13 @@ export default function DashboardScreen() {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerBrand}>
-              <View style={styles.brandIcon}>
-                <Text style={styles.brandIconText}>K</Text>
+              <View style={styles.brandIconWrapper}>
+                <Image
+                  source={require("../../assets/images/logo.jpg")}
+                  resizeMode="contain"
+                  style={styles.brandLogo}
+                  accessibilityLabel="K-Fit logo"
+                />
               </View>
               <View style={styles.headerText}>
                 <View style={styles.brandTitleRow}>
@@ -987,11 +994,18 @@ export default function DashboardScreen() {
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel="Add member"
-                style={styles.addButton}
+                style={styles.addButtonWrapper}
                 onPress={() => router.push("/members")}
                 activeOpacity={0.8}
               >
-                <Feather name="plus" size={18} color={KFitColors.onAccent} />
+                <ImageBackground
+                  source={require("../../assets/images/gold-texture.jpg")}
+                  resizeMode="cover"
+                  style={styles.addButton}
+                  imageStyle={styles.addButtonImage}
+                >
+                  <Feather name="plus" size={18} color={KFitColors.onAccent} />
+                </ImageBackground>
               </TouchableOpacity>
             </View>
           </View>
@@ -1260,21 +1274,27 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  brandIcon: {
-    width: 32,
-    height: 32,
+  brandIconWrapper: {
+    width: 34,
+    height: 34,
     borderRadius: 8,
-    backgroundColor: KFitColors.accent,
+    overflow: "hidden",
+    backgroundColor: "#181818",
+    borderWidth: 1,
+    borderColor: KFitColors.border,
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
     elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    flexShrink: 0,
   },
 
-  brandIconText: {
-    color: KFitColors.onAccent,
-    fontSize: 16,
-    fontWeight: "900",
+  brandLogo: {
+    width: 34,
+    height: 34,
   },
 
   headerText: {
@@ -1297,19 +1317,19 @@ const styles = StyleSheet.create({
   },
 
   versionBadge: {
-    backgroundColor: KFitColors.accent + "33",
+    backgroundColor: KFitColors.accentDark + "33",
     borderWidth: 1,
-    borderColor: KFitColors.accent + "66",
+    borderColor: KFitColors.accentDark,
     borderRadius: 999,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 2,
   },
 
   versionBadgeText: {
-    color: KFitColors.accent,
+    color: KFitColors.accentLight,
     fontSize: 9,
-    fontWeight: "700",
-    letterSpacing: 0.6,
+    fontWeight: "800",
+    letterSpacing: 0.8,
   },
 
   brandSubtitle: {
@@ -1341,14 +1361,25 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent + "1A",
   },
 
+  addButtonWrapper: {
+    borderRadius: 8,
+    overflow: "hidden",
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+  },
+
   addButton: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-    backgroundColor: KFitColors.accent,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 3,
+  },
+
+  addButtonImage: {
+    borderRadius: 8,
   },
 
   /* ---------------- Facility metrics ---------------- */
