@@ -1,7 +1,9 @@
 import MemberBottomNav from '@/components/MemberBottomNav';
 import SubscriptionPaywall from '@/components/SubscriptionPaywall';
+import { KFitColors } from '@/constants/theme';
 import { useLogout } from '@/hooks/use-logout';
 import {
+  ImageBackground,
   ScrollView,
   StyleSheet,
   Text,
@@ -44,8 +46,15 @@ export default function MemberDashboardScreen() {
           <View style={styles.greetingSection}>
             <Text style={styles.greeting}>Progress, not perfection.</Text>
             <Text style={styles.greetingSubtitle}>Your effort adds up. See how far you&apos;ve come, Jordan</Text>
-            <TouchableOpacity style={styles.logButton}>
-              <Text style={styles.logButtonText}>+ Log measurements</Text>
+            <TouchableOpacity style={styles.logButtonWrapper} activeOpacity={0.8}>
+              <ImageBackground
+                source={require('../../assets/images/gold-texture.jpg')}
+                resizeMode="cover"
+                style={styles.logButtonBg}
+                imageStyle={styles.logButtonImage}
+              >
+                <Text style={styles.logButtonText}>+ Log measurements</Text>
+              </ImageBackground>
             </TouchableOpacity>
           </View>
 
@@ -372,17 +381,29 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginBottom: 16,
   },
-  logButton: {
-    backgroundColor: '#111827',
+  logButtonWrapper: {
     borderRadius: 8,
+    overflow: 'hidden',
+    alignSelf: 'flex-start',
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  logButtonBg: {
     paddingVertical: 12,
     paddingHorizontal: 16,
-    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logButtonImage: {
+    borderRadius: 8,
   },
   logButtonText: {
-    color: '#FFFFFF',
+    color: '#121212',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '800',
   },
   section: {
     paddingHorizontal: 20,
@@ -463,7 +484,7 @@ const styles = StyleSheet.create({
   },
   barFill: {
     width: 24,
-    backgroundColor: '#4F46E5',
+    backgroundColor: KFitColors.accent,
     borderRadius: 4,
   },
   barLabel: {
@@ -487,7 +508,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#4F46E5',
+    backgroundColor: KFitColors.accent,
     marginBottom: 4,
   },
   weightLabel: {
@@ -520,7 +541,7 @@ const styles = StyleSheet.create({
   },
   goalFill: {
     height: '100%',
-    backgroundColor: '#4F46E5',
+    backgroundColor: KFitColors.accent,
     borderRadius: 3,
   },
   goalTarget: {
@@ -534,8 +555,8 @@ const styles = StyleSheet.create({
   },
   editButtonText: {
     fontSize: 14,
-    color: '#4F46E5',
-    fontWeight: '600',
+    color: KFitColors.accentDark,
+    fontWeight: '700',
   },
   detailsContainer: {
     gap: 12,

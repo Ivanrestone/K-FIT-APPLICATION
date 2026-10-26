@@ -1,5 +1,6 @@
 import {
   ActivityIndicator,
+  ImageBackground,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import MemberBottomNav from '@/components/MemberBottomNav';
-import { Spacing } from '@/constants/theme';
+import { KFitColors, Spacing } from '@/constants/theme';
 import { useLogout } from '@/hooks/use-logout';
 import { useMemberProfile } from '@/hooks/use-member-profile';
 import { useState } from 'react';
@@ -37,7 +38,7 @@ function ProfileStatusScreen({
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mainContainer}>
         <View style={styles.statusContent}>
-          {isLoading ? <ActivityIndicator color="#4F46E5" /> : null}
+          {isLoading ? <ActivityIndicator color={KFitColors.accent} /> : null}
           <Text style={styles.sectionTitle}>
             {isLoading ? 'Loading your profile' : 'Profile unavailable'}
           </Text>
@@ -192,9 +193,14 @@ function ConfiguredMemberProfileScreen() {
 
           {/* Profile Header */}
           <View style={styles.profileHeader}>
-            <View style={styles.avatar}>
+            <ImageBackground
+              source={require('../../assets/images/gold-texture.jpg')}
+              resizeMode="cover"
+              style={styles.avatar}
+              imageStyle={styles.avatarImage}
+            >
               <Text style={styles.avatarInitials}>{initials}</Text>
-            </View>
+            </ImageBackground>
             <Text style={styles.profileName}>
               {fullName || 'Name not provided'}
             </Text>
@@ -278,23 +284,38 @@ function ConfiguredMemberProfileScreen() {
             </View>
             {hasMissingProfileFields ? (
               <View style={styles.profileActions}>
-                <TouchableOpacity
-                  style={styles.editButton}
-                  onPress={isEditing ? saveProfile : beginEdit}
-                  disabled={isSaving}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.editButtonText}>
-                    {isSaving
-                      ? 'Saving…'
-                      : isEditing
-                      ? 'Save profile'
-                      : 'Edit missing details'}
-                  </Text>
-                </TouchableOpacity>
                 {isEditing ? (
                   <TouchableOpacity
+                    style={[styles.saveButtonWrapper, isSaving && styles.disabledButton]}
+                    onPress={saveProfile}
+                    disabled={isSaving}
+                    accessibilityRole="button"
+                  >
+                    <ImageBackground
+                      source={require('../../assets/images/gold-texture.jpg')}
+                      resizeMode="cover"
+                      style={styles.saveButtonBg}
+                      imageStyle={styles.saveButtonImage}
+                    >
+                      <Text style={styles.saveButtonText}>
+                        {isSaving ? 'Saving…' : 'Save profile'}
+                      </Text>
+                    </ImageBackground>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
                     style={styles.editButton}
+                    onPress={beginEdit}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.editButtonText}>
+                      Edit missing details
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {isEditing ? (
+                  <TouchableOpacity
+                    style={styles.cancelEditButton}
                     onPress={() => {
                       setActionError(null);
                       setIsEditing(false);
@@ -302,7 +323,7 @@ function ConfiguredMemberProfileScreen() {
                     disabled={isSaving}
                     accessibilityRole="button"
                   >
-                    <Text style={styles.editButtonText}>Cancel</Text>
+                    <Text style={styles.cancelEditButtonText}>Cancel</Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -330,17 +351,24 @@ function ConfiguredMemberProfileScreen() {
                 {coachRequest?.status !== 'pending' &&
                 coachRequest?.status !== 'approved' ? (
                   <TouchableOpacity
-                    style={styles.requestButton}
+                    style={[styles.requestButton, isRequestingCoach && styles.disabledButton]}
                     onPress={requestCoachStatus}
                     disabled={isRequestingCoach}
                     accessibilityRole="button"
                     accessibilityState={{ disabled: isRequestingCoach }}
                   >
-                    <Text style={styles.requestButtonText}>
-                      {isRequestingCoach
-                        ? 'Submitting…'
-                        : 'Request to become a Coach'}
-                    </Text>
+                    <ImageBackground
+                      source={require('../../assets/images/gold-texture.jpg')}
+                      resizeMode="cover"
+                      style={styles.requestButtonBg}
+                      imageStyle={styles.requestButtonImage}
+                    >
+                      <Text style={styles.requestButtonText}>
+                        {isRequestingCoach
+                          ? 'Submitting…'
+                          : 'Request to become a Coach'}
+                      </Text>
+                    </ImageBackground>
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -571,15 +599,25 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#4F46E5',
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    borderWidth: 2,
+    borderColor: KFitColors.accentDark,
+    elevation: 4,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+  },
+  avatarImage: {
+    borderRadius: 40,
   },
   avatarInitials: {
-    color: '#FFFFFF',
+    color: '#121212',
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
   profileName: {
     fontSize: 24,
@@ -589,11 +627,12 @@ const styles = StyleSheet.create({
   },
   profileLabel: {
     fontSize: 14,
-    color: '#6B7280',
+    color: KFitColors.accentDark,
+    fontWeight: '700',
     marginBottom: 4,
   },
   profileId: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#9CA3AF',
   },
   section: {
@@ -631,7 +670,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 120,
     borderBottomWidth: 1,
-    borderBottomColor: '#4F46E5',
+    borderBottomColor: KFitColors.accent,
     paddingVertical: Spacing.one,
     color: '#111827',
     fontSize: 14,
@@ -647,26 +686,76 @@ const styles = StyleSheet.create({
   },
   editButtonText: {
     fontSize: 14,
-    color: '#4F46E5',
-    fontWeight: '600',
+    color: KFitColors.accentDark,
+    fontWeight: '700',
   },
   profileActions: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.three,
+    marginTop: 8,
+  },
+  saveButtonWrapper: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  saveButtonBg: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveButtonImage: {
+    borderRadius: 10,
+  },
+  saveButtonText: {
+    color: '#121212',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  cancelEditButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  cancelEditButtonText: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '600',
   },
   requestButton: {
     minHeight: 44,
     justifyContent: 'center',
     alignSelf: 'flex-start',
     marginTop: Spacing.two,
-    paddingHorizontal: Spacing.three,
     borderRadius: 10,
-    backgroundColor: '#4F46E5',
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  requestButtonBg: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestButtonImage: {
+    borderRadius: 10,
   },
   requestButtonText: {
-    color: '#FFFFFF',
+    color: '#121212',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '800',
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
   addressText: {
     fontSize: 14,

@@ -1,6 +1,8 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
 import { useLogout } from "@/hooks/use-logout";
+import { KFitColors } from "@/constants/theme";
 import {
+  ImageBackground,
   ScrollView,
   StyleSheet,
   Text,
@@ -36,8 +38,19 @@ export default function MemberWorkoutScreen() {
           </View>
 
           {/* Start Workout Button */}
-          <TouchableOpacity style={styles.startButton}>
-            <Text style={styles.startButtonText}>▷ Start workout</Text>
+          <TouchableOpacity
+            style={styles.startButtonWrapper}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+          >
+            <ImageBackground
+              source={require("../../assets/images/gold-texture.jpg")}
+              resizeMode="cover"
+              style={styles.startButtonBg}
+              imageStyle={styles.startButtonImage}
+            >
+              <Text style={styles.startButtonText}>▷ Start workout</Text>
+            </ImageBackground>
           </TouchableOpacity>
 
           {/* Workout Title */}
@@ -102,13 +115,13 @@ export default function MemberWorkoutScreen() {
 
           {/* Today's Focus */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today's focus</Text>
+            <Text style={styles.sectionTitle}>Today&apos;s focus</Text>
             <View style={styles.focusCard}>
               <Text style={styles.focusText}>Marcus Reed</Text>
               <Text style={styles.focusLabel}>Your coach</Text>
               <Text style={styles.focusQuote}>
-                "Keep 2 reps in reserve. Controlled tempo and full range of
-                motion come before load."
+                &ldquo;Keep 2 reps in reserve. Controlled tempo and full range of
+                motion come before load.&rdquo;
               </Text>
             </View>
           </View>
@@ -388,18 +401,30 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginTop: 4,
   },
-  startButton: {
+  startButtonWrapper: {
     marginHorizontal: 20,
-    backgroundColor: "#111827",
     borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: 24,
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  startButtonBg: {
     paddingVertical: 16,
     alignItems: "center",
-    marginBottom: 24,
+    justifyContent: "center",
+  },
+  startButtonImage: {
+    borderRadius: 12,
   },
   startButtonText: {
-    color: "#FFFFFF",
+    color: "#121212",
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
   workoutHeader: {
     paddingHorizontal: 20,
@@ -678,24 +703,27 @@ const styles = StyleSheet.create({
     color: "#111827",
   },
   programDayToday: {
-    color: "#4F46E5",
-    fontWeight: "600",
+    color: KFitColors.accentDark,
+    fontWeight: "700",
   },
   programDayTodayLabel: {
     fontSize: 11,
-    color: "#4F46E5",
+    color: KFitColors.accentDark,
+    fontWeight: "700",
     marginLeft: 8,
   },
   viewProgramButton: {
     backgroundColor: "#111827",
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: KFitColors.accentDark,
     paddingVertical: 12,
     alignItems: "center",
   },
   viewProgramButtonText: {
-    color: "#FFFFFF",
+    color: KFitColors.accentLight,
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   footer: {
     paddingHorizontal: 20,

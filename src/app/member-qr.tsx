@@ -1,4 +1,5 @@
 import MemberBottomNav from '@/components/MemberBottomNav';
+import { KFitColors } from '@/constants/theme';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -404,8 +405,8 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#4F46E5',
-    color: '#FFFFFF',
+    backgroundColor: KFitColors.accent,
+    color: '#121212',
     fontSize: 12,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -426,7 +427,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   statusBadge: {
-    backgroundColor: '#10B981',
+    backgroundColor: KFitColors.accent,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -435,8 +436,8 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: '#121212',
+    fontWeight: '800',
   },
   statusTime: {
     fontSize: 13,

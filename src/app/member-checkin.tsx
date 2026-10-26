@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MemberBottomNav from '@/components/MemberBottomNav';
+import { KFitColors } from '@/constants/theme';
 import { useLogout } from '@/hooks/use-logout';
 
 export default function MemberCheckinScreen() {
@@ -72,7 +73,7 @@ export default function MemberCheckinScreen() {
 
           {/* Today's Session */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today's Session</Text>
+            <Text style={styles.sectionTitle}>Today&apos;s Session</Text>
             <View style={styles.sessionCard}>
               <Text style={styles.sessionActivity}>Open gym</Text>
               <Text style={styles.sessionDuration}>Duration: 1h 24m</Text>
@@ -307,12 +308,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   statusBadgeCheckedIn: {
-    backgroundColor: '#10B981',
+    backgroundColor: KFitColors.accent,
   },
   statusBadgeText: {
     fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: '#121212',
+    fontWeight: '800',
   },
   checkinTime: {
     fontSize: 16,

@@ -1,5 +1,6 @@
+import { KFitColors } from '@/constants/theme';
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ImageBackground, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface MemberBottomNavProps {
   activeRoute: string;
@@ -19,23 +20,43 @@ export default function MemberBottomNav({ activeRoute }: MemberBottomNavProps) {
 
   return (
     <View style={styles.container}>
-      {navItems.map((item) => (
-        <TouchableOpacity
-          key={item.route}
-          style={styles.navItem}
-          onPress={() => router.replace(item.route as any)}
-        >
-          <Text style={styles.navIcon}>{item.icon}</Text>
-          <Text
-            style={[
-              styles.navText,
-              activeRoute === item.route && styles.navTextActive,
-            ]}
+      {navItems.map((item) => {
+        const isActive = activeRoute === item.route;
+        return (
+          <TouchableOpacity
+            key={item.route}
+            style={styles.navItem}
+            onPress={() => router.replace(item.route as any)}
+            activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isActive }}
           >
-            {item.name}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            <View style={styles.iconBox}>
+              {isActive ? (
+                <ImageBackground
+                  source={require('../../assets/images/gold-texture.jpg')}
+                  resizeMode="cover"
+                  style={styles.iconBoxActive}
+                  imageStyle={styles.iconBoxActiveImage}
+                >
+                  <Text style={styles.navIcon}>{item.icon}</Text>
+                </ImageBackground>
+              ) : (
+                <Text style={styles.navIcon}>{item.icon}</Text>
+              )}
+            </View>
+            <Text
+              style={[
+                styles.navText,
+                isActive && styles.navTextActive,
+              ]}
+              numberOfLines={1}
+            >
+              {item.name}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -43,32 +64,62 @@ export default function MemberBottomNav({ activeRoute }: MemberBottomNavProps) {
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(20, 20, 20, 0.96)',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderTopColor: KFitColors.border,
+    paddingHorizontal: 8,
+    paddingTop: 6,
     paddingBottom: 16,
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 12,
   },
   navItem: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  iconBox: {
+    width: 44,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconBoxActive: {
+    width: 44,
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.45,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  iconBoxActiveImage: {
+    borderRadius: 14,
   },
   navIcon: {
-    fontSize: 20,
-    marginBottom: 4,
+    fontSize: 17,
   },
   navText: {
-    fontSize: 11,
-    color: '#9CA3AF',
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontWeight: '600',
+    marginTop: 2,
   },
   navTextActive: {
-    color: '#111827',
-    fontWeight: '600',
+    color: KFitColors.accentLight,
+    fontWeight: '800',
   },
 });
+

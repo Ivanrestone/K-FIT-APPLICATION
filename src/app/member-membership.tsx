@@ -1,5 +1,6 @@
 import MemberBottomNav from '@/components/MemberBottomNav';
 import MemberPaymentOptions from '@/components/MemberPaymentOptions';
+import { KFitColors } from '@/constants/theme';
 import { useLogout } from '@/hooks/use-logout';
 import {
   ScrollView,
@@ -179,8 +180,8 @@ const styles = StyleSheet.create({
   },
   helpButtonText: {
     fontSize: 14,
-    color: '#4F46E5',
-    fontWeight: '600',
+    color: KFitColors.accentDark,
+    fontWeight: '700',
   },
   overviewSection: {
     paddingHorizontal: 20,
