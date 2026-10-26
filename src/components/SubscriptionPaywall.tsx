@@ -58,6 +58,13 @@ function AuthenticatedSubscriptionPaywall({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const startCheckout = useCallback(async (feeType: SubscriptionPlanType) => {
+    // Guard 1: user must be authenticated
+    if (!access.isSignedIn || !access.data?.userId) {
+      Alert.alert("Error", "You must be logged in to subscribe.");
+      return;
+    }
+
+    // Guard 2: Supabase client must be available
     if (!access.supabase) {
       Alert.alert("Checkout Error", "Payment service is unavailable. Please try again.");
       return;
@@ -119,6 +126,19 @@ function AuthenticatedSubscriptionPaywall({
         return;
       }
 
+      // Guard 3: must be a PayMongo checkout URL, not a redirect/auth page
+      const isPayMongoUrl =
+        rawUrl.startsWith("https://checkout.paymongo.com") ||
+        rawUrl.startsWith("https://pay.paymongo.com");
+      if (!isPayMongoUrl) {
+        const msg = `Unexpected redirect URL received. Expected a PayMongo checkout link.\n\nURL: ${rawUrl}`;
+        console.warn("[Checkout] Non-PayMongo URL blocked:", rawUrl);
+        Alert.alert("Checkout Error", msg);
+        setActionMessage("Checkout blocked: unexpected URL returned by server.");
+        return;
+      }
+
+      console.log("Checkout URL received:", rawUrl);
       await WebBrowser.openBrowserAsync(rawUrl);
       access.refresh();
       setActionMessage(
