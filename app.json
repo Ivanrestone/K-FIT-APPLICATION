@@ -15,7 +15,12 @@
         "backgroundColor": "#0A0A0A",
         "foregroundImage": "./assets/images/kfit-app-icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.kfit"
     },
     "web": {
       "output": "static",
@@ -39,7 +44,8 @@
         }
       ],
       "@clerk/expo",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

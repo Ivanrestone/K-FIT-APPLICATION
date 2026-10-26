@@ -1,471 +1,565 @@
-import Sidebar from '@/components/Sidebar';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import AppHeader from "@/components/AppHeader";
+import Sidebar from "@/components/Sidebar";
+import { KFitColors } from "@/constants/theme";
+import { Ionicons } from "@expo/vector-icons";
+import { useMemo, useState } from "react";
 import {
-    Alert,
-    Dimensions,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-const { width } = Dimensions.get('window');
+type Priority = "High" | "Medium" | "Low";
+type PriorityFilter = "All" | Priority;
 
 interface Memo {
   id: string;
   title: string;
   content: string;
   date: string;
-  priority: 'High' | 'Medium' | 'Low';
+  priority: Priority;
   author: string;
 }
 
-const mockMemos: Memo[] = [
+const INITIAL_MEMOS: Memo[] = [
   {
-    id: '1',
-    title: 'Gym Closure - Maintenance Day',
-    content: 'The gym will be closed on October 25, 2026 for scheduled maintenance. We apologize for any inconvenience and will resume normal operations on October 26.',
-    date: 'Oct 20, 2026',
-    priority: 'High',
-    author: 'Admin',
+    id: "1",
+    title: "Gym closure - maintenance day",
+    content:
+      "The gym will be closed on October 25, 2026 for scheduled maintenance. We apologize for any inconvenience and will resume normal operations on October 26.",
+    date: "Oct 20, 2026",
+    priority: "High",
+    author: "Admin",
   },
   {
-    id: '2',
-    title: 'New Class Schedule',
-    content: 'Starting next week, we are adding new yoga classes on Monday and Wednesday evenings at 6 PM. Sign up through the member app.',
-    date: 'Oct 18, 2026',
-    priority: 'Medium',
-    author: 'Admin',
+    id: "2",
+    title: "New class schedule",
+    content:
+      "Starting next week, we are adding new yoga classes on Monday and Wednesday evenings at 6 PM. Sign up through the member app.",
+    date: "Oct 18, 2026",
+    priority: "Medium",
+    author: "Admin",
   },
   {
-    id: '3',
-    title: 'Holiday Hours Notice',
-    content: 'Please note our modified hours during the upcoming holiday season. We will be open from 8 AM to 6 PM on Thanksgiving Day.',
-    date: 'Oct 15, 2026',
-    priority: 'Medium',
-    author: 'Admin',
+    id: "3",
+    title: "Holiday hours notice",
+    content:
+      "Please note our modified hours during the upcoming holiday season. We will be open from 8 AM to 6 PM on Thanksgiving Day.",
+    date: "Oct 15, 2026",
+    priority: "Medium",
+    author: "Admin",
   },
   {
-    id: '4',
-    title: 'Equipment Update',
-    content: 'New cardio equipment has been installed in the main floor. Please ask staff for a quick tutorial if needed.',
-    date: 'Oct 10, 2026',
-    priority: 'Low',
-    author: 'Admin',
+    id: "4",
+    title: "Equipment update",
+    content:
+      "New cardio equipment has been installed in the main floor. Please ask staff for a quick tutorial if needed.",
+    date: "Oct 10, 2026",
+    priority: "Low",
+    author: "Admin",
   },
   {
-    id: '5',
-    title: 'Personal Training Promotion',
-    content: 'Special offer: 20% off personal training packages for the month of October. Contact front desk for details.',
-    date: 'Oct 05, 2026',
-    priority: 'Low',
-    author: 'Admin',
+    id: "5",
+    title: "Personal training promotion",
+    content:
+      "Special offer: 20% off personal training packages for the month of October. Contact front desk for details.",
+    date: "Oct 05, 2026",
+    priority: "Low",
+    author: "Admin",
   },
 ];
 
+const PRIORITIES: Priority[] = ["High", "Medium", "Low"];
+const FILTERS: PriorityFilter[] = ["All", ...PRIORITIES];
+
+const priorityColor = (p: Priority) =>
+  p === "High"
+    ? KFitColors.error
+    : p === "Medium"
+      ? KFitColors.warning
+      : KFitColors.accent;
+
+const todayLabel = () =>
+  new Date().toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+
 export default function MemoScreen() {
-  const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPriority, setSelectedPriority] = useState('All priorities');
-  const [createModalVisible, setCreateModalVisible] = useState(false);
-  const [viewModalVisible, setViewModalVisible] = useState(false);
+  const [memos, setMemos] = useState<Memo[]>(INITIAL_MEMOS);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedFilter, setSelectedFilter] = useState<PriorityFilter>("All");
+
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
-  
-  const [newTitle, setNewTitle] = useState('');
-  const [newContent, setNewContent] = useState('');
-  const [newPriority, setNewPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'High':
-        return '#EF4444';
-      case 'Medium':
-        return '#F59E0B';
-      case 'Low':
-        return '#10B981';
-      default:
-        return '#6B7280';
-    }
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [newPriority, setNewPriority] = useState<Priority>("Medium");
+  const [formError, setFormError] = useState("");
+
+  const counts = useMemo(() => {
+    const base: Record<PriorityFilter, number> = {
+      All: memos.length,
+      High: 0,
+      Medium: 0,
+      Low: 0,
+    };
+    memos.forEach((m) => (base[m.priority] += 1));
+    return base;
+  }, [memos]);
+
+  const filteredMemos = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return memos.filter((m) => {
+      const matchesSearch =
+        !q ||
+        m.title.toLowerCase().includes(q) ||
+        m.content.toLowerCase().includes(q);
+      const matchesFilter =
+        selectedFilter === "All" || m.priority === selectedFilter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [memos, searchQuery, selectedFilter]);
+
+  const openCreate = () => {
+    setNewTitle("");
+    setNewContent("");
+    setNewPriority("Medium");
+    setFormError("");
+    setCreateOpen(true);
   };
 
-  const getPriorityBgColor = (priority: string) => {
-    switch (priority) {
-      case 'High':
-        return '#EF444420';
-      case 'Medium':
-        return '#F59E0B20';
-      case 'Low':
-        return '#10B98120';
-      default:
-        return '#6B728020';
-    }
-  };
-
-  const handleCreateMemo = () => {
+  const createMemo = () => {
     if (!newTitle.trim() || !newContent.trim()) {
-      Alert.alert('Missing Information', 'Please enter both title and content.');
+      setFormError("Enter both a title and the memo content.");
       return;
     }
+    setMemos((prev) => [
+      {
+        id: `${Date.now()}`,
+        title: newTitle.trim(),
+        content: newContent.trim(),
+        date: todayLabel(),
+        priority: newPriority,
+        author: "Admin",
+      },
+      ...prev,
+    ]);
+    setCreateOpen(false);
+  };
 
+  const deleteMemo = (memo: Memo) => {
     Alert.alert(
-      'Memo Created',
-      'Your memo has been created and will be visible to all members.'
+      "Delete memo?",
+      `"${memo.title}" will be removed for everyone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setMemos((prev) => prev.filter((m) => m.id !== memo.id));
+            setSelectedMemo(null);
+          },
+        },
+      ],
     );
-
-    setCreateModalVisible(false);
-    setNewTitle('');
-    setNewContent('');
-    setNewPriority('Medium');
   };
 
-  const handleViewMemo = (memo: Memo) => {
-    setSelectedMemo(memo);
-    setViewModalVisible(true);
-  };
-
-  const handleDeleteMemo = () => {
-    Alert.alert(
-      'Memo Deleted',
-      'The memo has been deleted successfully.'
+  const PriorityBadge = ({ priority }: { priority: Priority }) => {
+    const color = priorityColor(priority);
+    return (
+      <View
+        style={[
+          styles.badge,
+          { backgroundColor: color + "1F", borderColor: color + "55" },
+        ]}
+      >
+        <View style={[styles.badgeDot, { backgroundColor: color }]} />
+        <Text style={[styles.badgeText, { color }]}>{priority}</Text>
+      </View>
     );
-    setViewModalVisible(false);
-    setSelectedMemo(null);
   };
-
-  const filteredMemos = mockMemos.filter((memo) => {
-    const matchesSearch =
-      memo.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      memo.content.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesPriority = selectedPriority === 'All priorities' || memo.priority === selectedPriority;
-    return matchesSearch && matchesPriority;
-  });
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mainContainer}>
         <Sidebar activeRoute="/memo" />
 
-        {/* Main Content */}
-        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <Text style={styles.headerTitle}>Gym Memos</Text>
-              <Text style={styles.headerSubtitle}>
-                Important announcements and notifications for members
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => setCreateModalVisible(true)}
-            >
-              <Text style={styles.createButtonText}>+ Create Memo</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Header + scrollable content */}
+        <View style={styles.main}>
+          <AppHeader />
 
-          {/* Search and Filters */}
-          <View style={styles.searchSection}>
-            <View style={styles.searchContainer}>
-              <Text style={styles.searchIcon}>🔍</Text>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search memos by title or content"
-                placeholderTextColor="#9CA3AF"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterScroll}
-              contentContainerStyle={styles.filterContainer}
-            >
-              <TouchableOpacity
-                style={[styles.filterTab, selectedPriority === 'All priorities' && styles.filterTabActive]}
-                onPress={() => setSelectedPriority('All priorities')}
-              >
-                <Text
-                  style={[
-                    styles.filterTabText,
-                    selectedPriority === 'All priorities' && styles.filterTabTextActive,
-                  ]}
-                >
-                  All priorities
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={styles.contentContainer}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Page title */}
+            <View style={styles.header}>
+              <View style={styles.headerLeft}>
+                <Text style={styles.eyebrow}>ANNOUNCEMENTS</Text>
+                <Text style={styles.headerTitle}>Gym memos</Text>
+                <Text style={styles.headerSubtitle}>
+                  Important announcements and notifications for members.
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterTab, selectedPriority === 'High' && styles.filterTabActive]}
-                onPress={() => setSelectedPriority('High')}
+              </View>
+              <Pressable
+                onPress={openCreate}
+                accessibilityRole="button"
+                accessibilityLabel="Create memo"
+                style={({ pressed }) => [
+                  styles.createButton,
+                  pressed && styles.pressed,
+                ]}
               >
-                <Text
-                  style={[
-                    styles.filterTabText,
-                    selectedPriority === 'High' && styles.filterTabTextActive,
-                  ]}
-                >
-                  High
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterTab, selectedPriority === 'Medium' && styles.filterTabActive]}
-                onPress={() => setSelectedPriority('Medium')}
-              >
-                <Text
-                  style={[
-                    styles.filterTabText,
-                    selectedPriority === 'Medium' && styles.filterTabTextActive,
-                  ]}
-                >
-                  Medium
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterTab, selectedPriority === 'Low' && styles.filterTabActive]}
-                onPress={() => setSelectedPriority('Low')}
-              >
-                <Text
-                  style={[
-                    styles.filterTabText,
-                    selectedPriority === 'Low' && styles.filterTabTextActive,
-                  ]}
-                >
-                  Low
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-
-          {/* Memo List */}
-          <View style={styles.memoList}>
-            {filteredMemos.map((memo) => (
-              <TouchableOpacity
-                key={memo.id}
-                style={styles.memoCard}
-                onPress={() => handleViewMemo(memo)}
-              >
-                <View style={styles.memoHeader}>
-                  <View style={styles.memoTitleContainer}>
-                    <View
-                      style={[
-                        styles.priorityDot,
-                        { backgroundColor: getPriorityColor(memo.priority) },
-                      ]}
-                    />
-                    <Text style={styles.memoTitle}>{memo.title}</Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.priorityBadge,
-                      { backgroundColor: getPriorityBgColor(memo.priority) },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.priorityText,
-                        { color: getPriorityColor(memo.priority) },
-                      ]}
-                    >
-                      {memo.priority}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.memoContent} numberOfLines={2}>
-                  {memo.content}
-                </Text>
-                <View style={styles.memoFooter}>
-                  <Text style={styles.memoDate}>{memo.date}</Text>
-                  <Text style={styles.memoAuthor}>By {memo.author}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.footerText}>
-            Showing {filteredMemos.length} of {mockMemos.length} memos
-          </Text>
-
-          <View style={styles.footer}>
-            <Text style={styles.footerBrand}>FORM ATHLETICS/ADMINISTRATOR WORKSPACE</Text>
-            <Text style={styles.footerPhone}>123</Text>
-          </View>
-        </ScrollView>
-      </View>
-
-      {/* Create Memo Modal */}
-      <Modal
-        visible={createModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setCreateModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Create New Memo</Text>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Title</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={newTitle}
-                onChangeText={setNewTitle}
-                placeholder="Enter memo title"
-                placeholderTextColor="#9CA3AF"
-              />
+                <Ionicons name="add" size={18} color={KFitColors.onAccent} />
+                <Text style={styles.createButtonText}>Create memo</Text>
+              </Pressable>
             </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Content</Text>
-              <TextInput
-                style={[styles.modalInput, styles.textArea]}
-                value={newContent}
-                onChangeText={setNewContent}
-                placeholder="Enter memo content"
-                placeholderTextColor="#9CA3AF"
-                multiline
-                numberOfLines={4}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Priority</Text>
-              <View style={styles.priorityOptions}>
-                <TouchableOpacity
-                  style={[
-                    styles.priorityOption,
-                    newPriority === 'High' && styles.priorityOptionSelected,
-                    { borderColor: newPriority === 'High' ? '#EF4444' : '#E5E7EB' },
-                  ]}
-                  onPress={() => setNewPriority('High')}
-                >
-                  <Text
-                    style={[
-                      styles.priorityOptionText,
-                      newPriority === 'High' && { color: '#EF4444' },
-                    ]}
-                  >
-                    High
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.priorityOption,
-                    newPriority === 'Medium' && styles.priorityOptionSelected,
-                    { borderColor: newPriority === 'Medium' ? '#F59E0B' : '#E5E7EB' },
-                  ]}
-                  onPress={() => setNewPriority('Medium')}
-                >
-                  <Text
-                    style={[
-                      styles.priorityOptionText,
-                      newPriority === 'Medium' && { color: '#F59E0B' },
-                    ]}
-                  >
-                    Medium
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.priorityOption,
-                    newPriority === 'Low' && styles.priorityOptionSelected,
-                    { borderColor: newPriority === 'Low' ? '#10B981' : '#E5E7EB' },
-                  ]}
-                  onPress={() => setNewPriority('Low')}
-                >
-                  <Text
-                    style={[
-                      styles.priorityOptionText,
-                      newPriority === 'Low' && { color: '#10B981' },
-                    ]}
-                  >
-                    Low
-                  </Text>
-                </TouchableOpacity>
+            {/* Stats */}
+            <View style={styles.statsGrid}>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>Total memos</Text>
+                <Text style={styles.statNumber}>{counts.All}</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>High priority</Text>
+                <Text style={[styles.statNumber, { color: KFitColors.error }]}>
+                  {counts.High}
+                </Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>Latest</Text>
+                <Text style={styles.statDate} numberOfLines={1}>
+                  {memos[0]?.date ?? "—"}
+                </Text>
               </View>
             </View>
 
+            {/* Search + filters */}
+            <View style={styles.section}>
+              <View style={styles.searchContainer}>
+                <Ionicons
+                  name="search"
+                  size={18}
+                  color={KFitColors.mutedText}
+                  style={styles.searchIcon}
+                />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search memos by title or content"
+                  placeholderTextColor={KFitColors.mutedText}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCorrect={false}
+                  accessibilityLabel="Search memos"
+                />
+                {searchQuery.length > 0 && (
+                  <Pressable
+                    onPress={() => setSearchQuery("")}
+                    hitSlop={10}
+                    accessibilityLabel="Clear search"
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={KFitColors.mutedText}
+                    />
+                  </Pressable>
+                )}
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterContainer}
+              >
+                {FILTERS.map((f) => {
+                  const active = selectedFilter === f;
+                  return (
+                    <Pressable
+                      key={f}
+                      onPress={() => setSelectedFilter(f)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      style={[
+                        styles.filterTab,
+                        active && styles.filterTabActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.filterTabText,
+                          active && styles.filterTabTextActive,
+                        ]}
+                      >
+                        {f === "All" ? "All priorities" : f}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.filterCount,
+                          active && styles.filterTabTextActive,
+                        ]}
+                      >
+                        {counts[f]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Memo list */}
+            <View style={styles.memoList}>
+              {filteredMemos.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons
+                    name="document-text-outline"
+                    size={34}
+                    color={KFitColors.mutedText}
+                  />
+                  <Text style={styles.emptyTitle}>No memos found</Text>
+                  <Text style={styles.emptyText}>
+                    Try a different search or create a new memo.
+                  </Text>
+                  <Pressable
+                    style={styles.resetButton}
+                    onPress={() => {
+                      setSearchQuery("");
+                      setSelectedFilter("All");
+                    }}
+                  >
+                    <Text style={styles.resetText}>Reset filters</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                filteredMemos.map((memo) => (
+                  <Pressable
+                    key={memo.id}
+                    onPress={() => setSelectedMemo(memo)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open memo ${memo.title}`}
+                    style={({ pressed }) => [
+                      styles.memoCard,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.memoAccent,
+                        { backgroundColor: priorityColor(memo.priority) },
+                      ]}
+                    />
+                    <View style={styles.memoBody}>
+                      <View style={styles.memoHeader}>
+                        <Text style={styles.memoTitle} numberOfLines={2}>
+                          {memo.title}
+                        </Text>
+                        <PriorityBadge priority={memo.priority} />
+                      </View>
+                      <Text style={styles.memoContent} numberOfLines={2}>
+                        {memo.content}
+                      </Text>
+                      <View style={styles.memoFooter}>
+                        <View style={styles.metaItem}>
+                          <Ionicons
+                            name="calendar-outline"
+                            size={12}
+                            color={KFitColors.mutedText}
+                          />
+                          <Text style={styles.metaText}>{memo.date}</Text>
+                        </View>
+                        <Text style={styles.metaText}>By {memo.author}</Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                ))
+              )}
+            </View>
+
+            <Text style={styles.footerText}>
+              Showing {filteredMemos.length} of {memos.length} memos
+            </Text>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerBrand}>
+                FORM ATHLETICS • ADMINISTRATOR WORKSPACE
+              </Text>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+
+      {/* Create memo modal */}
+      <Modal
+        visible={createOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCreateOpen(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create new memo</Text>
+              <Pressable
+                onPress={() => setCreateOpen(false)}
+                hitSlop={10}
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={20} color={KFitColors.mutedText} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.fieldLabel}>TITLE</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={newTitle}
+              onChangeText={(t) => {
+                setNewTitle(t);
+                setFormError("");
+              }}
+              placeholder="Enter memo title"
+              placeholderTextColor={KFitColors.mutedText}
+            />
+
+            <Text style={styles.fieldLabel}>CONTENT</Text>
+            <TextInput
+              style={[styles.modalInput, styles.textArea]}
+              value={newContent}
+              onChangeText={(t) => {
+                setNewContent(t);
+                setFormError("");
+              }}
+              placeholder="Enter memo content"
+              placeholderTextColor={KFitColors.mutedText}
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Text style={styles.fieldLabel}>PRIORITY</Text>
+            <View style={styles.priorityOptions}>
+              {PRIORITIES.map((p) => {
+                const active = newPriority === p;
+                const color = priorityColor(p);
+                return (
+                  <Pressable
+                    key={p}
+                    onPress={() => setNewPriority(p)}
+                    accessibilityState={{ selected: active }}
+                    style={[
+                      styles.priorityOption,
+                      active && {
+                        borderColor: color,
+                        backgroundColor: color + "26",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.priorityOptionText, active && { color }]}
+                    >
+                      {p}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {formError !== "" && (
+              <Text style={styles.errorText}>{formError}</Text>
+            )}
+
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => setCreateModalVisible(false)}
+              <Pressable
+                style={styles.modalCancel}
+                onPress={() => setCreateOpen(false)}
               >
-                <Text style={styles.modalCancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalSaveButton}
-                onPress={handleCreateMemo}
-              >
-                <Text style={styles.modalSaveButtonText}>Create Memo</Text>
-              </TouchableOpacity>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.modalSave} onPress={createMemo}>
+                <Text style={styles.modalSaveText}>Create memo</Text>
+              </Pressable>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
-      {/* View Memo Modal */}
+      {/* View memo modal */}
       <Modal
-        visible={viewModalVisible}
+        visible={selectedMemo !== null}
         transparent
-        animationType="slide"
-        onRequestClose={() => setViewModalVisible(false)}
+        animationType="fade"
+        onRequestClose={() => setSelectedMemo(null)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             {selectedMemo && (
               <>
-                <View style={styles.viewMemoHeader}>
-                  <View style={styles.viewMemoTitleContainer}>
-                    <View
-                      style={[
-                        styles.priorityDotLarge,
-                        { backgroundColor: getPriorityColor(selectedMemo.priority) },
-                      ]}
-                    />
-                    <Text style={styles.viewMemoTitle}>{selectedMemo.title}</Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.priorityBadge,
-                      { backgroundColor: getPriorityBgColor(selectedMemo.priority) },
-                    ]}
+                <View style={styles.modalHeader}>
+                  <PriorityBadge priority={selectedMemo.priority} />
+                  <Pressable
+                    onPress={() => setSelectedMemo(null)}
+                    hitSlop={10}
+                    accessibilityLabel="Close"
                   >
-                    <Text
-                      style={[
-                        styles.priorityText,
-                        { color: getPriorityColor(selectedMemo.priority) },
-                      ]}
-                    >
-                      {selectedMemo.priority}
-                    </Text>
-                  </View>
+                    <Ionicons
+                      name="close"
+                      size={20}
+                      color={KFitColors.mutedText}
+                    />
+                  </Pressable>
                 </View>
 
-                <Text style={styles.viewMemoContent}>{selectedMemo.content}</Text>
+                <Text style={styles.viewTitle}>{selectedMemo.title}</Text>
 
-                <View style={styles.viewMemoFooter}>
-                  <Text style={styles.viewMemoDate}>{selectedMemo.date}</Text>
-                  <Text style={styles.viewMemoAuthor}>By {selectedMemo.author}</Text>
+                <ScrollView style={styles.viewScroll}>
+                  <Text style={styles.viewContent}>{selectedMemo.content}</Text>
+                </ScrollView>
+
+                <View style={styles.viewFooter}>
+                  <View style={styles.metaItem}>
+                    <Ionicons
+                      name="calendar-outline"
+                      size={12}
+                      color={KFitColors.mutedText}
+                    />
+                    <Text style={styles.metaText}>{selectedMemo.date}</Text>
+                  </View>
+                  <Text style={styles.metaText}>By {selectedMemo.author}</Text>
                 </View>
 
                 <View style={styles.modalButtons}>
-                  <TouchableOpacity
-                    style={styles.modalDeleteButton}
-                    onPress={handleDeleteMemo}
+                  <Pressable
+                    style={styles.modalDelete}
+                    onPress={() => deleteMemo(selectedMemo)}
                   >
-                    <Text style={styles.modalDeleteButtonText}>Delete</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.modalCancelButton}
-                    onPress={() => setViewModalVisible(false)}
+                    <Ionicons
+                      name="trash-outline"
+                      size={16}
+                      color={KFitColors.error}
+                    />
+                    <Text style={styles.modalDeleteText}>Delete</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.modalCancel}
+                    onPress={() => setSelectedMemo(null)}
                   >
-                    <Text style={styles.modalCancelButtonText}>Close</Text>
-                  </TouchableOpacity>
+                    <Text style={styles.modalCancelText}>Close</Text>
+                  </Pressable>
                 </View>
               </>
             )}
@@ -477,391 +571,346 @@ export default function MemoScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  mainContainer: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  sidebar: {
-    width: width > 768 ? 250 : 80,
-    backgroundColor: '#F9FAFB',
-    borderRightWidth: 1,
-    borderRightColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 20,
-  },
-  sidebarHeader: {
-    marginBottom: 20,
-  },
-  gymName: {
-    fontSize: width > 768 ? 16 : 14,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  gymSubtitle: {
-    fontSize: width > 768 ? 12 : 10,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  sidebarDate: {
-    marginBottom: 30,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  dateText: {
-    fontSize: width > 768 ? 11 : 10,
-    color: '#6B7280',
-  },
-  timeText: {
-    fontSize: width > 768 ? 10 : 9,
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
-  sidebarNav: {
-    gap: 8,
-  },
-  navItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  navItemActive: {
-    backgroundColor: '#E5E7EB',
-  },
-  navItemText: {
-    fontSize: width > 768 ? 14 : 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  navItemTextActive: {
-    color: '#111827',
-    fontWeight: '600',
-  },
-  content: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  contentContainer: {
-    paddingBottom: 128,
-  },
+  safeArea: { flex: 1, backgroundColor: KFitColors.background },
+  mainContainer: { flex: 1, flexDirection: "row" },
+  main: { flex: 1, backgroundColor: KFitColors.background },
+  content: { flex: 1, backgroundColor: KFitColors.background },
+  contentContainer: { paddingBottom: 96 },
+  pressed: { opacity: 0.75 },
+
+  /* Page title */
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 24,
+    paddingTop: 24,
+    paddingBottom: 20,
   },
-  headerLeft: {
-    flex: 1,
+  headerLeft: { flexShrink: 1, minWidth: 220 },
+  eyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+    marginBottom: 4,
   },
   headerTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    color: KFitColors.text,
     marginBottom: 6,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    lineHeight: 20,
+    color: KFitColors.mutedText,
   },
   createButton: {
-    backgroundColor: '#4F46E5',
-    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 44,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: KFitColors.accent,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   createButtonText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontWeight: "800",
+    color: KFitColors.onAccent,
   },
-  searchSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    marginBottom: 16,
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    height: 44,
-    fontSize: 14,
-    color: '#111827',
-  },
-  filterScroll: {
-    marginBottom: 16,
-  },
-  filterContainer: {
-    gap: 8,
-  },
-  filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  filterTabActive: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
-  },
-  filterTabText: {
-    fontSize: 13,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  filterTabTextActive: {
-    color: '#FFFFFF',
-  },
-  memoList: {
-    paddingHorizontal: 20,
+
+  /* Stats */
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
-  memoCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+  statCard: {
+    flexGrow: 1,
+    flexBasis: 120,
+    backgroundColor: KFitColors.surface,
+    borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: KFitColors.border,
   },
-  memoHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  statLabel: { fontSize: 12, color: KFitColors.mutedText, marginBottom: 8 },
+  statNumber: { fontSize: 28, fontWeight: "800", color: KFitColors.accent },
+  statDate: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: KFitColors.text,
+    marginTop: 6,
+  },
+
+  /* Search + filters */
+  section: { paddingHorizontal: 20, marginBottom: 20 },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+    paddingHorizontal: 12,
     marginBottom: 12,
   },
-  memoTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  searchIcon: { marginRight: 8 },
+  searchInput: {
     flex: 1,
+    height: "100%",
+    fontSize: 14,
+    color: KFitColors.text,
   },
-  priorityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
+  filterContainer: { gap: 8 },
+  filterTab: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+  },
+  filterTabActive: {
+    backgroundColor: KFitColors.accent,
+    borderColor: KFitColors.accent,
+  },
+  filterTabText: { fontSize: 13, color: KFitColors.text, fontWeight: "600" },
+  filterTabTextActive: { color: KFitColors.onAccent },
+  filterCount: { fontSize: 12, color: KFitColors.mutedText, fontWeight: "600" },
+
+  /* Memo list */
+  memoList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    paddingHorizontal: 20,
+  },
+  memoCard: {
+    flexGrow: 1,
+    flexBasis: 320,
+    flexDirection: "row",
+    overflow: "hidden",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+  },
+  memoAccent: { width: 4 },
+  memoBody: { flex: 1, padding: 14, gap: 10 },
+  memoHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
   },
   memoTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
     flex: 1,
-  },
-  priorityBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  priorityText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: "700",
+    color: KFitColors.text,
   },
   memoContent: {
     fontSize: 13,
-    color: '#374151',
-    lineHeight: 20,
-    marginBottom: 12,
+    lineHeight: 19,
+    color: KFitColors.mutedText,
   },
   memoFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: KFitColors.border,
   },
-  memoDate: {
-    fontSize: 11,
-    color: '#9CA3AF',
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  metaText: { fontSize: 11, color: KFitColors.mutedText },
+
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
   },
-  memoAuthor: {
-    fontSize: 11,
-    color: '#6B7280',
+  badgeDot: { width: 6, height: 6, borderRadius: 3 },
+  badgeText: { fontSize: 11, fontWeight: "800" },
+
+  /* Empty state */
+  emptyState: {
+    flexGrow: 1,
+    alignItems: "center",
+    paddingVertical: 40,
+    gap: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: KFitColors.border,
   },
+  emptyTitle: { fontSize: 15, fontWeight: "700", color: KFitColors.text },
+  emptyText: { fontSize: 12, color: KFitColors.mutedText, marginBottom: 10 },
+  resetButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: KFitColors.accent,
+  },
+  resetText: { fontSize: 13, fontWeight: "600", color: KFitColors.accent },
+
+  /* Footer */
   footerText: {
     fontSize: 12,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    paddingHorizontal: 20,
+    color: KFitColors.mutedText,
+    textAlign: "center",
+    marginTop: 18,
     marginBottom: 24,
   },
   footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: KFitColors.border,
   },
   footerBrand: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 11,
+    letterSpacing: 0.8,
+    color: KFitColors.mutedText,
   },
-  footerPhone: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
+
+  /* Modals */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    backgroundColor: "rgba(0,0,0,0.8)",
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    width: width > 600 ? 500 : '90%',
+    width: "100%",
+    maxWidth: 480,
+    maxHeight: "90%",
+    padding: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 20,
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
   },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
+  modalTitle: { fontSize: 18, fontWeight: "800", color: KFitColors.text },
+  fieldLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    color: KFitColors.mutedText,
+    marginTop: 10,
+    marginBottom: 6,
   },
   modalInput: {
     height: 44,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
     paddingHorizontal: 12,
     fontSize: 14,
-    color: '#111827',
+    color: KFitColors.text,
   },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-    paddingTop: 12,
-  },
-  priorityOptions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  textArea: { height: 110, paddingTop: 12 },
+  priorityOptions: { flexDirection: "row", gap: 8 },
   priorityOption: {
     flex: 1,
+    alignItems: "center",
+    paddingVertical: 11,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  priorityOptionSelected: {
-    borderWidth: 2,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
   },
   priorityOptionText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
+    fontWeight: "700",
+    color: KFitColors.mutedText,
   },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
-  },
-  modalCancelButton: {
+  errorText: { fontSize: 12, color: KFitColors.error, marginTop: 12 },
+  modalButtons: { flexDirection: "row", gap: 10, marginTop: 20 },
+  modalCancel: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+  },
+  modalCancelText: { fontSize: 14, fontWeight: "600", color: KFitColors.text },
+  modalSave: {
+    flex: 1.4,
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 12,
-    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent,
   },
-  modalCancelButtonText: {
+  modalSaveText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
+    fontWeight: "800",
+    color: KFitColors.onAccent,
   },
-  modalSaveButton: {
+  modalDelete: {
     flex: 1,
-    backgroundColor: '#4F46E5',
-    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
     paddingVertical: 12,
-    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.error + "66",
+    backgroundColor: KFitColors.error + "14",
   },
-  modalSaveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  modalDeleteText: { fontSize: 14, fontWeight: "700", color: KFitColors.error },
+
+  viewTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: KFitColors.text,
+    marginBottom: 12,
   },
-  modalDeleteButton: {
-    flex: 1,
-    backgroundColor: '#EF4444',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  modalDeleteButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  viewMemoHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  viewMemoTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  priorityDotLarge: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  viewMemoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
-    flex: 1,
-  },
-  viewMemoContent: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 22,
-    marginBottom: 20,
-  },
-  viewMemoFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  viewMemoDate: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  viewMemoAuthor: {
-    fontSize: 12,
-    color: '#6B7280',
+  viewScroll: { maxHeight: 220 },
+  viewContent: { fontSize: 14, lineHeight: 22, color: KFitColors.text },
+  viewFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: KFitColors.border,
   },
 });

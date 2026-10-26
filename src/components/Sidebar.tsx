@@ -1,27 +1,63 @@
-import { KFitColors } from '@/constants/theme';
-import { useRouter } from 'expo-router';
-import { useLogout } from '@/hooks/use-logout';
-import { useState } from 'react';
+import { KFitColors } from "@/constants/theme";
+import { useLogout } from "@/hooks/use-logout";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useState } from "react";
 import {
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-    useWindowDimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+  Image,
+  ImageBackground,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+type IconName = keyof typeof Ionicons.glyphMap;
 
 interface SidebarProps {
   activeRoute: string;
-  theme?: 'default' | 'dashboard';
+  /** Kept so existing screens (theme="dashboard") still compile. The sidebar is always KFit dark now. */
+  theme?: string;
 }
 
-export default function Sidebar({
-  activeRoute,
-  theme = 'default',
-}: SidebarProps) {
+type NavItem = { name: string; short: string; route: string; icon: IconName };
+
+const NAV_ITEMS: NavItem[] = [
+  { name: "Dashboard", short: "Home", route: "/dashboard", icon: "grid" },
+  { name: "Members", short: "Roster", route: "/members", icon: "people" },
+  {
+    name: "Attendance",
+    short: "Attendance",
+    route: "/attendance",
+    icon: "calendar",
+  },
+  { name: "Trainers", short: "Trainers", route: "/trainers", icon: "barbell" },
+  { name: "Memberships", short: "Plans", route: "/memberships", icon: "card" },
+  { name: "Payments", short: "Payments", route: "/payments", icon: "cash" },
+  { name: "Races", short: "Races", route: "/challenges", icon: "trophy" },
+  {
+    name: "Scanner",
+    short: "Scanner",
+    route: "/admin-scanner",
+    icon: "qr-code",
+  },
+  { name: "Memo", short: "Memo", route: "/memo", icon: "document-text" },
+];
+
+// These five get a slot in the floating dock; everything else lives under "More"
+const PRIMARY_ROUTES = [
+  "/dashboard",
+  "/members",
+  "/attendance",
+  "/trainers",
+  "/payments",
+];
+
+export default function Sidebar({ activeRoute }: SidebarProps) {
   const router = useRouter();
   const { logout } = useLogout();
   const { width } = useWindowDimensions();
@@ -29,106 +65,118 @@ export default function Sidebar({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
-  const navItems = [
-    { name: 'Dashboard', route: '/dashboard', icon: '📊' },
-    { name: 'Members', route: '/members', icon: '👥' },
-    { name: 'Attendance', route: '/attendance', icon: '📅' },
-    { name: 'Trainers', route: '/trainers', icon: '🏋️' },
-    { name: 'Memberships', route: '/memberships', icon: '💳' },
-    { name: 'Payments', route: '/payments', icon: '💰' },
-    { name: 'Scanner', route: '/admin-scanner', icon: '📷' },
-    { name: 'Memo', route: '/memo', icon: '📝' },
-  ];
+  const isMobile = width < 768;
+  const primaryItems = NAV_ITEMS.filter((i) =>
+    PRIMARY_ROUTES.includes(i.route),
+  );
+  const secondaryItems = NAV_ITEMS.filter(
+    (i) => !PRIMARY_ROUTES.includes(i.route),
+  );
+  const moreIsActive = secondaryItems.some((i) => i.route === activeRoute);
+
+  const goTo = (route: string) => router.replace(route as any);
 
   const handleLogout = () => {
     setIsMoreOpen(false);
     void logout();
   };
 
-  const isMobile = width < 768;
-  const isDashboardTheme = theme === 'dashboard';
-  const primaryNavItems = navItems.filter((item) =>
-    ['/dashboard', '/members', '/attendance', '/trainers', '/payments'].includes(
-      item.route
-    )
-  );
-  const secondaryNavItems = navItems.filter(
-    (item) => !primaryNavItems.some((primaryItem) => primaryItem.route === item.route)
-  );
-
+  /* ------------------------------------------------------------------ */
+  /* Phone: floating glass dock + "More" sheet                           */
+  /* ------------------------------------------------------------------ */
   if (isMobile) {
     return (
       <>
-        <View
-          style={[
-            styles.bottomBar,
-            isDashboardTheme && styles.bottomBarDashboard,
-            { paddingBottom: Math.max(insets.bottom, 8) },
-          ]}
-        >
-          {primaryNavItems.map((item) => {
-            const isActive = activeRoute === item.route;
+        <View style={styles.dockWrap} pointerEvents="box-none">
+          <View style={styles.dock}>
+            {primaryItems.map((item) => {
+              const active = activeRoute === item.route;
+              return (
+                <Pressable
+                  key={item.route}
+                  style={({ pressed }) => [
+                    styles.dockItem,
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => goTo(item.route)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={item.name}
+                >
+                  <View style={styles.dockIconBox}>
+                    {active ? (
+                      <ImageBackground
+                        source={require("../../assets/images/gold-texture.jpg")}
+                        resizeMode="cover"
+                        style={styles.dockIconActivePill}
+                        imageStyle={styles.dockIconActivePillImage}
+                      >
+                        <Ionicons
+                          name={item.icon}
+                          size={18}
+                          color={KFitColors.onAccent}
+                        />
+                      </ImageBackground>
+                    ) : (
+                      <Ionicons
+                        name={item.icon}
+                        size={18}
+                        color={KFitColors.mutedText}
+                      />
+                    )}
+                  </View>
+                  <Text
+                    style={[styles.dockLabel, active && styles.dockLabelActive]}
+                    numberOfLines={1}
+                  >
+                    {item.short}
+                  </Text>
+                </Pressable>
+              );
+            })}
 
-            return (
-              <Pressable
-                key={item.route}
-                style={({ pressed }) => [
-                  styles.bottomNavItem,
-                  isActive && isDashboardTheme && styles.bottomNavItemActiveDashboard,
-                  pressed && styles.pressed,
+            <Pressable
+              style={({ pressed }) => [
+                styles.dockItem,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => setIsMoreOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="More admin navigation"
+            >
+              <View style={styles.dockIconBox}>
+                {moreIsActive ? (
+                  <ImageBackground
+                    source={require("../../assets/images/gold-texture.jpg")}
+                    resizeMode="cover"
+                    style={styles.dockIconActivePill}
+                    imageStyle={styles.dockIconActivePillImage}
+                  >
+                    <Ionicons
+                      name="ellipsis-horizontal"
+                      size={18}
+                      color={KFitColors.onAccent}
+                    />
+                  </ImageBackground>
+                ) : (
+                  <Ionicons
+                    name="ellipsis-horizontal"
+                    size={18}
+                    color={KFitColors.mutedText}
+                  />
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.dockLabel,
+                  moreIsActive && styles.dockLabelActive,
                 ]}
-                onPress={() => router.replace(item.route as any)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isActive }}
-                accessibilityLabel={item.name}
+                numberOfLines={1}
               >
-                <Text
-                  style={[
-                    styles.bottomNavIcon,
-                    isActive && styles.bottomNavIconActive,
-                    isActive && isDashboardTheme && styles.bottomNavIconActiveDashboard,
-                  ]}
-                >
-                  {item.icon}
-                </Text>
-                <Text
-                  style={[
-                    styles.bottomNavLabel,
-                    isActive && styles.bottomNavLabelActive,
-                    isActive && isDashboardTheme && styles.bottomNavLabelActiveDashboard,
-                  ]}
-                >
-                  {item.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-          <Pressable
-            style={({ pressed }) => [
-              styles.bottomNavItem,
-              pressed && styles.pressed,
-            ]}
-            onPress={() => setIsMoreOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="More admin navigation"
-          >
-            <Text
-              style={[
-                styles.bottomNavIcon,
-                isDashboardTheme && styles.bottomNavIconDashboard,
-              ]}
-            >
-              •••
-            </Text>
-            <Text
-              style={[
-                styles.bottomNavLabel,
-                isDashboardTheme && styles.bottomNavLabelDashboard,
-              ]}
-            >
-              More
-            </Text>
-          </Pressable>
+                More
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
         <Modal
@@ -144,79 +192,69 @@ export default function Sidebar({
             <Pressable
               style={[
                 styles.moreSheet,
-                isDashboardTheme && styles.moreSheetDashboard,
                 { paddingBottom: Math.max(insets.bottom, 20) },
               ]}
               onPress={(event) => event.stopPropagation()}
             >
-              <View
-                style={[
-                  styles.sheetHandle,
-                  isDashboardTheme && styles.sheetHandleDashboard,
-                ]}
-              />
-              <Text
-                style={[
-                  styles.sheetTitle,
-                  isDashboardTheme && styles.sheetTitleDashboard,
-                ]}
-              >
-                Admin tools
-              </Text>
-              {secondaryNavItems.map((item) => (
-                <Pressable
-                  key={item.route}
-                  style={({ pressed }) => [
-                    styles.moreItem,
-                    activeRoute === item.route && styles.moreItemActive,
-                    activeRoute === item.route &&
-                      isDashboardTheme &&
-                      styles.moreItemActiveDashboard,
-                    pressed && styles.pressed,
-                  ]}
-                  onPress={() => {
-                    setIsMoreOpen(false);
-                    router.replace(item.route as any);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.moreItemIcon,
-                      isDashboardTheme && styles.moreItemIconDashboard,
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>Admin tools</Text>
+
+              {secondaryItems.map((item) => {
+                const active = activeRoute === item.route;
+                return (
+                  <Pressable
+                    key={item.route}
+                    style={({ pressed }) => [
+                      styles.moreItem,
+                      active && styles.moreItemActive,
+                      pressed && styles.pressed,
                     ]}
+                    onPress={() => {
+                      setIsMoreOpen(false);
+                      goTo(item.route);
+                    }}
                   >
-                    {item.icon}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.moreItemText,
-                      isDashboardTheme && styles.moreItemTextDashboard,
-                      activeRoute === item.route &&
-                        isDashboardTheme &&
-                        styles.moreItemTextActiveDashboard,
-                    ]}
-                  >
-                    {item.name}
-                  </Text>
-                </Pressable>
-              ))}
+                    <View
+                      style={[
+                        styles.moreIconBox,
+                        active && styles.moreIconBoxActive,
+                      ]}
+                    >
+                      <Ionicons
+                        name={item.icon}
+                        size={18}
+                        color={
+                          active ? KFitColors.onAccent : KFitColors.mutedText
+                        }
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.moreItemText,
+                        active && styles.moreItemTextActive,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+
               <Pressable
                 style={({ pressed }) => [
                   styles.moreItem,
                   styles.logoutItem,
-                  isDashboardTheme && styles.logoutItemDashboard,
                   pressed && styles.pressed,
                 ]}
                 onPress={handleLogout}
               >
-                <Text
-                  style={[
-                    styles.moreItemIcon,
-                    isDashboardTheme && styles.moreItemIconDashboard,
-                  ]}
-                >
-                  ↪
-                </Text>
+                <View style={styles.moreIconBox}>
+                  <Ionicons
+                    name="log-out-outline"
+                    size={18}
+                    color={KFitColors.error}
+                  />
+                </View>
                 <Text style={styles.logoutText}>Logout</Text>
               </Pressable>
             </Pressable>
@@ -226,358 +264,421 @@ export default function Sidebar({
     );
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Tablet / wide: side panel                                           */
+  /* ------------------------------------------------------------------ */
   const sidebarWidth = isCollapsed ? width * 0.08 : width * 0.2;
 
   return (
-    <View
-      style={[
-        styles.sidebar,
-        isDashboardTheme && styles.sidebarDashboard,
-        { width: sidebarWidth },
-      ]}
-    >
-      <TouchableOpacity
-        style={styles.collapseButton}
-        onPress={() => setIsCollapsed(!isCollapsed)}
-      >
-        <Text
-          style={[
-            styles.collapseIcon,
-            isDashboardTheme && styles.collapseIconDashboard,
-          ]}
+    <View style={[styles.sidebar, { width: sidebarWidth }]}>
+      <View style={styles.sidebarTop}>
+        {isCollapsed ? (
+          <View style={styles.brandIconWrapper}>
+            <Image
+              source={require("../../assets/images/logo.jpg")}
+              resizeMode="contain"
+              style={styles.brandLogo}
+              accessibilityLabel="K-Fit logo"
+            />
+          </View>
+        ) : (
+          <View style={styles.brandRow}>
+            <View style={styles.brandIconWrapper}>
+              <Image
+                source={require("../../assets/images/logo.jpg")}
+                resizeMode="contain"
+                style={styles.brandLogo}
+                accessibilityLabel="K-Fit logo"
+              />
+            </View>
+            <Text style={styles.brandText}>KFIT ADMIN</Text>
+          </View>
+        )}
+        <TouchableOpacity
+          style={styles.collapseButton}
+          onPress={() => setIsCollapsed(!isCollapsed)}
+          accessibilityRole="button"
+          accessibilityLabel={
+            isCollapsed ? "Expand sidebar" : "Collapse sidebar"
+          }
         >
-          {isCollapsed ? '▶' : '◀'}
-        </Text>
-      </TouchableOpacity>
-
-      <View style={styles.sidebarNav}>
-        {navItems.map((item) => (
-          <TouchableOpacity
-            key={item.route}
-            style={[
-              styles.navItem,
-              activeRoute === item.route && styles.navItemActive,
-              activeRoute === item.route &&
-                isDashboardTheme &&
-                styles.navItemActiveDashboard,
-            ]}
-            onPress={() => router.replace(item.route as any)}
-          >
-            <Text style={styles.navIcon}>{item.icon}</Text>
-            {!isCollapsed && (
-              <Text
-                style={[
-                  styles.navItemText,
-                  activeRoute === item.route && styles.navItemTextActive,
-                  isDashboardTheme && styles.navItemTextDashboard,
-                  activeRoute === item.route &&
-                    isDashboardTheme &&
-                    styles.navItemTextActiveDashboard,
-                ]}
-              >
-                {item.name}
-              </Text>
-            )}
-          </TouchableOpacity>
-        ))}
+          <Ionicons
+            name={isCollapsed ? "chevron-forward" : "chevron-back"}
+            size={16}
+            color={KFitColors.mutedText}
+          />
+        </TouchableOpacity>
       </View>
 
-      {!isCollapsed && (
-        <TouchableOpacity
-          style={[
-            styles.logoutButton,
-            isDashboardTheme && styles.logoutButtonDashboard,
-          ]}
-          onPress={handleLogout}
-        >
+      <View style={styles.sidebarNav}>
+        {NAV_ITEMS.map((item) => {
+          const active = activeRoute === item.route;
+          return active ? (
+            <TouchableOpacity
+              key={item.route}
+              style={[styles.navItemWrapper, styles.navItemActive]}
+              onPress={() => goTo(item.route)}
+              accessibilityLabel={item.name}
+            >
+              <ImageBackground
+                source={require("../../assets/images/gold-texture.jpg")}
+                resizeMode="cover"
+                style={styles.navItemTexture}
+                imageStyle={styles.navItemTextureImage}
+              >
+                <Ionicons
+                  name={item.icon}
+                  size={18}
+                  color={KFitColors.onAccent}
+                />
+                {!isCollapsed && (
+                  <Text
+                    style={[
+                      styles.navItemText,
+                      styles.navItemTextActive,
+                    ]}
+                  >
+                    {item.name}
+                  </Text>
+                )}
+              </ImageBackground>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              key={item.route}
+              style={styles.navItem}
+              onPress={() => goTo(item.route)}
+              accessibilityLabel={item.name}
+            >
+              <Ionicons
+                name={item.icon}
+                size={18}
+                color={KFitColors.mutedText}
+              />
+              {!isCollapsed && (
+                <Text style={styles.navItemText}>
+                  {item.name}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <TouchableOpacity
+        style={isCollapsed ? styles.logoutButtonCollapsed : styles.logoutButton}
+        onPress={handleLogout}
+        accessibilityLabel="Logout"
+      >
+        {isCollapsed ? (
+          <Ionicons name="log-out-outline" size={18} color={KFitColors.error} />
+        ) : (
           <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
-      )}
-      {isCollapsed && (
-        <TouchableOpacity
-          style={[
-            styles.logoutButtonCollapsed,
-            isDashboardTheme && styles.logoutButtonDashboard,
-          ]}
-          onPress={handleLogout}
-        >
-          <Text style={styles.logoutIcon}>🚪</Text>
-        </TouchableOpacity>
-      )}
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  sidebar: {
-    backgroundColor: '#F9FAFB',
-    borderRightWidth: 1,
-    borderRightColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 20,
+  /* ---------------- Floating dock (phone) ---------------- */
+  dockWrap: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 12,
+    zIndex: 30,
   },
-  sidebarDashboard: {
-    backgroundColor: KFitColors.surface,
-    borderRightColor: KFitColors.border,
-  },
-  collapseButton: {
-    alignSelf: 'flex-end',
-    padding: 8,
-    marginBottom: 16,
-  },
-  collapseIcon: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  collapseIconDashboard: {
-    color: KFitColors.mutedText,
-  },
-  sidebarHeader: {
-    marginBottom: 20,
-  },
-  gymName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  gymSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  sidebarDate: {
-    marginBottom: 30,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  dateText: {
-    fontSize: 11,
-    color: '#6B7280',
-  },
-  timeText: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
-  sidebarNav: {
-    gap: 8,
-  },
-  navItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    gap: 12,
-  },
-  navItemActive: {
-    backgroundColor: '#E5E7EB',
-  },
-  navItemActiveDashboard: {
-    backgroundColor: KFitColors.accent,
-  },
-  navIcon: {
-    fontSize: 18,
-  },
-  navItemText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  navItemTextDashboard: {
-    color: KFitColors.mutedText,
-  },
-  navItemTextActive: {
-    color: '#111827',
-    fontWeight: '600',
-  },
-  navItemTextActiveDashboard: {
-    color: KFitColors.background,
-  },
-  logoutButton: {
-    marginTop: 30,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+
+  dock: {
+    flexDirection: "row",
+    gap: 3,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#EF4444',
-    backgroundColor: '#FFFFFF',
+    borderColor: KFitColors.border + "CC",
+    backgroundColor: "rgba(20, 20, 20, 0.95)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.8,
+    shadowRadius: 16,
+    elevation: 14,
   },
-  logoutButtonText: {
-    fontSize: 14,
-    color: '#EF4444',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  logoutButtonCollapsed: {
-    marginTop: 30,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#EF4444',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-  },
-  logoutButtonDashboard: {
-    backgroundColor: KFitColors.surface,
-  },
-  logoutIcon: {
-    fontSize: 18,
-  },
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 10,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-around',
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  bottomBarDashboard: {
-    backgroundColor: KFitColors.surface,
-    borderTopColor: KFitColors.border,
-  },
-  bottomNavItem: {
+
+  dockItem: {
     flex: 1,
     minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: 3,
+    paddingVertical: 3,
     paddingHorizontal: 2,
-    paddingVertical: 2,
+    borderRadius: 12,
   },
-  bottomNavItemActiveDashboard: {
-    borderTopWidth: 2,
-    borderTopColor: KFitColors.accent,
+
+  dockIconBox: {
+    width: 44,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  bottomNavIcon: {
-    color: '#9CA3AF',
-    fontSize: 19,
-    lineHeight: 22,
+
+  dockIconActivePill: {
+    width: 44,
+    height: 28,
+    borderRadius: 14,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  bottomNavIconActive: {
-    color: '#D99423',
+
+  dockIconActivePillImage: {
+    borderRadius: 14,
   },
-  bottomNavIconActiveDashboard: {
-    color: KFitColors.accent,
-  },
-  bottomNavIconDashboard: {
+
+  dockLabel: {
     color: KFitColors.mutedText,
-  },
-  bottomNavLabel: {
-    color: '#9CA3AF',
     fontSize: 10,
-    fontWeight: '500',
-    textAlign: 'center',
+    fontWeight: "700",
+    letterSpacing: -0.1,
   },
-  bottomNavLabelActive: {
-    color: '#D99423',
-    fontWeight: '700',
+
+  dockLabelActive: {
+    color: KFitColors.accentLight,
+    fontWeight: "900",
   },
-  bottomNavLabelDashboard: {
-    color: KFitColors.mutedText,
-  },
-  bottomNavLabelActiveDashboard: {
-    color: KFitColors.accent,
-  },
+
   pressed: {
     opacity: 0.65,
   },
+
+  /* ---------------- "More" bottom sheet ---------------- */
   modalBackdrop: {
     flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
   },
+
   moreSheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: KFitColors.surface,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: KFitColors.border,
     paddingHorizontal: 20,
     paddingTop: 12,
     gap: 8,
   },
-  moreSheetDashboard: {
-    backgroundColor: KFitColors.surface,
-  },
+
   sheetHandle: {
-    alignSelf: 'center',
+    alignSelf: "center",
     width: 42,
     height: 4,
     borderRadius: 999,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: KFitColors.border,
     marginBottom: 8,
   },
-  sheetHandleDashboard: {
-    backgroundColor: KFitColors.border,
-  },
+
   sheetTitle: {
-    color: '#111827',
+    color: KFitColors.text,
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 4,
   },
-  sheetTitleDashboard: {
-    color: KFitColors.text,
-  },
+
   moreItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
     minHeight: 48,
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    borderRadius: 12,
+    paddingHorizontal: 8,
   },
+
   moreItemActive: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: KFitColors.accent + "1F",
   },
-  moreItemActiveDashboard: {
-    backgroundColor: KFitColors.border,
+
+  moreIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
   },
-  moreItemIcon: {
-    width: 28,
-    color: '#6B7280',
-    fontSize: 19,
-    textAlign: 'center',
+
+  moreIconBoxActive: {
+    backgroundColor: KFitColors.accent,
+    borderColor: KFitColors.accent,
   },
-  moreItemIconDashboard: {
-    color: KFitColors.mutedText,
-  },
+
   moreItemText: {
-    color: '#374151',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  moreItemTextDashboard: {
     color: KFitColors.mutedText,
+    fontSize: 15,
+    fontWeight: "600",
   },
-  moreItemTextActiveDashboard: {
+
+  moreItemTextActive: {
     color: KFitColors.accent,
   },
+
   logoutItem: {
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: KFitColors.border,
     marginTop: 4,
     paddingTop: 8,
   },
-  logoutItemDashboard: {
-    borderTopColor: KFitColors.border,
-  },
+
   logoutText: {
-    color: '#DC2626',
+    color: KFitColors.error,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: "600",
+  },
+
+  /* ---------------- Side panel (tablet / wide) ---------------- */
+  sidebar: {
+    backgroundColor: KFitColors.surface,
+    borderRightWidth: 1,
+    borderRightColor: KFitColors.border,
+    paddingHorizontal: 12,
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
+
+  sidebarTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 1,
+  },
+
+  brandIconWrapper: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: "#181818",
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+
+  brandLogo: {
+    width: 28,
+    height: 28,
+  },
+
+  brandText: {
+    color: KFitColors.text,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
+
+  collapseButton: {
+    padding: 8,
+    marginLeft: "auto",
+  },
+
+  sidebarNav: {
+    gap: 6,
+  },
+
+  navItemWrapper: {
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+
+  navItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 12,
+  },
+
+  navItemActive: {
+    borderRadius: 10,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+
+  navItemTexture: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 12,
+  },
+
+  navItemTextureImage: {
+    borderRadius: 10,
+  },
+
+  navItemText: {
+    fontSize: 14,
+    color: KFitColors.mutedText,
+    fontWeight: "500",
+  },
+
+  navItemTextActive: {
+    color: KFitColors.onAccent,
+    fontWeight: "800",
+  },
+
+  logoutButton: {
+    marginTop: 30,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.error,
+    backgroundColor: KFitColors.background,
+  },
+
+  logoutButtonText: {
+    fontSize: 14,
+    color: KFitColors.error,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  logoutButtonCollapsed: {
+    marginTop: 30,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.error,
+    backgroundColor: KFitColors.background,
+    alignItems: "center",
   },
 });

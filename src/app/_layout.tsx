@@ -1,17 +1,32 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import { KFitColors, Spacing } from "@/constants/theme";
 import { ClerkProvider } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { useFonts } from "expo-font";
+import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { Text, useColorScheme, View } from "react-native";
+import { Text, View } from "react-native";
 
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 void SplashScreen.preventAutoHideAsync();
 
+// One navigation theme for every screen and every role
+const KFitNavTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: KFitColors.accent,
+    background: KFitColors.background,
+    card: KFitColors.surface,
+    text: KFitColors.text,
+    border: KFitColors.border,
+    notification: KFitColors.accent,
+  },
+};
+
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   const [fontsLoaded, fontError] = useFonts({
     BebasNeue: require("../../assets/fonts/BebasNeue-Regular.ttf"),
   });
@@ -29,11 +44,11 @@ export default function RootLayout() {
           flex: 1,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#000000",
-          padding: 24,
+          backgroundColor: KFitColors.background,
+          padding: Spacing.four,
         }}
       >
-        <Text style={{ color: "#FFFFFF", textAlign: "center" }}>
+        <Text style={{ color: KFitColors.text, textAlign: "center" }}>
           Unable to load the K-Fit font.
         </Text>
       </View>
@@ -45,8 +60,16 @@ export default function RootLayout() {
   }
 
   const app = (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <Stack initialRouteName="splash" screenOptions={{ headerShown: false }}>
+    <ThemeProvider value={KFitNavTheme}>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: {
+            backgroundColor: "#0A0A0A",
+          },
+        }}
+      >
         <Stack.Screen name="splash" options={{ animation: "fade" }} />
         <Stack.Screen
           name="index"
