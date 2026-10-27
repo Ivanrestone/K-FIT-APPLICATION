@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/kfit-app-icon.png",
-    "scheme": "k-fit",
+    "scheme": "kfit",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/images/kfit-app-icon.png"

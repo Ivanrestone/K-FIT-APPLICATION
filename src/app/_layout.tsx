@@ -78,6 +78,10 @@ export default function RootLayout() {
         <Stack.Screen name="dashboard" />
         {/* Required so the OAuth redirect target is a known route in the navigator */}
         <Stack.Screen name="sso-callback" options={{ animation: "none" }} />
+        <Stack.Screen
+          name="oauth-native-callback"
+          options={{ animation: "none" }}
+        />
       </Stack>
     </ThemeProvider>
   );
