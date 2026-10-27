@@ -304,7 +304,8 @@ function ConfiguredHomeScreen() {
                   id: currentUserId,
                   email: userEmail || null,
                   full_name: userFullName || null,
-                  role: "member",
+                  // Note: role defaults to 'member' on insert via DB default.
+                  // Do NOT pass role here — authenticated users cannot write it.
                 },
                 { onConflict: "id" },
               );
