@@ -1,4 +1,6 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
+import type { MemberLocalNotification } from "@/components/MemberHeader";
+import MemberHeader from "@/components/MemberHeader";
 import SubscriptionPaywall from "@/components/SubscriptionPaywall";
 import { KFitColors } from "@/constants/theme";
 import { useLogout } from "@/hooks/use-logout";
@@ -187,25 +189,25 @@ export default function MemberDashboardScreen() {
 
   const [checkedIn, setCheckedIn] = useState(false);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      title: "Check-in reminder",
-      msg: "Don't forget to scan your QR pass at the turnstile today.",
-      time: "10m ago",
-      read: false,
-    },
-    {
-      id: 2,
-      title: "Class confirmed",
-      msg: "Your spot in High-Intensity CrossFit is locked in.",
-      time: "1h ago",
-      read: false,
-    },
-  ]);
+  const [notifications, setNotifications] = useState<MemberLocalNotification[]>(
+    [
+      {
+        id: 1,
+        title: "Check-in reminder",
+        msg: "Don't forget to scan your QR pass at the turnstile today.",
+        time: "10m ago",
+        read: false,
+      },
+      {
+        id: 2,
+        title: "Class confirmed",
+        msg: "Your spot in High-Intensity CrossFit is locked in.",
+        time: "1h ago",
+        read: false,
+      },
+    ],
+  );
 
-  const unread = notifications.filter((n) => !n.read).length;
   const occPct = Math.round(
     (Math.min(FLOOR.occupancy + (checkedIn ? 1 : 0), FLOOR.capacity) /
       FLOOR.capacity) *
@@ -227,10 +229,11 @@ export default function MemberDashboardScreen() {
       hour: "2-digit",
       minute: "2-digit",
     });
+
     if (!checkedIn) {
       setCheckedIn(true);
       setCheckInTime(now);
-      setNotifications((p) => [
+      setNotifications((prev) => [
         {
           id: Date.now(),
           title: "Attendance logged",
@@ -238,12 +241,12 @@ export default function MemberDashboardScreen() {
           time: "Just now",
           read: false,
         },
-        ...p,
+        ...prev,
       ]);
     } else {
       setCheckedIn(false);
       setCheckInTime(null);
-      setNotifications((p) => [
+      setNotifications((prev) => [
         {
           id: Date.now(),
           title: "Session complete",
@@ -251,15 +254,9 @@ export default function MemberDashboardScreen() {
           time: "Just now",
           read: false,
         },
-        ...p,
+        ...prev,
       ]);
     }
-  };
-
-  const toggleNotifications = () => {
-    setShowNotifications((v) => !v);
-    if (unread > 0)
-      setNotifications((p) => p.map((n) => ({ ...n, read: true })));
   };
 
   return (
@@ -267,84 +264,17 @@ export default function MemberDashboardScreen() {
       <StatusBar style="light" />
       <View style={styles.mainContainer}>
         {/* ---------------- Fixed member header ---------------- */}
-        <View style={styles.topBar}>
-          <View style={styles.topLeft}>
-            <View style={styles.avatarRing}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {MEMBER.name
-                    .split(" ")
-                    .map((w) => w[0])
-                    .join("")}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.presenceDot,
-                  { backgroundColor: checkedIn ? C.accent : "#6B7280" },
-                ]}
-              />
-            </View>
-            <View>
-              <View style={styles.nameRow}>
-                <Text style={styles.topName}>{MEMBER.name}</Text>
-                <View style={styles.vipBadge}>
-                  <Text style={styles.vipBadgeText}>{MEMBER.tier}</Text>
-                </View>
-              </View>
-              <View style={styles.nameRow}>
-                <Feather name="zap" size={10} color={C.amber} />
-                <Text style={styles.topSub}>
-                  {MEMBER.streakDays} day streak • {MEMBER.points} pts
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.topRight}>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={toggleNotifications}
-              accessibilityLabel="Notifications"
-            >
-              <Feather name="bell" size={16} color={C.muted} />
-              {unread > 0 && (
-                <View style={styles.bellBadge}>
-                  <Text style={styles.bellBadgeText}>{unread}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              disabled={isSigningOut}
-              onPress={logout}
-              accessibilityLabel="Logout"
-            >
-              <Feather name="log-out" size={16} color={C.error} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Notifications drawer */}
-        {showNotifications && (
-          <View style={styles.notifPanel}>
-            <View style={styles.notifHeader}>
-              <Text style={styles.notifTitle}>Attendance & alerts</Text>
-              <TouchableOpacity onPress={() => setShowNotifications(false)}>
-                <Feather name="x" size={16} color={C.muted} />
-              </TouchableOpacity>
-            </View>
-            {notifications.slice(0, 5).map((n) => (
-              <View key={n.id} style={styles.notifItem}>
-                <View style={styles.notifRow}>
-                  <Text style={styles.notifItemTitle}>{n.title}</Text>
-                  <Text style={styles.notifTime}>{n.time}</Text>
-                </View>
-                <Text style={styles.notifMsg}>{n.msg}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        <MemberHeader
+          name={MEMBER.name}
+          tier={MEMBER.tier}
+          streakDays={MEMBER.streakDays}
+          points={MEMBER.points}
+          checkedIn={checkedIn}
+          isSigningOut={isSigningOut}
+          onLogout={logout}
+          notifications={notifications}
+          setNotifications={setNotifications}
+        />
 
         <ScrollView
           style={styles.content}
@@ -750,113 +680,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
 
-  /* header */
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: C.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-    zIndex: 20,
-  },
-  topLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  topRight: { flexDirection: "row", alignItems: "center", gap: 8 },
-  avatarRing: { width: 42, height: 42 },
-  avatar: {
-    flex: 1,
-    borderRadius: 21,
-    borderWidth: 2,
-    borderColor: C.accent,
-    backgroundColor: C.bg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: C.accent, fontWeight: "900", fontSize: 14 },
-  presenceDot: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: C.surface,
-  },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  topName: { color: C.text, fontSize: 13, fontWeight: "700" },
-  topSub: { color: C.muted, fontSize: 10 },
-  vipBadge: {
-    backgroundColor: C.accent + "33",
-    borderColor: C.accent + "4D",
-    borderWidth: 1,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-  },
-  vipBadgeText: { color: C.accent, fontSize: 8, fontWeight: "900" },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: C.bg,
-    borderWidth: 1,
-    borderColor: C.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  bellBadge: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: C.amber,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 3,
-  },
-  bellBadgeText: { color: C.bg, fontSize: 9, fontWeight: "900" },
-
-  /* notifications */
-  notifPanel: {
-    position: "absolute",
-    top: 64,
-    right: 16,
-    left: 16,
-    zIndex: 50,
-    elevation: 20,
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 16,
-    padding: 12,
-    gap: 8,
-  },
-  notifHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-  },
-  notifTitle: { color: C.text, fontSize: 12, fontWeight: "700" },
-  notifItem: {
-    backgroundColor: C.bg,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 12,
-    padding: 10,
-    gap: 2,
-  },
-  notifRow: { flexDirection: "row", justifyContent: "space-between" },
-  notifItemTitle: { color: C.accent, fontSize: 12, fontWeight: "700" },
-  notifTime: { color: C.muted, fontSize: 9 },
-  notifMsg: { color: C.muted, fontSize: 11 },
 
   /* brand + greeting */
   brandBlock: { gap: 2 },

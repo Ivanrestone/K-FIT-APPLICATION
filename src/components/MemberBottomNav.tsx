@@ -1,4 +1,5 @@
 import { KFitColors } from "@/constants/theme";
+import { unseenCount, useChallengeStore } from "@/lib/challenges-store";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
@@ -31,6 +32,7 @@ const ALL_TABS: Tab[] = [
   { label: "Check-in", icon: "map-pin", route: "/member-checkin" },
   { label: "Membership", icon: "credit-card", route: "/member-membership" },
   { label: "Profile", icon: "user", route: "/member-profile" },
+  { label: "Challenges", icon: "flag", route: "/member-challenges" },
 ];
 
 // Center QR button route.
@@ -48,6 +50,7 @@ const pick = (routes: string[]) =>
 
 const LEFT = pick(LEFT_ROUTES);
 const RIGHT = pick(RIGHT_ROUTES);
+
 const MORE_ITEMS = ALL_TABS.filter(
   (t) => ![...LEFT_ROUTES, ...RIGHT_ROUTES].includes(t.route),
 );
@@ -92,10 +95,12 @@ function TabButton({
     inputRange: [0, 1],
     outputRange: [1, 1.18],
   });
+
   const translateY = lift.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -1],
   });
+
   const color = active ? KFitColors.accent : KFitColors.mutedText;
 
   return (
@@ -109,12 +114,14 @@ function TabButton({
     >
       <Animated.View style={{ transform: [{ scale }, { translateY }] }}>
         <Feather name={icon} size={20} color={color} />
+
         {!!badge && badge > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{badge > 9 ? "9+" : badge}</Text>
           </View>
         )}
       </Animated.View>
+
       <Text
         style={[styles.label, { color }, active && styles.labelActive]}
         numberOfLines={1}
@@ -134,13 +141,21 @@ export default function MemberBottomNav({
   const insets = useSafeAreaInsets();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
+  // Challenge store and unseen challenge count.
+  const store = useChallengeStore();
+  const newChallenges = unseenCount(store, "member");
+
+  const badgeFor = (route: string) =>
+    route === "/member-challenges" ? newChallenges : 0;
+
   const qrActive = activeRoute === QR_ROUTE;
   const moreIsActive = MORE_ITEMS.some((t) => t.route === activeRoute);
 
-  // Which dock slot is highlighted (-1 = none, e.g. QR screen uses its own ring)
+  // Which dock slot is highlighted (-1 = none, e.g. QR screen uses its own ring).
   let activeSlot = -1;
   const leftIdx = LEFT.findIndex((t) => t.route === activeRoute);
   const rightIdx = RIGHT.findIndex((t) => t.route === activeRoute);
+
   if (leftIdx >= 0) activeSlot = leftIdx;
   else if (rightIdx >= 0) activeSlot = QR_SLOT + 1 + rightIdx;
   else if (moreIsActive) activeSlot = MORE_SLOT;
@@ -150,12 +165,14 @@ export default function MemberBottomNav({
 
   useEffect(() => {
     if (activeSlot < 0) return;
+
     Animated.timing(position, {
       toValue: activeSlot,
       duration: 260,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
+
     lastActiveSlot = activeSlot;
   }, [activeSlot, position]);
 
@@ -188,7 +205,9 @@ export default function MemberBottomNav({
           <Pressable
             onPress={() => {
               if (qrActive) return;
+
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
               router.replace(QR_ROUTE as any);
             }}
             style={({ pressed }) => [
@@ -204,6 +223,7 @@ export default function MemberBottomNav({
               <View style={[styles.qrCorner, styles.qrCornerTR]} />
               <View style={[styles.qrCorner, styles.qrCornerBL]} />
               <View style={[styles.qrCorner, styles.qrCornerBR]} />
+
               <Ionicons name="qr-code" size={24} color={KFitColors.onAccent} />
             </View>
           </Pressable>
@@ -238,7 +258,7 @@ export default function MemberBottomNav({
             />
           ))}
 
-          {/* spacer slot under the QR button */}
+          {/* Spacer slot under the QR button */}
           <View style={styles.tab} pointerEvents="none" />
 
           {RIGHT.map((tab) => (
@@ -255,7 +275,10 @@ export default function MemberBottomNav({
           <TabButton
             label="More"
             icon="more-horizontal"
-            badge={MORE_ITEMS.reduce((sum, t) => sum + (t.badge ?? 0), 0)}
+            badge={MORE_ITEMS.reduce(
+              (sum, tab) => sum + (tab.badge ?? 0) + badgeFor(tab.route),
+              0,
+            )}
             active={moreIsActive}
             onPress={() => {
               void Haptics.selectionAsync();
@@ -287,6 +310,8 @@ export default function MemberBottomNav({
 
             {MORE_ITEMS.map((tab) => {
               const active = tab.route === activeRoute;
+              const challengeBadge = badgeFor(tab.route);
+
               return (
                 <Pressable
                   key={tab.route}
@@ -297,6 +322,7 @@ export default function MemberBottomNav({
                   ]}
                   onPress={() => {
                     setIsMoreOpen(false);
+
                     if (!active) go(tab.route);
                   }}
                 >
@@ -314,6 +340,7 @@ export default function MemberBottomNav({
                       }
                     />
                   </View>
+
                   <Text
                     style={[
                       styles.moreItemText,
@@ -322,6 +349,24 @@ export default function MemberBottomNav({
                   >
                     {tab.label}
                   </Text>
+
+                  {challengeBadge > 0 && (
+                    <View
+                      style={[
+                        styles.badge,
+                        {
+                          position: "relative",
+                          top: 0,
+                          right: 0,
+                          marginLeft: "auto",
+                        },
+                      ]}
+                    >
+                      <Text style={styles.badgeText}>
+                        {challengeBadge > 9 ? "9+" : challengeBadge}
+                      </Text>
+                    </View>
+                  )}
                 </Pressable>
               );
             })}
@@ -404,9 +449,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  badgeText: { color: "#000", fontSize: 8, fontWeight: "900" },
+  badgeText: {
+    color: "#000",
+    fontSize: 8,
+    fontWeight: "900",
+  },
 
-  /* ---------------- Center QR button ---------------- */
+  /* Center QR button */
   qrWrap: {
     position: "absolute",
     top: 0,
@@ -479,7 +528,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 3,
   },
 
-  /* ---------------- "More" bottom sheet ---------------- */
+  /* More bottom sheet */
   modalBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
