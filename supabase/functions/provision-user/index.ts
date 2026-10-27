@@ -108,24 +108,86 @@ async function provisionUser(request: Request): Promise<Response> {
     return jsonResponse({ error: "Profile service is not configured." }, 500);
   }
 
-  const { data: role, error } = await admin.rpc("provision_user_profile", {
-    p_user_id: userId,
-    p_email: getPrimaryEmail(clerkUser),
-    p_first_name: getOptionalString(clerkUser.first_name),
-    p_last_name: getOptionalString(clerkUser.last_name),
-  });
+  // 1. Graceful Fallback: Check if profile already exists in Supabase
+  const { data: existingUser } = await admin
+    .from("users")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
 
-  if (error) {
-    console.error("Could not provision the signed in user:", error.message);
+  if (
+    existingUser &&
+    typeof existingUser.role === "string" &&
+    (existingUser.role === "member" ||
+      existingUser.role === "coach" ||
+      existingUser.role === "admin")
+  ) {
+    // Ensure default subscriptions exist if missing
+    await admin
+      .from("subscriptions_app")
+      .upsert({ user_id: userId, active: false }, { onConflict: "user_id" });
+    await admin
+      .from("subscriptions_gym")
+      .upsert({ user_id: userId, active: false }, { onConflict: "user_id" });
+
+    return jsonResponse({ role: existingUser.role, profile: existingUser });
+  }
+
+  // 2. Clean Upsert: Use upsert with onConflict: 'id'
+  const email = getPrimaryEmail(clerkUser);
+  const firstName = getOptionalString(clerkUser.first_name);
+  const lastName = getOptionalString(clerkUser.last_name);
+  const fullName = [firstName, lastName].filter(Boolean).join(" ");
+
+  const { data: upsertedUser, error: upsertError } = await admin
+    .from("users")
+    .upsert(
+      {
+        id: userId,
+        email: email || null,
+        first_name: firstName || null,
+        last_name: lastName || null,
+        full_name: fullName || null,
+        role: "member",
+      },
+      { onConflict: "id" }
+    )
+    .select("*")
+    .maybeSingle();
+
+  if (upsertError) {
+    console.error("Could not upsert user profile:", upsertError.message);
+
+    // Graceful Fallback: Fallback to fetching profile
+    const { data: fallbackUser } = await admin
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (
+      fallbackUser &&
+      typeof fallbackUser.role === "string" &&
+      (fallbackUser.role === "member" ||
+        fallbackUser.role === "coach" ||
+        fallbackUser.role === "admin")
+    ) {
+      return jsonResponse({ role: fallbackUser.role, profile: fallbackUser });
+    }
+
     return jsonResponse({ error: "Could not provision your profile." }, 500);
   }
 
-  if (role !== "member" && role !== "coach" && role !== "admin") {
-    console.error("Provisioning returned an invalid account role.");
-    return jsonResponse({ error: "Your account role is not configured." }, 500);
-  }
+  // Ensure default subscriptions exist
+  await admin
+    .from("subscriptions_app")
+    .upsert({ user_id: userId, active: false }, { onConflict: "user_id" });
+  await admin
+    .from("subscriptions_gym")
+    .upsert({ user_id: userId, active: false }, { onConflict: "user_id" });
 
-  return jsonResponse({ role });
+  const role = upsertedUser?.role ?? "member";
+  return jsonResponse({ role, profile: upsertedUser });
 }
 
 Deno.serve(async (request) => {

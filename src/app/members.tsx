@@ -1,6 +1,7 @@
 import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
+import { useRegisterMember } from "@/hooks/use-register-member";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -160,6 +161,7 @@ export default function MembersScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
+  const { registerMember, loading: registerLoading } = useRegisterMember();
 
   const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS);
   const [selectedFilter, setSelectedFilter] = useState<"All" | Status>("All");
@@ -168,7 +170,7 @@ export default function MembersScreen() {
   const [modalOpen, setModalOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
-  const [newPlan, setNewPlan] = useState("Performance");
+  const [newPassword, setNewPassword] = useState("");
 
   const filteredMembers = members.filter((member) => {
     const q = searchQuery.toLowerCase();
@@ -180,32 +182,50 @@ export default function MembersScreen() {
     return matchesSearch && matchesFilter;
   });
 
-  const saveMember = () => {
+  const saveMember = async () => {
     if (!newName.trim()) {
       Alert.alert("Name required", "Please enter the member's full name.");
       return;
     }
-    const today = new Date().toLocaleDateString("en-US", {
-      month: "short",
-      day: "2-digit",
-      year: "numeric",
+    if (!newEmail.trim()) {
+      Alert.alert("Email required", "Please enter the member's email.");
+      return;
+    }
+    if (!newPassword.trim()) {
+      Alert.alert("Password required", "Please enter a password for the member.");
+      return;
+    }
+
+    const result = await registerMember({
+      email: newEmail.trim(),
+      password: newPassword.trim(),
+      fullName: newName.trim(),
     });
-    setMembers((prev) => [
-      {
-        id: `${Date.now()}`,
-        name: newName.trim(),
-        email: newEmail.trim() || "no-email@kfit.app",
-        membership: newPlan,
-        trainer: "Unassigned",
-        joinedDate: today,
-        status: "Active",
-      },
-      ...prev,
-    ]);
-    setNewName("");
-    setNewEmail("");
-    setNewPlan("Performance");
-    setModalOpen(false);
+
+    if (result.success) {
+      const today = new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "2-digit",
+        year: "numeric",
+      });
+      setMembers((prev) => [
+        {
+          id: result.userId || `${Date.now()}`,
+          name: newName.trim(),
+          email: newEmail.trim(),
+          membership: "Paid",
+          trainer: "Unassigned",
+          joinedDate: today,
+          status: "Active",
+        },
+        ...prev,
+      ]);
+      setNewName("");
+      setNewEmail("");
+      setNewPassword("");
+      setModalOpen(false);
+      Alert.alert("Success", "Member registered successfully!");
+    }
   };
 
   return (
@@ -605,28 +625,15 @@ export default function MembersScreen() {
                 style={styles.input}
               />
 
-              <Text style={styles.label}>MEMBERSHIP</Text>
-              <View style={styles.planRow}>
-                {PLANS.map((plan) => {
-                  const active = newPlan === plan;
-                  return (
-                    <Pressable
-                      key={plan}
-                      onPress={() => setNewPlan(plan)}
-                      style={[styles.planOption, active && styles.planOptionOn]}
-                    >
-                      <Text
-                        style={[
-                          styles.planOptionText,
-                          active && styles.planOptionTextOn,
-                        ]}
-                      >
-                        {plan}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <Text style={styles.label}>PASSWORD</Text>
+              <TextInput
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="Enter passwordForMember"
+                placeholderTextColor={KFitColors.mutedText}
+                secureTextEntry
+                style={styles.input}
+              />
 
               <Pressable
                 onPress={saveMember}

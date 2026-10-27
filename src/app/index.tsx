@@ -1,5 +1,5 @@
 import { KFitColors, Spacing } from "@/constants/theme";
-import { useAuth, useClerk, useSSO } from "@clerk/expo";
+import { useAuth, useClerk, useSSO, useUser } from "@clerk/expo";
 import { useSignIn, useSignUp } from "@clerk/expo/legacy";
 import { createMemberSupabaseClient } from "@/utils/supabase";
 import { FunctionsHttpError } from "@supabase/supabase-js";
@@ -146,7 +146,8 @@ function ConfiguredHomeScreen() {
   const router = useRouter();
   const clerk = useClerk();
   const { width, height, fontScale } = useWindowDimensions();
-  const { getToken, isLoaded, isSignedIn, signOut } = useAuth();
+  const { user } = useUser();
+  const { getToken, isLoaded, isSignedIn, signOut, userId } = useAuth();
   const {
     isLoaded: isSignInLoaded,
     setActive: activateSignIn,
@@ -200,42 +201,153 @@ function ConfiguredHomeScreen() {
 
     setIsProvisioning(true);
     setProvisionError(null);
+
     try {
-      const { data, error } = await clientResult.client.functions.invoke(
-        "provision-user",
-      );
-      if (error) {
-        if (error instanceof FunctionsHttpError && error.context) {
-          try {
-            const body = await error.context.json();
-            if (
-              body &&
-              typeof body === "object" &&
-              "error" in body &&
-              typeof body.error === "string"
-            ) {
-              throw new Error(body.error);
-            }
-          } catch (inner) {
-            if (inner instanceof Error && inner.message !== error.message) {
-              throw inner;
-            }
-          }
-        }
-        throw error;
+      // 2. Fix Supabase Token Sync: Retrieve fresh Clerk token with template 'supabase'
+      let token: string | null = null;
+      try {
+        token = await getToken({ template: "supabase" });
+      } catch (tokenErr) {
+        console.warn(
+          "[Profile Token Notice]: Could not retrieve token with template 'supabase':",
+          tokenErr,
+        );
       }
-      if (
-        typeof data !== "object" ||
-        data === null ||
-        !("role" in data) ||
-        (data.role !== "member" && data.role !== "coach" && data.role !== "admin")
-      ) {
-        throw new Error("The server returned an invalid account role.");
+      if (!token) {
+        token = await getToken();
       }
 
-      const role: AppRole = data.role;
-      router.replace(getDashboardRoute(role));
+      const client = clientResult.client;
+      const currentUserId = userId ?? user?.id;
+
+      // 4. Graceful Fallback: If a profile already exists in Supabase, fetch and route immediately
+      if (currentUserId) {
+        try {
+          const { data: existingProfile, error: profileFetchError } =
+            await client
+              .from("users")
+              .select("*")
+              .eq("id", currentUserId)
+              .maybeSingle();
+
+          if (
+            !profileFetchError &&
+            existingProfile &&
+            typeof existingProfile.role === "string" &&
+            (existingProfile.role === "member" ||
+              existingProfile.role === "coach" ||
+              existingProfile.role === "admin")
+          ) {
+            router.replace(getDashboardRoute(existingProfile.role as AppRole));
+            return;
+          }
+        } catch (checkError) {
+          console.warn("[Profile Check Notice]:", checkError);
+        }
+      }
+
+      // Invoke server-side provision-user Edge Function
+      try {
+        const { data, error } = await client.functions.invoke(
+          "provision-user",
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          },
+        );
+
+        if (error) {
+          let errorMsg = error.message;
+          if (error instanceof FunctionsHttpError && error.context) {
+            try {
+              const body = await error.context.json();
+              if (
+                body &&
+                typeof body === "object" &&
+                "error" in body &&
+                typeof body.error === "string"
+              ) {
+                errorMsg = body.error;
+              }
+            } catch {
+              // ignore body parse failure
+            }
+          }
+          throw new Error(errorMsg);
+        }
+
+        if (
+          typeof data !== "object" ||
+          data === null ||
+          !("role" in data) ||
+          (data.role !== "member" &&
+            data.role !== "coach" &&
+            data.role !== "admin")
+        ) {
+          throw new Error("The server returned an invalid account role.");
+        }
+
+        const role: AppRole = data.role;
+        router.replace(getDashboardRoute(role));
+        return;
+      } catch (invokeError) {
+        // 3. Ensure Clean Upsert & 4. Graceful Fallback
+        if (currentUserId) {
+          const userEmail = user?.primaryEmailAddress?.emailAddress ?? email;
+          const userFullName =
+            user?.fullName ??
+            [user?.firstName, user?.lastName].filter(Boolean).join(" ");
+
+          try {
+            const { error: upsertErr } = await client
+              .from("users")
+              .upsert(
+                {
+                  id: currentUserId,
+                  email: userEmail || null,
+                  full_name: userFullName || null,
+                  role: "member",
+                },
+                { onConflict: "id" },
+              );
+
+            if (upsertErr) {
+              console.warn("[Client Upsert Notice]:", upsertErr.message);
+            }
+          } catch {
+            // RLS may restrict client-side insert; proceed to fallback query
+          }
+
+          // Graceful fallback to select('*')
+          try {
+            const { data: fallbackProfile } = await client
+              .from("users")
+              .select("*")
+              .eq("id", currentUserId)
+              .maybeSingle();
+
+            if (
+              fallbackProfile &&
+              typeof fallbackProfile.role === "string" &&
+              (fallbackProfile.role === "member" ||
+                fallbackProfile.role === "coach" ||
+                fallbackProfile.role === "admin")
+            ) {
+              router.replace(
+                getDashboardRoute(fallbackProfile.role as AppRole),
+              );
+              return;
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        // Re-throw invokeError to be caught by outer catch block
+        throw invokeError;
+      }
     } catch (error) {
+      // 1. Log the Raw Error to Expo terminal
+      console.error("[Profile Provisioning Error]:", error);
       setProvisionError(
         error instanceof Error
           ? error.message
@@ -244,7 +356,7 @@ function ConfiguredHomeScreen() {
     } finally {
       setIsProvisioning(false);
     }
-  }, [clientResult, router]);
+  }, [clientResult, email, getToken, router, user, userId]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) {

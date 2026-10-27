@@ -1,14 +1,16 @@
 import { useAuth } from "@clerk/expo";
-import { Button, Column, Host } from "@expo/ui";
+import { Button, Host } from "@expo/ui";
 import { useSubscriptionAccess, type PricingPlan, type SubscriptionPeriod, type SubscriptionPlanType } from "@/hooks/use-subscription-access";
 import { KFitColors, Spacing } from "@/constants/theme";
-import * as WebBrowser from "expo-web-browser";
+import { Linking } from "react-native";
 import { useCallback, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
+  ImageBackground,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -56,6 +58,13 @@ function AuthenticatedSubscriptionPaywall({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const startCheckout = useCallback(async (feeType: SubscriptionPlanType) => {
+    // Guard 1: user must be authenticated
+    if (!access.isSignedIn || !access.data?.userId) {
+      Alert.alert("Error", "You must be logged in to subscribe.");
+      return;
+    }
+
+    // Guard 2: Supabase client must be available
     if (!access.supabase) {
       Alert.alert("Checkout Error", "Payment service is unavailable. Please try again.");
       return;
@@ -117,7 +126,25 @@ function AuthenticatedSubscriptionPaywall({
         return;
       }
 
-      await WebBrowser.openBrowserAsync(rawUrl);
+      // Guard 3: must be a PayMongo checkout URL, not a redirect/auth page
+      const isPayMongoUrl =
+        rawUrl.startsWith("https://checkout.paymongo.com") ||
+        rawUrl.startsWith("https://pay.paymongo.com");
+      if (!isPayMongoUrl) {
+        const msg = `Unexpected redirect URL received. Expected a PayMongo checkout link.\n\nURL: ${rawUrl}`;
+        console.warn("[Checkout] Non-PayMongo URL blocked:", rawUrl);
+        Alert.alert("Checkout Error", msg);
+        setActionMessage("Checkout blocked: unexpected URL returned by server.");
+        return;
+      }
+
+      console.log("Checkout URL received:", rawUrl);
+      // Use Linking.openURL instead of WebBrowser.openBrowserAsync.
+      // On Android, openBrowserAsync reuses the Chrome Custom Tab that Clerk
+      // left open for Google OAuth, causing the browser to show the stale
+      // Clerk sign-in page instead of the PayMongo checkout.
+      // Linking.openURL forces the full system browser, bypassing Custom Tabs.
+      await Linking.openURL(rawUrl);
       access.refresh();
       setActionMessage(
         "Checkout opened. Access updates after PayMongo confirms payment.",
@@ -435,30 +462,49 @@ function PlanCard({
           administrator before purchasing.
         </Text>
       )}
-      <Host matchContents seedColor={KFitColors.surface}>
-        <Column spacing={Spacing.two}>
-          <Button
-            label={isStarting
-              ? "Opening checkout…"
-              : `${hasAccess ? "Renew" : "Subscribe"} for ${
-                plan
-                  ? formatAmount(plan.billingAmountPhp, "PHP")
-                  : "unavailable"
-              }`}
-            variant="filled"
-            onPress={onCheckout}
-            disabled={!canCheckout || isBusy}
-          />
-          {hasAccess && !isCancelled && (
-            <Button
-              label={isCancelling ? "Cancelling…" : "Cancel at period end"}
-              variant="outlined"
-              onPress={onCancel}
-              disabled={isBusy}
-            />
-          )}
-        </Column>
-      </Host>
+      <View style={styles.actionBlock}>
+        <TouchableOpacity
+          style={[
+            styles.goldButtonWrapper,
+            (!canCheckout || isBusy) && styles.disabledButton,
+          ]}
+          onPress={onCheckout}
+          disabled={!canCheckout || isBusy}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+        >
+          <ImageBackground
+            source={require("../../assets/images/gold-texture.jpg")}
+            resizeMode="cover"
+            style={styles.goldButtonBg}
+            imageStyle={styles.goldButtonImage}
+          >
+            <Text style={styles.goldButtonText}>
+              {isStarting
+                ? "Opening checkout…"
+                : `${hasAccess ? "Renew" : "Subscribe"} for ${
+                  plan
+                    ? formatAmount(plan.billingAmountPhp, "PHP")
+                    : "unavailable"
+                }`}
+            </Text>
+          </ImageBackground>
+        </TouchableOpacity>
+
+        {hasAccess && !isCancelled && (
+          <TouchableOpacity
+            style={[styles.cancelButton, isBusy && styles.disabledButton]}
+            onPress={onCancel}
+            disabled={isBusy}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <Text style={styles.cancelButtonText}>
+              {isCancelling ? "Cancelling…" : "Cancel at period end"}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
       {isCancelled && (
         <Text selectable style={styles.warningText}>
           Cancellation is scheduled. Access remains available until the paid
@@ -605,5 +651,51 @@ const styles = StyleSheet.create({
     color: KFitColors.text,
     fontSize: 13,
     lineHeight: 19,
+  },
+  actionBlock: {
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+  },
+  goldButtonWrapper: {
+    borderRadius: 12,
+    overflow: "hidden",
+    elevation: 3,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  goldButtonBg: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  goldButtonImage: {
+    borderRadius: 12,
+  },
+  goldButtonText: {
+    color: "#121212",
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  cancelButton: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelButtonText: {
+    color: KFitColors.mutedText,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });

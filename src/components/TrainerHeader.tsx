@@ -1,58 +1,25 @@
 import { KFitColors } from "@/constants/theme";
 import { useLogout } from "@/hooks/use-logout";
+import {
+  markAllNoticesRead,
+  markNoticeRead,
+  timeAgo,
+  useNotices,
+} from "@/lib/challenges-store";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-    Image,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-type FeatherIconName = keyof typeof Feather.glyphMap;
-
-type AppNotification = {
-  id: string;
-  icon: FeatherIconName;
-  title: string;
-  body: string;
-  time: string;
-  read: boolean;
-};
-
-// Demo data. Replace with notifications from your backend.
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: "n1",
-    icon: "clock",
-    title: "Session starting soon",
-    body: "Devon Miles at 2:00 PM, Powerlifting.",
-    time: "5m ago",
-    read: false,
-  },
-  {
-    id: "n2",
-    icon: "user-plus",
-    title: "New booking",
-    body: "Kira Nerys booked a 1-on-1 for Friday.",
-    time: "32m ago",
-    read: false,
-  },
-  {
-    id: "n3",
-    icon: "bell",
-    title: "Gym announcement",
-    body: "Studio B is closed for cleaning at 6 PM.",
-    time: "2h ago",
-    read: true,
-  },
-];
 
 type Props = {
   /** Show a back arrow instead of the brand block (for detail screens). */
@@ -70,9 +37,10 @@ export default function TrainerHeader({
   const { isSigningOut, logout } = useLogout();
 
   const [panel, setPanel] = useState<"notifications" | "profile" | null>(null);
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
-  const unread = notifications.filter((n) => !n.read).length;
+  // Notifications now come from the shared challenge store.
+  const { notices: notifications, unread } = useNotices("trainer");
+
   const closePanel = () => setPanel(null);
 
   const openPanel = (next: "notifications" | "profile") => {
@@ -80,17 +48,19 @@ export default function TrainerHeader({
     setPanel(next);
   };
 
-  const markRead = (id: string) =>
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-    );
-
-  const markAllRead = () => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  const markRead = (id: string) => {
+    markNoticeRead("trainer", id);
   };
 
-  // Modal content is not inside SafeAreaView, so offset by the top inset
+  const markAllRead = () => {
+    if (unread === 0) return;
+
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    markAllNoticesRead("trainer");
+  };
+
+  // Modal content is not inside SafeAreaView, so offset by the top inset.
   const panelTop = insets.top + 62;
 
   return (
@@ -130,9 +100,12 @@ export default function TrainerHeader({
           activeOpacity={0.7}
         >
           <Feather name="bell" size={17} color={KFitColors.accent} />
+
           {unread > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{unread}</Text>
+              <Text style={styles.badgeText}>
+                {unread > 99 ? "99+" : unread}
+              </Text>
             </View>
           )}
         </TouchableOpacity>
@@ -163,11 +136,13 @@ export default function TrainerHeader({
               <>
                 <View style={styles.panelHeader}>
                   <Text style={styles.panelTitle}>NOTIFICATIONS</Text>
+
                   <TouchableOpacity
                     onPress={markAllRead}
                     disabled={unread === 0}
                     hitSlop={8}
                     accessibilityRole="button"
+                    accessibilityLabel="Mark all notifications as read"
                   >
                     <Text
                       style={[
@@ -180,36 +155,68 @@ export default function TrainerHeader({
                   </TouchableOpacity>
                 </View>
 
-                {notifications.map((n) => (
-                  <TouchableOpacity
-                    key={n.id}
-                    style={styles.notifRow}
-                    onPress={() => markRead(n.id)}
-                    activeOpacity={0.8}
-                    accessibilityRole="button"
-                  >
-                    <View
+                {notifications.length === 0 ? (
+                  <View style={styles.emptyNotifications}>
+                    <Feather
+                      name="bell-off"
+                      size={22}
+                      color={KFitColors.mutedText}
+                    />
+                    <Text style={styles.emptyTitle}>No notifications yet</Text>
+                    <Text style={styles.emptyBody}>
+                      New challenge announcements will appear here.
+                    </Text>
+                  </View>
+                ) : (
+                  notifications.map((notification) => (
+                    <TouchableOpacity
+                      key={notification.id}
                       style={[
-                        styles.notifIcon,
-                        !n.read && styles.notifIconUnread,
+                        styles.notifRow,
+                        !notification.read && styles.notifRowUnread,
                       ]}
+                      onPress={() => markRead(notification.id)}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${notification.title}. ${
+                        notification.read ? "Read" : "Unread"
+                      }`}
                     >
-                      <Feather
-                        name={n.icon}
-                        size={15}
-                        color={
-                          n.read ? KFitColors.mutedText : KFitColors.accent
-                        }
-                      />
-                    </View>
-                    <View style={styles.flex}>
-                      <Text style={styles.notifTitle}>{n.title}</Text>
-                      <Text style={styles.notifBody}>{n.body}</Text>
-                      <Text style={styles.notifTime}>{n.time}</Text>
-                    </View>
-                    {!n.read && <View style={styles.unreadDot} />}
-                  </TouchableOpacity>
-                ))}
+                      <View
+                        style={[
+                          styles.notifIcon,
+                          !notification.read && styles.notifIconUnread,
+                        ]}
+                      >
+                        <Feather
+                          name={notification.icon}
+                          size={15}
+                          color={
+                            notification.read
+                              ? KFitColors.mutedText
+                              : KFitColors.accent
+                          }
+                        />
+                      </View>
+
+                      <View style={styles.flex}>
+                        <Text style={styles.notifTitle}>
+                          {notification.title}
+                        </Text>
+
+                        <Text style={styles.notifBody}>
+                          {notification.body}
+                        </Text>
+
+                        <Text style={styles.notifTime}>
+                          {timeAgo(notification.createdAt)}
+                        </Text>
+                      </View>
+
+                      {!notification.read && <View style={styles.unreadDot} />}
+                    </TouchableOpacity>
+                  ))
+                )}
               </>
             )}
 
@@ -219,6 +226,7 @@ export default function TrainerHeader({
                   <View style={styles.profileAvatar}>
                     <Text style={styles.profileAvatarText}>MV</Text>
                   </View>
+
                   <View style={styles.flex}>
                     <Text style={styles.profileName}>Marcus Vance</Text>
                     <Text style={styles.profileRole} numberOfLines={2}>
@@ -251,6 +259,7 @@ export default function TrainerHeader({
                   accessibilityRole="button"
                 >
                   <Feather name="log-out" size={16} color={KFitColors.error} />
+
                   <Text style={[styles.menuText, { color: KFitColors.error }]}>
                     {isSigningOut ? "Signing out…" : "Log out"}
                   </Text>
@@ -265,7 +274,10 @@ export default function TrainerHeader({
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, minWidth: 0 },
+  flex: {
+    flex: 1,
+    minWidth: 0,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -291,7 +303,10 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
   },
-  titleBlock: { flex: 1, minWidth: 0 },
+  titleBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
   brandTitle: {
     color: KFitColors.text,
     fontSize: 15,
@@ -326,7 +341,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  badgeText: { color: "#000", fontSize: 9, fontWeight: "900" },
+  badgeText: {
+    color: "#000",
+    fontSize: 9,
+    fontWeight: "900",
+  },
   avatar: {
     width: 36,
     height: 36,
@@ -373,13 +392,20 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 1,
   },
-  panelAction: { color: KFitColors.accent, fontSize: 11, fontWeight: "700" },
+  panelAction: {
+    color: KFitColors.accent,
+    fontSize: 11,
+    fontWeight: "700",
+  },
   notifRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
     padding: 10,
     borderRadius: 12,
+  },
+  notifRowUnread: {
+    backgroundColor: KFitColors.background + "66",
   },
   notifIcon: {
     width: 32,
@@ -395,8 +421,16 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent + "1A",
     borderColor: KFitColors.accent + "55",
   },
-  notifTitle: { color: KFitColors.text, fontSize: 13, fontWeight: "700" },
-  notifBody: { color: KFitColors.mutedText, fontSize: 12, marginTop: 2 },
+  notifTitle: {
+    color: KFitColors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  notifBody: {
+    color: KFitColors.mutedText,
+    fontSize: 12,
+    marginTop: 2,
+  },
   notifTime: {
     color: KFitColors.mutedText,
     fontSize: 10,
@@ -409,6 +443,23 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: KFitColors.accent,
     marginTop: 4,
+  },
+  emptyNotifications: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 24,
+    gap: 8,
+  },
+  emptyTitle: {
+    color: KFitColors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  emptyBody: {
+    color: KFitColors.mutedText,
+    fontSize: 11,
+    textAlign: "center",
+    lineHeight: 16,
   },
   profileTop: {
     flexDirection: "row",
@@ -433,7 +484,11 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     fontFamily: "monospace",
   },
-  profileName: { color: KFitColors.text, fontSize: 14, fontWeight: "800" },
+  profileName: {
+    color: KFitColors.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
   profileRole: {
     color: KFitColors.accent,
     fontSize: 11,
@@ -448,5 +503,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 10,
   },
-  menuText: { color: KFitColors.text, fontSize: 13, fontWeight: "700" },
+  menuText: {
+    color: KFitColors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
 });

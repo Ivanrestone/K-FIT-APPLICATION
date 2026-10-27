@@ -1,7 +1,9 @@
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
+import { useRegisterMember } from "@/hooks/use-register-member";
 import { useMemo, useState } from "react";
 import {
+  Alert,
   ImageBackground,
   KeyboardAvoidingView,
   Modal,
@@ -12,31 +14,21 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
+  useWindowDimensions
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type Plan = "Basic" | "Standard" | "Premium";
 type Status = "Active" | "Expiring" | "Pending" | "Expired";
 
 interface Subscription {
   id: string;
   memberName: string;
   subscriptionId: string;
-  plan: Plan;
   amount: number;
   nextBilling: string;
   status: Status;
 }
 
-const PLAN_PRICES: Record<Plan, number> = {
-  Basic: 35,
-  Standard: 45,
-  Premium: 75,
-};
-
-const PLANS: Plan[] = ["Basic", "Standard", "Premium"];
-const PLAN_FILTERS: ("All plans" | Plan)[] = ["All plans", ...PLANS];
 const STATUS_FILTERS: ("All statuses" | Status)[] = [
   "All statuses",
   "Active",
@@ -50,7 +42,6 @@ const initialSubscriptions: Subscription[] = [
     id: "1",
     memberName: "Jordan Lee",
     subscriptionId: "SUB-1042",
-    plan: "Standard",
     amount: 45,
     nextBilling: "Nov 01, 2026",
     status: "Active",
@@ -59,8 +50,7 @@ const initialSubscriptions: Subscription[] = [
     id: "2",
     memberName: "Sam Rivera",
     subscriptionId: "SUB-0988",
-    plan: "Premium",
-    amount: 75,
+    amount: 45,
     nextBilling: "Nov 12, 2026",
     status: "Active",
   },
@@ -68,7 +58,6 @@ const initialSubscriptions: Subscription[] = [
     id: "3",
     memberName: "Maya Patel",
     subscriptionId: "SUB-0851",
-    plan: "Standard",
     amount: 45,
     nextBilling: "Oct 24, 2026",
     status: "Expiring",
@@ -77,8 +66,7 @@ const initialSubscriptions: Subscription[] = [
     id: "4",
     memberName: "Noah Williams",
     subscriptionId: "SUB-1341",
-    plan: "Basic",
-    amount: 35,
+    amount: 45,
     nextBilling: "Oct 15, 2026",
     status: "Pending",
   },
@@ -86,8 +74,7 @@ const initialSubscriptions: Subscription[] = [
     id: "5",
     memberName: "Liam Wilson",
     subscriptionId: "SUB-0642",
-    plan: "Basic",
-    amount: 35,
+    amount: 45,
     nextBilling: "Oct 15, 2026",
     status: "Active",
   },
@@ -120,13 +107,11 @@ const initials = (name: string) =>
 export default function MembershipsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
+  const { registerMember, loading: registerLoading } = useRegisterMember();
 
   const [subscriptions, setSubscriptions] =
     useState<Subscription[]>(initialSubscriptions);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedPlan, setSelectedPlan] = useState<"All plans" | Plan>(
-    "All plans",
-  );
   const [selectedStatus, setSelectedStatus] = useState<"All statuses" | Status>(
     "All statuses",
   );
@@ -135,7 +120,8 @@ export default function MembershipsScreen() {
   const [formMode, setFormMode] = useState<"edit" | "add" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
-  const [formPlan, setFormPlan] = useState<Plan>("Standard");
+  const [formEmail, setFormEmail] = useState("");
+  const [formPassword, setFormPassword] = useState("");
   const [formAmount, setFormAmount] = useState("");
   const [formError, setFormError] = useState("");
 
@@ -168,21 +154,20 @@ export default function MembershipsScreen() {
         !q ||
         s.memberName.toLowerCase().includes(q) ||
         s.subscriptionId.toLowerCase().includes(q);
-      const matchesPlan =
-        selectedPlan === "All plans" || s.plan === selectedPlan;
       const matchesStatus =
         selectedStatus === "All statuses" || s.status === selectedStatus;
-      return matchesSearch && matchesPlan && matchesStatus;
+      return matchesSearch && matchesStatus;
     });
-  }, [subscriptions, searchQuery, selectedPlan, selectedStatus]);
+  }, [subscriptions, searchQuery, selectedStatus]);
 
   // ---- Form actions ----
   const openAdd = () => {
     setFormMode("add");
     setEditingId(null);
     setFormName("");
-    setFormPlan("Standard");
-    setFormAmount(String(PLAN_PRICES.Standard));
+    setFormEmail("");
+    setFormPassword("");
+    setFormAmount("45");
     setFormError("");
   };
 
@@ -190,19 +175,15 @@ export default function MembershipsScreen() {
     setFormMode("edit");
     setEditingId(sub.id);
     setFormName(sub.memberName);
-    setFormPlan(sub.plan);
+    setFormEmail("");
+    setFormPassword("");
     setFormAmount(String(sub.amount));
     setFormError("");
   };
 
   const closeForm = () => setFormMode(null);
 
-  const pickPlan = (plan: Plan) => {
-    setFormPlan(plan);
-    setFormAmount(String(PLAN_PRICES[plan]));
-  };
-
-  const saveForm = () => {
+  const saveForm = async () => {
     const amount = parseFloat(formAmount);
     if (isNaN(amount) || amount < 0) {
       setFormError("Enter a valid dollar amount.");
@@ -214,27 +195,53 @@ export default function MembershipsScreen() {
         setFormError("Enter the member's full name.");
         return;
       }
-      const num = Math.floor(1000 + Math.random() * 9000);
-      setSubscriptions((prev) => [
-        {
-          id: `new-${Date.now()}`,
-          memberName: formName.trim(),
-          subscriptionId: `SUB-${num}`,
-          plan: formPlan,
-          amount,
-          nextBilling: nextMonth(),
-          status: "Active",
-        },
-        ...prev,
-      ]);
+      if (!formEmail.trim()) {
+        setFormError("Enter the member's email.");
+        return;
+      }
+      if (!formPassword.trim()) {
+        setFormError("Enter a password for the member.");
+        return;
+      }
+
+      const result = await registerMember({
+        email: formEmail.trim(),
+        password: formPassword.trim(),
+        fullName: formName.trim(),
+      });
+
+      if (result.success) {
+        const num = Math.floor(1000 + Math.random() * 9000);
+        setSubscriptions((prev) => [
+          {
+            id: result.userId || `new-${Date.now()}`,
+            memberName: formName.trim(),
+            subscriptionId: `SUB-${num}`,
+            amount,
+            nextBilling: nextMonth(),
+            status: "Active",
+          },
+          ...prev,
+        ]);
+        setFormName("");
+        setFormEmail("");
+        setFormPassword("");
+        setFormAmount("45");
+        setFormError("");
+        closeForm();
+        Alert.alert("Success", "Member registered successfully!");
+      } else {
+        setFormError(result.error || "Registration failed");
+        Alert.alert("Registration Error", result.error || "Registration failed");
+      }
     } else if (formMode === "edit" && editingId) {
       setSubscriptions((prev) =>
         prev.map((s) =>
-          s.id === editingId ? { ...s, plan: formPlan, amount } : s,
+          s.id === editingId ? { ...s, amount } : s,
         ),
       );
+      closeForm();
     }
-    closeForm();
   };
 
   const renderStatus = (status: Status) => {
@@ -396,7 +403,6 @@ export default function MembershipsScreen() {
                 </Pressable>
               )}
             </View>
-            {renderChips(PLAN_FILTERS, selectedPlan, setSelectedPlan)}
             {renderChips(STATUS_FILTERS, selectedStatus, setSelectedStatus)}
           </View>
 
@@ -408,7 +414,6 @@ export default function MembershipsScreen() {
                   <Text style={[styles.headerText, styles.colMember]}>
                     Member
                   </Text>
-                  <Text style={[styles.headerText, styles.colPlan]}>Plan</Text>
                   <Text style={[styles.headerText, styles.colAmount]}>
                     Amount
                   </Text>
@@ -434,7 +439,6 @@ export default function MembershipsScreen() {
                     style={styles.resetButton}
                     onPress={() => {
                       setSearchQuery("");
-                      setSelectedPlan("All plans");
                       setSelectedStatus("All statuses");
                     }}
                   >
@@ -452,9 +456,6 @@ export default function MembershipsScreen() {
                       {isWide ? (
                         <View style={styles.rowWide}>
                           <View style={styles.colMember}>{identity(s)}</View>
-                          <View style={styles.colPlan}>
-                            <Text style={styles.planText}>{s.plan}</Text>
-                          </View>
                           <View style={styles.colAmount}>
                             <Text style={styles.amountText}>
                               ${s.amount.toFixed(2)}
@@ -477,10 +478,6 @@ export default function MembershipsScreen() {
                             {renderStatus(s.status)}
                           </View>
                           <View style={styles.rowNarrowMeta}>
-                            <View>
-                              <Text style={styles.metaLabel}>Plan</Text>
-                              <Text style={styles.planText}>{s.plan}</Text>
-                            </View>
                             <View>
                               <Text style={styles.metaLabel}>Amount</Text>
                               <Text style={styles.amountText}>
@@ -547,54 +544,44 @@ export default function MembershipsScreen() {
             {formMode === "edit" ? (
               <Text style={styles.modalSubtitle}>{formName}</Text>
             ) : (
-              <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Full name</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={formName}
-                  onChangeText={setFormName}
-                  placeholder="e.g. Jordan Lee"
-                  placeholderTextColor={KFitColors.mutedText}
-                />
-              </View>
-            )}
+              <>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Full name</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={formName}
+                    onChangeText={setFormName}
+                    placeholder="e.g. Jordan Lee"
+                    placeholderTextColor={KFitColors.mutedText}
+                  />
+                </View>
 
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Plan</Text>
-              <View style={styles.planPicker}>
-                {PLANS.map((p) => {
-                  const active = formPlan === p;
-                  return (
-                    <Pressable
-                      key={p}
-                      onPress={() => pickPlan(p)}
-                      accessibilityState={{ selected: active }}
-                      style={[
-                        styles.planOption,
-                        active && styles.planOptionActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.planOptionName,
-                          active && styles.planOptionNameActive,
-                        ]}
-                      >
-                        {p}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.planOptionPrice,
-                          active && styles.planOptionNameActive,
-                        ]}
-                      >
-                        ${PLAN_PRICES[p]}/mo
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Email</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={formEmail}
+                    onChangeText={setFormEmail}
+                    placeholder="name@email.com"
+                    placeholderTextColor={KFitColors.mutedText}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Password</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={formPassword}
+                    onChangeText={setFormPassword}
+                    placeholder="Enter password"
+                    placeholderTextColor={KFitColors.mutedText}
+                    secureTextEntry
+                  />
+                </View>
+              </>
+            )}
 
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Monthly amount ($)</Text>
