@@ -1,8 +1,10 @@
 import { KFitColors, Spacing } from "@/constants/theme";
-import { useAuth, useClerk, useSSO, useUser } from "@clerk/expo";
+import { useAuth, useClerk, useOAuth, useSSO, useUser } from "@clerk/expo";
 import { useSignIn, useSignUp } from "@clerk/expo/legacy";
 import { createMemberSupabaseClient } from "@/utils/supabase";
 import { FunctionsHttpError } from "@supabase/supabase-js";
+import * as AuthSession from "expo-auth-session";
+import { makeRedirectUri } from "expo-auth-session";
 import { Image } from "expo-image";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
@@ -158,7 +160,7 @@ function ConfiguredHomeScreen() {
     setActive: activateSignUp,
     signUp,
   } = useSignUp();
-  const { startSSOFlow } = useSSO();
+  const { startOAuthFlow } = useOAuth({ strategy: "oauth_google" });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
@@ -207,11 +209,8 @@ function ConfiguredHomeScreen() {
       let token: string | null = null;
       try {
         token = await getToken({ template: "supabase" });
-      } catch (tokenErr) {
-        console.warn(
-          "[Profile Token Notice]: Could not retrieve token with template 'supabase':",
-          tokenErr,
-        );
+      } catch {
+        // Fallback silently if 'supabase' JWT template is not yet configured in Clerk
       }
       if (!token) {
         token = await getToken();
@@ -305,7 +304,8 @@ function ConfiguredHomeScreen() {
                   id: currentUserId,
                   email: userEmail || null,
                   full_name: userFullName || null,
-                  role: "member",
+                  // Note: role defaults to 'member' on insert via DB default.
+                  // Do NOT pass role here — authenticated users cannot write it.
                 },
                 { onConflict: "id" },
               );
@@ -374,28 +374,30 @@ function ConfiguredHomeScreen() {
   const handleGoogleLogin = async () => {
     setIsSubmitting(true);
     setAuthError(null);
-    let ssoResult: Awaited<ReturnType<typeof startSSOFlow>> | null = null;
+    let oAuthResult: Awaited<ReturnType<typeof startOAuthFlow>> | null = null;
     try {
-      ssoResult = await startSSOFlow({
-        strategy: "oauth_google",
-        // Redirect to the registered sso-callback route so Expo Router
-        // doesn't crash with "Unmatched Route" on the default deep-link.
-        redirectUrl: Linking.createURL("/sso-callback"),
-        oidcPrompt: "select_account",
+      const redirectUrl = AuthSession.makeRedirectUri({
+        scheme: "kfit",
+        path: "/oauth-native-callback",
+      });
+
+      oAuthResult = await startOAuthFlow({
+        redirectUrl,
       });
       const {
         authSessionResult,
         createdSessionId,
         setActive,
-        signIn: ssoSignIn,
-        signUp: ssoSignUp,
-      } = ssoResult;
+        signIn: oAuthSignIn,
+        signUp: oAuthSignUp,
+      } = oAuthResult;
       if (authSessionResult?.type === "cancel") {
         return;
       }
-      const sessionId = createdSessionId ??
-        getExistingSessionId(ssoSignIn) ??
-        getExistingSessionId(ssoSignUp);
+      const sessionId =
+        createdSessionId ??
+        getExistingSessionId(oAuthSignIn) ??
+        getExistingSessionId(oAuthSignUp);
       if (!sessionId) {
         throw new Error("Google sign in did not complete. Please try again.");
       }
@@ -403,7 +405,7 @@ function ConfiguredHomeScreen() {
       // provisionAndRoute() here — getToken() may not be ready immediately
       // after setActive resolves. Instead, let the isSignedIn useEffect
       // below handle routing once React state has fully propagated and
-      // sso-callback has redirected back to the index screen.
+      // oauth-native-callback has redirected back to the index screen.
       if (setActive) {
         await setActive({ session: sessionId });
       } else {
@@ -411,9 +413,10 @@ function ConfiguredHomeScreen() {
       }
     } catch (error) {
       if (isIdentifierAlreadySignedInError(error)) {
-        const existingSessionId = getExistingSessionId(error) ??
-          getExistingSessionId(ssoResult?.signIn) ??
-          getExistingSessionId(ssoResult?.signUp);
+        const existingSessionId =
+          getExistingSessionId(error) ??
+          getExistingSessionId(oAuthResult?.signIn) ??
+          getExistingSessionId(oAuthResult?.signUp);
         try {
           if (existingSessionId) {
             await clerk.setActive({ session: existingSessionId });

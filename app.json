@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/kfit-app-icon.png",
-    "scheme": "k-fit",
+    "scheme": "kfit",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/images/kfit-app-icon.png"
@@ -18,7 +18,10 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "package": "com.anonymous.kfit"
     },
@@ -45,11 +48,18 @@
       ],
       "@clerk/expo",
       "expo-secure-store",
-      "expo-audio"
+      "expo-audio",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c7445865-fec0-4023-9f97-565ad9ffac38"
+      }
     }
   }
 }

@@ -37,6 +37,19 @@ When a developer pulls the latest repository code, they execute the following in
    npx supabase db push
    ```
 
+### 3. Clerk JWT Template Configuration (Required for Supabase RLS)
+To satisfy `- [x] Mobile app architecture remains strictly online-only using the Supabase JS Client with Clerk JWTs`:
+1. In your **Supabase Dashboard** (`https://supabase.com/dashboard/project/fbkqieclbrypiyufzhnv`):
+   - Go to **Project Settings** > **API**.
+   - Copy the **JWT Secret**.
+2. In your **Clerk Dashboard** (`https://dashboard.clerk.com`):
+   - Go to **Configure** > **JWT Templates**.
+   - Click **New template** and select **Supabase**.
+   - Set the template name to `supabase` (lowercase).
+   - Paste the **JWT Secret** copied from Supabase.
+   - Leave the default claims (`aud: "authenticated"`, `role: "authenticated"`, `email`, `sub`).
+   - Click **Save**.
+
 ## Verification
 - [x] Mobile app architecture remains strictly online-only using the Supabase JS Client with Clerk JWTs.
 - [ ] New developers can log in via `npx supabase login` and link to project `https://fbkqieclbrypiyufzhnv.supabase.co`.
