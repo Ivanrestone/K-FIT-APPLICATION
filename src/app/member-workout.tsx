@@ -1,4 +1,7 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
+import MemberHeader, {
+  MemberLocalNotification,
+} from "@/components/MemberHeader";
 import { KFitColors } from "@/constants/theme";
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
@@ -21,7 +24,6 @@ const NAV_CLEARANCE = 140;
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
-// Replace with real data from your workout API when available.
 const WORKOUT = {
   title: "Lower body strength",
   program: "Foundation Strength · Week 4 of 8",
@@ -183,6 +185,11 @@ export default function MemberWorkoutScreen() {
   const { profile } = useMemberProfile();
   const [notes, setNotes] = useState("");
 
+  // Minimal local notification state to feed MemberHeader.
+  const [notifications, setNotifications] = useState<MemberLocalNotification[]>(
+    [],
+  );
+
   const today = useMemo(
     () =>
       new Date().toLocaleDateString("en-US", {
@@ -200,33 +207,26 @@ export default function MemberWorkoutScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.mainContainer}>
+        {/* Shared header — matches member dashboard */}
+        <MemberHeader
+          name={profile?.fullName ?? firstName ?? "Member"}
+          tier={profile?.tier ?? "VIP"}
+          streakDays={profile?.streakDays ?? 0}
+          points={profile?.points ?? 0}
+          checkedIn={false}
+          isSigningOut={isSigningOut}
+          onLogout={logout}
+          notifications={notifications}
+          setNotifications={setNotifications}
+        />
+
         <ScrollView
           style={styles.content}
           contentContainerStyle={{ paddingBottom: NAV_CLEARANCE }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.brand}>FORM ATHLETICS</Text>
-              <Text style={styles.brandSubtitle}>
-                FORM / Brooklyn · Performance club
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.logoutButton}
-              disabled={isSigningOut}
-              onPress={logout}
-              accessibilityRole="button"
-              accessibilityLabel="Log out"
-            >
-              <Feather name="log-out" size={14} color={KFitColors.error} />
-              <Text style={styles.logoutText}>
-                {isSigningOut ? "Signing out…" : "Logout"}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* Date line (brand strip removed — now in MemberHeader) */}
           <Text style={styles.date}>{today}</Text>
 
           {/* Workout hero */}
@@ -475,49 +475,19 @@ export default function MemberWorkoutScreen() {
   );
 }
 
-/* ---------------------------------- Styles ---------------------------------- */
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: KFitColors.background },
   mainContainer: { flex: 1, backgroundColor: KFitColors.background },
   content: { flex: 1 },
 
-  /* Header */
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  brand: {
-    fontSize: 22,
-    fontWeight: "900",
-    letterSpacing: 0.5,
-    color: KFitColors.text,
-  },
-  brandSubtitle: { fontSize: 12, color: KFitColors.mutedText, marginTop: 2 },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.surface,
-  },
-  logoutText: { fontSize: 12, fontWeight: "700", color: KFitColors.error },
   date: {
     paddingHorizontal: 20,
-    marginTop: 10,
+    marginTop: 14,
     fontSize: 12,
     color: KFitColors.mutedText,
   },
 
-  /* Hero */
-  hero: { paddingHorizontal: 20, marginTop: 20, marginBottom: 16 },
+  hero: { paddingHorizontal: 20, marginTop: 16, marginBottom: 16 },
   eyebrow: {
     fontSize: 11,
     fontWeight: "700",
@@ -533,7 +503,6 @@ const styles = StyleSheet.create({
   },
   heroSubtitle: { fontSize: 14, color: KFitColors.mutedText },
 
-  /* Start button */
   startButtonWrapper: {
     marginHorizontal: 20,
     borderRadius: 14,
@@ -561,7 +530,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  /* Summary card */
   summaryCard: {
     marginHorizontal: 20,
     marginBottom: 24,
@@ -599,7 +567,6 @@ const styles = StyleSheet.create({
   },
   equipmentText: { fontSize: 13, color: KFitColors.mutedText },
 
-  /* Sections & cards */
   section: { paddingHorizontal: 20, marginBottom: 24 },
   sectionHeader: {
     flexDirection: "row",
@@ -630,7 +597,6 @@ const styles = StyleSheet.create({
     marginLeft: 64,
   },
 
-  /* Coach */
   coachRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -654,7 +620,6 @@ const styles = StyleSheet.create({
     color: KFitColors.mutedText,
   },
 
-  /* Effort */
   effortCard: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -675,7 +640,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* Exercise table */
   tableHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -707,7 +671,6 @@ const styles = StyleSheet.create({
   exerciseTip: { fontSize: 11, color: KFitColors.mutedText },
   exerciseValue: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
 
-  /* Notes */
   notesInput: {
     minHeight: 90,
     fontSize: 14,
@@ -716,7 +679,6 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
-  /* Program */
   programHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -768,7 +730,6 @@ const styles = StyleSheet.create({
     color: KFitColors.accent,
   },
 
-  /* Link rows */
   linkRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -787,7 +748,6 @@ const styles = StyleSheet.create({
   },
   linkLabel: { fontSize: 14, color: KFitColors.text, fontWeight: "500" },
 
-  /* Footer */
   footer: { paddingVertical: 24, alignItems: "center" },
   footerBrand: {
     fontSize: 13,

@@ -2,8 +2,13 @@ import MemberBottomNav from "@/components/MemberBottomNav";
 import type { MemberLocalNotification } from "@/components/MemberHeader";
 import MemberHeader from "@/components/MemberHeader";
 import SubscriptionPaywall from "@/components/SubscriptionPaywall";
+import { MEMBER_ROUTES } from "@/constants/member-routes";
 import { KFitColors } from "@/constants/theme";
 import { useLogout } from "@/hooks/use-logout";
+import {
+  MEMBER_PLACEHOLDER_STATS,
+  useMemberHeaderData,
+} from "@/hooks/use-member-header-data";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
@@ -38,14 +43,11 @@ const C = {
 
 /* ------------------------------------------------------------------ */
 /* Data (swap for real API data later)                                 */
+/* Name + first name now come from the real profile (see the hook).    */
 /* ------------------------------------------------------------------ */
 const MEMBER = {
-  name: "Jordan Lee",
-  firstName: "Jordan",
+  ...MEMBER_PLACEHOLDER_STATS, // tier, streakDays, points (shared with header)
   id: "PM-1042",
-  tier: "VIP",
-  streakDays: 14,
-  points: 1240,
   visitsThisMonth: 18,
   visitTarget: 20,
   caloriesThisWeek: 3420,
@@ -53,11 +55,15 @@ const MEMBER = {
 
 const FLOOR = { occupancy: 156, capacity: 200 };
 
-const OVERVIEW: { label: string; icon: keyof typeof Feather.glyphMap }[] = [
+const OVERVIEW: {
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+  route?: string; // tiles without a route are display-only for now
+}[] = [
   { label: "Progress & goals", icon: "target" },
-  { label: "Personal profile", icon: "user" },
+  { label: "Personal profile", icon: "user", route: MEMBER_ROUTES.profile },
   { label: "Attendance history", icon: "calendar" },
-  { label: "My workouts", icon: "activity" },
+  { label: "My workouts", icon: "activity", route: MEMBER_ROUTES.workout },
 ];
 
 const STATS = [
@@ -128,9 +134,6 @@ const ATTENDANCE = [
   },
 ];
 
-// Change this to your real digital-pass screen in app/
-const PASS_ROUTE = "/member-pass";
-
 /* ------------------------------------------------------------------ */
 /* Small building blocks                                               */
 /* ------------------------------------------------------------------ */
@@ -186,6 +189,7 @@ function ProgressBar({
 export default function MemberDashboardScreen() {
   const router = useRouter();
   const { isSigningOut, logout } = useLogout();
+  const { header, firstName } = useMemberHeaderData();
 
   const [checkedIn, setCheckedIn] = useState(false);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
@@ -265,10 +269,7 @@ export default function MemberDashboardScreen() {
       <View style={styles.mainContainer}>
         {/* ---------------- Fixed member header ---------------- */}
         <MemberHeader
-          name={MEMBER.name}
-          tier={MEMBER.tier}
-          streakDays={MEMBER.streakDays}
-          points={MEMBER.points}
+          {...header}
           checkedIn={checkedIn}
           isSigningOut={isSigningOut}
           onLogout={logout}
@@ -297,7 +298,7 @@ export default function MemberDashboardScreen() {
               <Text style={styles.greeting}>Progress, not perfection.</Text>
               <Text style={styles.greetingSubtitle}>
                 Your effort adds up. See how far you&apos;ve come,{" "}
-                {MEMBER.firstName}.
+                {firstName || "champ"}.
               </Text>
               <TouchableOpacity
                 style={styles.logButtonWrapper}
@@ -424,11 +425,13 @@ export default function MemberDashboardScreen() {
               </Card>
             </View>
 
-            {/* Digital pass banner */}
+            {/* Digital pass banner → the same screen as the raised QR button */}
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.passBanner}
-              onPress={() => router.push(PASS_ROUTE as any)}
+              onPress={() => router.replace(MEMBER_ROUTES.qr as any)}
+              accessibilityRole="button"
+              accessibilityLabel="Open my QR gate pass"
             >
               <View style={styles.passIcon}>
                 <Feather name="maximize" size={20} color={C.onAccent} />
@@ -451,6 +454,14 @@ export default function MemberDashboardScreen() {
                     key={o.label}
                     style={styles.overviewTile}
                     activeOpacity={0.8}
+                    disabled={!o.route}
+                    onPress={() => {
+                      if (!o.route) return;
+                      void Haptics.selectionAsync();
+                      router.replace(o.route as any);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={o.label}
                   >
                     <View style={styles.overviewIcon}>
                       <Feather name={o.icon} size={16} color={C.accent} />
@@ -648,7 +659,7 @@ export default function MemberDashboardScreen() {
 
             {/* Footer */}
             <View style={styles.footer}>
-              <Text style={styles.footerName}>{MEMBER.name}</Text>
+              <Text style={styles.footerName}>{header.name}</Text>
               <Text style={styles.statNote}>
                 Member • {MEMBER.id} • Joined Sep 11, 2016
               </Text>
@@ -659,7 +670,7 @@ export default function MemberDashboardScreen() {
           </SubscriptionPaywall>
         </ScrollView>
 
-        <MemberBottomNav activeRoute="/member-dashboard" />
+        <MemberBottomNav activeRoute={MEMBER_ROUTES.dashboard} />
       </View>
     </SafeAreaView>
   );

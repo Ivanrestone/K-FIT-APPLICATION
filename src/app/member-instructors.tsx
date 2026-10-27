@@ -1,18 +1,23 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
+import MemberHeader, {
+  MemberLocalNotification,
+} from "@/components/MemberHeader";
+import { MEMBER_ROUTES } from "@/constants/member-routes";
 import { KFitColors } from "@/constants/theme";
-import { useMemberProfile } from "@/hooks/use-member-profile";
+import { useLogout } from "@/hooks/use-logout";
+import { useMemberHeaderData } from "@/hooks/use-member-header-data";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useMemo, useState } from "react";
 import {
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -148,13 +153,13 @@ const INSTRUCTORS: Instructor[] = [
 const initialsOf = (name: string) =>
   name
     .split(" ")
+    .filter(Boolean)
     .map((p) => p.charAt(0).toUpperCase())
     .join("")
     .slice(0, 2);
 
 /* ---------------------------- Small building blocks ---------------------------- */
 
-/** Read-only stars, supports half stars (e.g. 4.5). */
 function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
   return (
     <View
@@ -183,7 +188,6 @@ function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
   );
 }
 
-/** Tappable stars for the review form. */
 function StarPicker({
   value,
   onChange,
@@ -247,7 +251,8 @@ function ReviewItem({ review }: { review: Review }) {
 /* ---------------------------------- Screen ---------------------------------- */
 
 export default function MemberInstructorsScreen() {
-  const { profile } = useMemberProfile();
+  const { header, profile } = useMemberHeaderData();
+  const { isSigningOut, logout } = useLogout();
 
   const [instructors, setInstructors] = useState<Instructor[]>(INSTRUCTORS);
   const [query, setQuery] = useState("");
@@ -257,6 +262,11 @@ export default function MemberInstructorsScreen() {
   const [draftRating, setDraftRating] = useState(0);
   const [draftComment, setDraftComment] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Minimal local notification state to feed MemberHeader.
+  const [notifications, setNotifications] = useState<MemberLocalNotification[]>(
+    [],
+  );
 
   const authorName = useMemo(() => {
     const first = profile?.firstName?.trim();
@@ -326,7 +336,7 @@ export default function MemberInstructorsScreen() {
         let count = inst.reviewCount;
 
         if (existing) {
-          sum = sum - existing.rating + draftRating; // edit: count unchanged
+          sum = sum - existing.rating + draftRating;
         } else {
           sum += draftRating;
           count += 1;
@@ -358,6 +368,16 @@ export default function MemberInstructorsScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.main}>
+        {/* Shared header — matches member dashboard + workout */}
+        <MemberHeader
+          {...header}
+          checkedIn={false}
+          isSigningOut={isSigningOut}
+          onLogout={logout}
+          notifications={notifications}
+          setNotifications={setNotifications}
+        />
+
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -510,7 +530,6 @@ export default function MemberInstructorsScreen() {
 
                       {isExpanded ? (
                         <View style={styles.reviewsPanel}>
-                          {/* Summary */}
                           <View style={styles.summaryRow}>
                             <Text style={styles.summaryScore}>
                               {i.rating.toFixed(1)}
@@ -523,7 +542,6 @@ export default function MemberInstructorsScreen() {
                             </View>
                           </View>
 
-                          {/* Write / edit */}
                           {isFormOpen ? (
                             <View style={styles.form}>
                               <Text style={styles.formTitle}>
@@ -599,7 +617,6 @@ export default function MemberInstructorsScreen() {
                             </TouchableOpacity>
                           )}
 
-                          {/* Reviews */}
                           {i.reviews.map((r) => (
                             <ReviewItem key={r.id} review={r} />
                           ))}
@@ -613,7 +630,7 @@ export default function MemberInstructorsScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
 
-        <MemberBottomNav activeRoute="/member-instructors" />
+        <MemberBottomNav activeRoute={MEMBER_ROUTES.instructors} />
       </View>
     </SafeAreaView>
   );
@@ -725,7 +742,6 @@ const styles = StyleSheet.create({
   chooseText: { fontSize: 13, fontWeight: "800", color: KFitColors.onAccent },
   chooseTextActive: { color: KFitColors.accent },
 
-  /* Reviews */
   reviewsToggle: {
     flexDirection: "row",
     alignItems: "center",

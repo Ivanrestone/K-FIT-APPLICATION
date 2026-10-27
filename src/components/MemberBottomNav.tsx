@@ -1,3 +1,4 @@
+import { MEMBER_ROUTES as R } from "@/constants/member-routes";
 import { KFitColors } from "@/constants/theme";
 import { unseenCount, useChallengeStore } from "@/lib/challenges-store";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -8,7 +9,6 @@ import {
   Animated,
   Easing,
   LayoutChangeEvent,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -24,24 +24,24 @@ type Tab = {
   badge?: number;
 };
 
-/** All member screens. Every route must be a file in app/. */
+/**
+ * Bottom-nav: Progress · Workouts — [QR] — Instructor · Challenges
+ * Payments/Profile/Membership live in the header avatar menu.
+ * Check-in lives in the QR screen.
+ */
 const ALL_TABS: Tab[] = [
-  { label: "Progress", icon: "activity", route: "/member-dashboard" },
-  { label: "Workouts", icon: "zap", route: "/member-workout" },
-  { label: "Instructor", icon: "user-check", route: "/member-instructors" },
-  { label: "Check-in", icon: "map-pin", route: "/member-checkin" },
-  { label: "Membership", icon: "credit-card", route: "/member-membership" },
-  { label: "Profile", icon: "user", route: "/member-profile" },
-  { label: "Challenges", icon: "flag", route: "/member-challenges" },
+  { label: "Progress", icon: "activity", route: R.dashboard },
+  { label: "Workouts", icon: "zap", route: R.workout },
+  { label: "Instructor", icon: "user-check", route: R.instructors },
+  { label: "Challenges", icon: "flag", route: R.challenges },
 ];
 
 // Center QR button route.
-const QR_ROUTE = "/member-qr";
+const QR_ROUTE: string = R.qr;
 
-// Dock: 2 items LEFT of the QR, 1 item RIGHT of it, then "More".
-// Anything not listed here automatically goes under "More".
-const LEFT_ROUTES = ["/member-dashboard", "/member-workout"];
-const RIGHT_ROUTES = ["/member-instructors"];
+// Dock: 2 left of QR, 2 right of QR.
+const LEFT_ROUTES: string[] = [R.dashboard, R.workout];
+const RIGHT_ROUTES: string[] = [R.instructors, R.challenges];
 
 const pick = (routes: string[]) =>
   routes
@@ -51,20 +51,14 @@ const pick = (routes: string[]) =>
 const LEFT = pick(LEFT_ROUTES);
 const RIGHT = pick(RIGHT_ROUTES);
 
-const MORE_ITEMS = ALL_TABS.filter(
-  (t) => ![...LEFT_ROUTES, ...RIGHT_ROUTES].includes(t.route),
-);
-
-// Slot order in the dock: [left..., QR spacer, right..., More]
+// Slot order in the dock: [left..., QR spacer, right...]
 const QR_SLOT = LEFT.length;
-const MORE_SLOT = LEFT.length + 1 + RIGHT.length;
-const SLOT_COUNT = MORE_SLOT + 1;
+const SLOT_COUNT = LEFT.length + 1 + RIGHT.length;
 
 const DOCK_PADDING = 6;
 const QR_SIZE = 60;
 const CORNER = 9;
 
-// Remember the last active slot so the highlight slides between screens.
 let lastActiveSlot = 0;
 
 function TabButton({
@@ -95,12 +89,10 @@ function TabButton({
     inputRange: [0, 1],
     outputRange: [1, 1.18],
   });
-
   const translateY = lift.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -1],
   });
-
   const color = active ? KFitColors.accent : KFitColors.mutedText;
 
   return (
@@ -108,20 +100,18 @@ function TabButton({
       style={styles.tab}
       onPress={onPress}
       activeOpacity={0.7}
-      accessibilityRole={label === "More" ? "button" : "tab"}
+      accessibilityRole="tab"
       accessibilityLabel={label}
       accessibilityState={{ selected: active }}
     >
       <Animated.View style={{ transform: [{ scale }, { translateY }] }}>
         <Feather name={icon} size={20} color={color} />
-
         {!!badge && badge > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{badge > 9 ? "9+" : badge}</Text>
           </View>
         )}
       </Animated.View>
-
       <Text
         style={[styles.label, { color }, active && styles.labelActive]}
         numberOfLines={1}
@@ -139,40 +129,32 @@ export default function MemberBottomNav({
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [isMoreOpen, setIsMoreOpen] = useState(false);
 
-  // Challenge store and unseen challenge count.
   const store = useChallengeStore();
   const newChallenges = unseenCount(store, "member");
 
   const badgeFor = (route: string) =>
-    route === "/member-challenges" ? newChallenges : 0;
+    route === R.challenges ? newChallenges : 0;
 
   const qrActive = activeRoute === QR_ROUTE;
-  const moreIsActive = MORE_ITEMS.some((t) => t.route === activeRoute);
 
-  // Which dock slot is highlighted (-1 = none, e.g. QR screen uses its own ring).
   let activeSlot = -1;
   const leftIdx = LEFT.findIndex((t) => t.route === activeRoute);
   const rightIdx = RIGHT.findIndex((t) => t.route === activeRoute);
-
   if (leftIdx >= 0) activeSlot = leftIdx;
   else if (rightIdx >= 0) activeSlot = QR_SLOT + 1 + rightIdx;
-  else if (moreIsActive) activeSlot = MORE_SLOT;
 
   const [tabWidth, setTabWidth] = useState(0);
   const position = useRef(new Animated.Value(lastActiveSlot)).current;
 
   useEffect(() => {
     if (activeSlot < 0) return;
-
     Animated.timing(position, {
       toValue: activeSlot,
       duration: 260,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-
     lastActiveSlot = activeSlot;
   }, [activeSlot, position]);
 
@@ -195,185 +177,77 @@ export default function MemberBottomNav({
   };
 
   return (
-    <>
-      <View
-        style={[styles.wrapper, { bottom: Math.max(insets.bottom, 8) + 4 }]}
-        pointerEvents="box-none"
-      >
-        {/* Raised center QR button */}
-        <View style={styles.qrWrap} pointerEvents="box-none">
-          <Pressable
-            onPress={() => {
-              if (qrActive) return;
-
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-              router.replace(QR_ROUTE as any);
-            }}
-            style={({ pressed }) => [
-              styles.qrOuter,
-              qrActive && styles.qrOuterActive,
-              pressed && styles.qrPressed,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Open my QR code"
-          >
-            <View style={styles.qrInner}>
-              <View style={[styles.qrCorner, styles.qrCornerTL]} />
-              <View style={[styles.qrCorner, styles.qrCornerTR]} />
-              <View style={[styles.qrCorner, styles.qrCornerBL]} />
-              <View style={[styles.qrCorner, styles.qrCornerBR]} />
-
-              <Ionicons name="qr-code" size={24} color={KFitColors.onAccent} />
-            </View>
-          </Pressable>
-        </View>
-
-        <View
-          style={styles.dock}
-          onLayout={onDockLayout}
-          accessibilityRole="tablist"
+    <View
+      style={[styles.wrapper, { bottom: Math.max(insets.bottom, 8) + 4 }]}
+      pointerEvents="box-none"
+    >
+      <View style={styles.qrWrap} pointerEvents="box-none">
+        <Pressable
+          onPress={() => {
+            if (qrActive) return;
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.replace(QR_ROUTE as any);
+          }}
+          style={({ pressed }) => [
+            styles.qrOuter,
+            qrActive && styles.qrOuterActive,
+            pressed && styles.qrPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Open my QR code"
         >
-          {/* Sliding highlight */}
-          {tabWidth > 0 && activeSlot >= 0 && (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.indicator,
-                { width: tabWidth, transform: [{ translateX }] },
-              ]}
-            >
-              <View style={styles.indicatorBar} />
-            </Animated.View>
-          )}
-
-          {LEFT.map((tab) => (
-            <TabButton
-              key={tab.route}
-              label={tab.label}
-              icon={tab.icon}
-              badge={tab.badge}
-              active={tab.route === activeRoute}
-              onPress={() => tab.route !== activeRoute && go(tab.route)}
-            />
-          ))}
-
-          {/* Spacer slot under the QR button */}
-          <View style={styles.tab} pointerEvents="none" />
-
-          {RIGHT.map((tab) => (
-            <TabButton
-              key={tab.route}
-              label={tab.label}
-              icon={tab.icon}
-              badge={tab.badge}
-              active={tab.route === activeRoute}
-              onPress={() => tab.route !== activeRoute && go(tab.route)}
-            />
-          ))}
-
-          <TabButton
-            label="More"
-            icon="more-horizontal"
-            badge={MORE_ITEMS.reduce(
-              (sum, tab) => sum + (tab.badge ?? 0) + badgeFor(tab.route),
-              0,
-            )}
-            active={moreIsActive}
-            onPress={() => {
-              void Haptics.selectionAsync();
-              setIsMoreOpen(true);
-            }}
-          />
-        </View>
+          <View style={styles.qrInner}>
+            <View style={[styles.qrCorner, styles.qrCornerTL]} />
+            <View style={[styles.qrCorner, styles.qrCornerTR]} />
+            <View style={[styles.qrCorner, styles.qrCornerBL]} />
+            <View style={[styles.qrCorner, styles.qrCornerBR]} />
+            <Ionicons name="qr-code" size={24} color={KFitColors.onAccent} />
+          </View>
+        </Pressable>
       </View>
 
-      <Modal
-        visible={isMoreOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsMoreOpen(false)}
+      <View
+        style={styles.dock}
+        onLayout={onDockLayout}
+        accessibilityRole="tablist"
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setIsMoreOpen(false)}
-        >
-          <Pressable
+        {tabWidth > 0 && activeSlot >= 0 && (
+          <Animated.View
+            pointerEvents="none"
             style={[
-              styles.moreSheet,
-              { paddingBottom: Math.max(insets.bottom, 20) },
+              styles.indicator,
+              { width: tabWidth, transform: [{ translateX }] },
             ]}
-            onPress={(e) => e.stopPropagation()}
           >
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>More</Text>
+            <View style={styles.indicatorBar} />
+          </Animated.View>
+        )}
 
-            {MORE_ITEMS.map((tab) => {
-              const active = tab.route === activeRoute;
-              const challengeBadge = badgeFor(tab.route);
+        {LEFT.map((tab) => (
+          <TabButton
+            key={tab.route}
+            label={tab.label}
+            icon={tab.icon}
+            badge={tab.badge ?? badgeFor(tab.route)}
+            active={tab.route === activeRoute}
+            onPress={() => tab.route !== activeRoute && go(tab.route)}
+          />
+        ))}
 
-              return (
-                <Pressable
-                  key={tab.route}
-                  style={({ pressed }) => [
-                    styles.moreItem,
-                    active && styles.moreItemActive,
-                    pressed && styles.qrPressed,
-                  ]}
-                  onPress={() => {
-                    setIsMoreOpen(false);
+        <View style={styles.tab} pointerEvents="none" />
 
-                    if (!active) go(tab.route);
-                  }}
-                >
-                  <View
-                    style={[
-                      styles.moreIconBox,
-                      active && styles.moreIconBoxActive,
-                    ]}
-                  >
-                    <Feather
-                      name={tab.icon}
-                      size={18}
-                      color={
-                        active ? KFitColors.onAccent : KFitColors.mutedText
-                      }
-                    />
-                  </View>
-
-                  <Text
-                    style={[
-                      styles.moreItemText,
-                      active && styles.moreItemTextActive,
-                    ]}
-                  >
-                    {tab.label}
-                  </Text>
-
-                  {challengeBadge > 0 && (
-                    <View
-                      style={[
-                        styles.badge,
-                        {
-                          position: "relative",
-                          top: 0,
-                          right: 0,
-                          marginLeft: "auto",
-                        },
-                      ]}
-                    >
-                      <Text style={styles.badgeText}>
-                        {challengeBadge > 9 ? "9+" : challengeBadge}
-                      </Text>
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })}
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </>
+        {RIGHT.map((tab) => (
+          <TabButton
+            key={tab.route}
+            label={tab.label}
+            icon={tab.icon}
+            badge={tab.badge ?? badgeFor(tab.route)}
+            active={tab.route === activeRoute}
+            onPress={() => tab.route !== activeRoute && go(tab.route)}
+          />
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -429,14 +303,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 4,
   },
-  label: {
-    fontSize: 10,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  labelActive: {
-    fontWeight: "800",
-  },
+  label: { fontSize: 10, fontWeight: "600", letterSpacing: 0.3 },
+  labelActive: { fontWeight: "800" },
   badge: {
     position: "absolute",
     top: -6,
@@ -449,13 +317,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  badgeText: {
-    color: "#000",
-    fontSize: 8,
-    fontWeight: "900",
-  },
+  badgeText: { color: "#000", fontSize: 8, fontWeight: "900" },
 
-  /* Center QR button */
   qrWrap: {
     position: "absolute",
     top: 0,
@@ -478,12 +341,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 12,
   },
-  qrOuterActive: {
-    borderColor: KFitColors.accent,
-  },
-  qrPressed: {
-    transform: [{ scale: 0.94 }],
-  },
+  qrOuterActive: { borderColor: KFitColors.accent },
+  qrPressed: { transform: [{ scale: 0.94 }] },
   qrInner: {
     flex: 1,
     borderRadius: QR_SIZE / 2,
@@ -526,70 +385,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderRightWidth: 2,
     borderBottomRightRadius: 3,
-  },
-
-  /* More bottom sheet */
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-  },
-  moreSheet: {
-    backgroundColor: KFitColors.surface,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: KFitColors.border,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    gap: 8,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 42,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: KFitColors.border,
-    marginBottom: 8,
-  },
-  sheetTitle: {
-    color: KFitColors.text,
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  moreItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minHeight: 48,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-  },
-  moreItemActive: {
-    backgroundColor: KFitColors.accent + "1F",
-  },
-  moreIconBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: KFitColors.background,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-  },
-  moreIconBoxActive: {
-    backgroundColor: KFitColors.accent,
-    borderColor: KFitColors.accent,
-  },
-  moreItemText: {
-    color: KFitColors.mutedText,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  moreItemTextActive: {
-    color: KFitColors.accent,
   },
 });

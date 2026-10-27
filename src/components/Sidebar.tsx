@@ -27,31 +27,35 @@ interface SidebarProps {
 type NavItem = { name: string; short: string; route: string; icon: IconName };
 
 const NAV_ITEMS: NavItem[] = [
+  // --- Phone dock (left of QR) ---
   { name: "Dashboard", short: "Home", route: "/dashboard", icon: "grid" },
-  { name: "Members", short: "Roster", route: "/members", icon: "people" },
-  {
-    name: "Attendance",
-    short: "Attendance",
-    route: "/attendance",
-    icon: "calendar",
-  },
-  { name: "Trainers", short: "Trainers", route: "/trainers", icon: "barbell" },
-  { name: "Memberships", short: "Plans", route: "/memberships", icon: "card" },
-  { name: "Payments", short: "Payments", route: "/payments", icon: "cash" },
-  { name: "Races", short: "Races", route: "/challenges", icon: "trophy" },
+  { name: "Members", short: "Members", route: "/members", icon: "people" },
+  // --- Center QR (tablet sidebar order; phone dock renders QR separately) ---
   {
     name: "Scanner",
     short: "Scanner",
     route: "/admin-scanner",
     icon: "qr-code",
   },
+  // --- Phone dock (right of QR) ---
+  {
+    name: "Attendance",
+    short: "Attendance",
+    route: "/attendance",
+    icon: "calendar",
+  },
+  // --- Everything else (More sheet on phone / below on tablet) ---
+  { name: "Trainers", short: "Trainers", route: "/trainers", icon: "barbell" },
+  { name: "Memberships", short: "Plans", route: "/memberships", icon: "card" },
+  { name: "Payments", short: "Payments", route: "/payments", icon: "cash" },
+  { name: "Races", short: "Races", route: "/challenges", icon: "trophy" },
   { name: "Memo", short: "Memo", route: "/memo", icon: "document-text" },
 ];
 
 // Phone dock: 2 items LEFT of the QR button, 1 item RIGHT of it (+ "More" on the right).
 // Change these arrays to swap what is shown; everything else goes under "More".
 const LEFT_ROUTES = ["/dashboard", "/members"];
-const RIGHT_ROUTES = ["/payments"];
+const RIGHT_ROUTES = ["/attendance"];
 const QR_ROUTE = "/admin-scanner";
 
 export default function Sidebar({ activeRoute }: SidebarProps) {

@@ -21,7 +21,6 @@ type Tab = {
   label: string;
   icon: keyof typeof Feather.glyphMap;
   route: string;
-  /** Optional count shown as a small red badge. */
   badge?: number;
 };
 
@@ -35,13 +34,13 @@ const ALL_TABS: Tab[] = [
   { label: "Challenges", icon: "flag", route: "/trainer-challenges" },
 ];
 
-// Center QR button route. Change this to your trainer scanner screen.
-const QR_ROUTE = "/trainer-scanner";
+/** QR button opens a 2-option sheet. */
+const SCAN_ROUTE = "/admin-scanner"; // camera scanner
+const PASS_ROUTE = "/trainer-qr"; // trainer's own QR pass (add if missing)
 
-// Dock: 2 items LEFT of the QR, 1 item RIGHT of it, then "More".
-// Anything not listed here automatically goes under "More".
+// Dock: 2 left of QR, 1 right of QR, then More.
 const LEFT_ROUTES = ["/trainer-dashboard", "/trainer-roster"];
-const RIGHT_ROUTES = ["/trainer-pos"];
+const RIGHT_ROUTES = ["/trainer-challenges"];
 
 const pick = (routes: string[]) =>
   routes
@@ -55,7 +54,6 @@ const MORE_ITEMS = ALL_TABS.filter(
   (t) => ![...LEFT_ROUTES, ...RIGHT_ROUTES].includes(t.route),
 );
 
-// Slot order in the dock: [left..., QR spacer, right..., More]
 const QR_SLOT = LEFT.length;
 const MORE_SLOT = LEFT.length + 1 + RIGHT.length;
 const SLOT_COUNT = MORE_SLOT + 1;
@@ -64,7 +62,6 @@ const DOCK_PADDING = 6;
 const QR_SIZE = 60;
 const CORNER = 9;
 
-// Remember the last active slot so the highlight slides between screens.
 let lastActiveSlot = 0;
 
 function TabButton({
@@ -95,12 +92,10 @@ function TabButton({
     inputRange: [0, 1],
     outputRange: [1, 1.18],
   });
-
   const translateY = lift.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -1],
   });
-
   const color = active ? KFitColors.accent : KFitColors.mutedText;
 
   return (
@@ -114,14 +109,12 @@ function TabButton({
     >
       <Animated.View style={{ transform: [{ scale }, { translateY }] }}>
         <Feather name={icon} size={20} color={color} />
-
         {!!badge && badge > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{badge > 9 ? "9+" : badge}</Text>
           </View>
         )}
       </Animated.View>
-
       <Text
         style={[styles.label, { color }, active && styles.labelActive]}
         numberOfLines={1}
@@ -140,23 +133,21 @@ export default function TrainerBottomNav({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [isQrMenuOpen, setIsQrMenuOpen] = useState(false);
 
-  // Challenge store and unseen challenge badge.
   const store = useChallengeStore();
   const newChallenges = unseenCount(store, "trainer");
 
   const badgeFor = (route: string) =>
     route === "/trainer-challenges" ? newChallenges : 0;
 
-  const qrActive = activeRoute === QR_ROUTE;
+  // Highlight ring when on either QR sub-screen.
+  const qrActive = activeRoute === SCAN_ROUTE || activeRoute === PASS_ROUTE;
   const moreIsActive = MORE_ITEMS.some((t) => t.route === activeRoute);
 
-  // Which dock slot is highlighted (-1 = none, e.g. QR screen handles its own ring).
   let activeSlot = -1;
-
   const leftIdx = LEFT.findIndex((t) => t.route === activeRoute);
   const rightIdx = RIGHT.findIndex((t) => t.route === activeRoute);
-
   if (leftIdx >= 0) activeSlot = leftIdx;
   else if (rightIdx >= 0) activeSlot = QR_SLOT + 1 + rightIdx;
   else if (moreIsActive) activeSlot = MORE_SLOT;
@@ -166,14 +157,12 @@ export default function TrainerBottomNav({
 
   useEffect(() => {
     if (activeSlot < 0) return;
-
     Animated.timing(position, {
       toValue: activeSlot,
       duration: 260,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-
     lastActiveSlot = activeSlot;
   }, [activeSlot, position]);
 
@@ -195,37 +184,34 @@ export default function TrainerBottomNav({
     router.replace(route as any);
   };
 
+  const openQrMenu = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsQrMenuOpen(true);
+  };
+
   return (
     <>
       <View
         style={[styles.wrapper, { bottom: Math.max(insets.bottom, 8) + 4 }]}
         pointerEvents="box-none"
       >
-        {/* Raised center QR button */}
+        {/* Raised center QR button → opens scanner / pass sheet */}
         <View style={styles.qrWrap} pointerEvents="box-none">
           <Pressable
-            onPress={() => {
-              if (qrActive) return;
-
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-              router.replace(QR_ROUTE as any);
-            }}
+            onPress={openQrMenu}
             style={({ pressed }) => [
               styles.qrOuter,
               qrActive && styles.qrOuterActive,
               pressed && styles.qrPressed,
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Open QR scanner"
+            accessibilityLabel="Open QR options: Scan member or show my QR"
           >
             <View style={styles.qrInner}>
-              {/* Scanner corner brackets */}
               <View style={[styles.qrCorner, styles.qrCornerTL]} />
               <View style={[styles.qrCorner, styles.qrCornerTR]} />
               <View style={[styles.qrCorner, styles.qrCornerBL]} />
               <View style={[styles.qrCorner, styles.qrCornerBR]} />
-
               <Ionicons name="qr-code" size={24} color={KFitColors.onAccent} />
             </View>
           </Pressable>
@@ -236,7 +222,6 @@ export default function TrainerBottomNav({
           onLayout={onDockLayout}
           accessibilityRole="tablist"
         >
-          {/* Sliding highlight */}
           {tabWidth > 0 && activeSlot >= 0 && (
             <Animated.View
               pointerEvents="none"
@@ -254,13 +239,12 @@ export default function TrainerBottomNav({
               key={tab.route}
               label={tab.label}
               icon={tab.icon}
-              badge={tab.badge}
+              badge={tab.badge ?? badgeFor(tab.route)}
               active={tab.route === activeRoute}
               onPress={() => tab.route !== activeRoute && go(tab.route)}
             />
           ))}
 
-          {/* Spacer slot under the QR button */}
           <View style={styles.tab} pointerEvents="none" />
 
           {RIGHT.map((tab) => (
@@ -268,7 +252,7 @@ export default function TrainerBottomNav({
               key={tab.route}
               label={tab.label}
               icon={tab.icon}
-              badge={tab.badge}
+              badge={tab.badge ?? badgeFor(tab.route)}
               active={tab.route === activeRoute}
               onPress={() => tab.route !== activeRoute && go(tab.route)}
             />
@@ -290,6 +274,91 @@ export default function TrainerBottomNav({
         </View>
       </View>
 
+      {/* ─────────── QR Options Sheet ─────────── */}
+      <Modal
+        visible={isQrMenuOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsQrMenuOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setIsQrMenuOpen(false)}
+        >
+          <Pressable
+            style={[
+              styles.moreSheet,
+              { paddingBottom: Math.max(insets.bottom, 20) },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Scan / My QR</Text>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.qrOptionRow,
+                pressed && styles.qrPressed,
+              ]}
+              onPress={() => {
+                setIsQrMenuOpen(false);
+                go(SCAN_ROUTE);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Open member QR scanner"
+            >
+              <View style={styles.qrOptionIcon}>
+                <Ionicons name="scan" size={22} color={KFitColors.onAccent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.qrOptionTitle}>Scan Member</Text>
+                <Text style={styles.qrOptionSub}>
+                  Open camera to scan a member's pass
+                </Text>
+              </View>
+              <Feather
+                name="chevron-right"
+                size={18}
+                color={KFitColors.mutedText}
+              />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.qrOptionRow,
+                pressed && styles.qrPressed,
+              ]}
+              onPress={() => {
+                setIsQrMenuOpen(false);
+                go(PASS_ROUTE);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Show my trainer QR pass"
+            >
+              <View style={styles.qrOptionIcon}>
+                <Ionicons
+                  name="qr-code"
+                  size={22}
+                  color={KFitColors.onAccent}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.qrOptionTitle}>My QR Pass</Text>
+                <Text style={styles.qrOptionSub}>
+                  Show your trainer access code
+                </Text>
+              </View>
+              <Feather
+                name="chevron-right"
+                size={18}
+                color={KFitColors.mutedText}
+              />
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ─────────── More Sheet ─────────── */}
       <Modal
         visible={isMoreOpen}
         transparent
@@ -313,7 +382,6 @@ export default function TrainerBottomNav({
             {MORE_ITEMS.map((tab) => {
               const active = tab.route === activeRoute;
               const challengeBadge = badgeFor(tab.route);
-
               return (
                 <Pressable
                   key={tab.route}
@@ -324,7 +392,6 @@ export default function TrainerBottomNav({
                   ]}
                   onPress={() => {
                     setIsMoreOpen(false);
-
                     if (!active) go(tab.route);
                   }}
                 >
@@ -342,7 +409,6 @@ export default function TrainerBottomNav({
                       }
                     />
                   </View>
-
                   <Text
                     style={[
                       styles.moreItemText,
@@ -351,8 +417,7 @@ export default function TrainerBottomNav({
                   >
                     {tab.label}
                   </Text>
-
-                  {challengeBadge > 0 ? (
+                  {challengeBadge > 0 && (
                     <View
                       style={[
                         styles.badge,
@@ -368,7 +433,7 @@ export default function TrainerBottomNav({
                         {challengeBadge > 9 ? "9+" : challengeBadge}
                       </Text>
                     </View>
-                  ) : null}
+                  )}
                 </Pressable>
               );
             })}
@@ -431,14 +496,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 4,
   },
-  label: {
-    fontSize: 10,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  labelActive: {
-    fontWeight: "800",
-  },
+  label: { fontSize: 10, fontWeight: "600", letterSpacing: 0.3 },
+  labelActive: { fontWeight: "800" },
   badge: {
     position: "absolute",
     top: -6,
@@ -451,13 +510,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  badgeText: {
-    color: "#000",
-    fontSize: 8,
-    fontWeight: "900",
-  },
+  badgeText: { color: "#000", fontSize: 8, fontWeight: "900" },
 
-  /* Center QR button */
   qrWrap: {
     position: "absolute",
     top: 0,
@@ -480,12 +534,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 12,
   },
-  qrOuterActive: {
-    borderColor: KFitColors.accent,
-  },
-  qrPressed: {
-    transform: [{ scale: 0.94 }],
-  },
+  qrOuterActive: { borderColor: KFitColors.accent },
+  qrPressed: { transform: [{ scale: 0.94 }] },
   qrInner: {
     flex: 1,
     borderRadius: QR_SIZE / 2,
@@ -530,7 +580,34 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 3,
   },
 
-  /* More bottom sheet */
+  qrOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    minHeight: 64,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
+  qrOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent,
+  },
+  qrOptionTitle: {
+    color: KFitColors.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  qrOptionSub: {
+    color: KFitColors.mutedText,
+    fontSize: 12,
+    marginTop: 2,
+  },
+
   modalBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
@@ -569,9 +646,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 8,
   },
-  moreItemActive: {
-    backgroundColor: KFitColors.accent + "1F",
-  },
+  moreItemActive: { backgroundColor: KFitColors.accent + "1F" },
   moreIconBox: {
     width: 34,
     height: 34,
@@ -591,7 +666,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
-  moreItemTextActive: {
-    color: KFitColors.accent,
-  },
+  moreItemTextActive: { color: KFitColors.accent },
 });

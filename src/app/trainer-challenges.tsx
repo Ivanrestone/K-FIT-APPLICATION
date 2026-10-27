@@ -1,16 +1,16 @@
 import {
-    ChallengeFormModal,
-    Leaderboard,
-    ProgressBar,
+  ChallengeFormModal,
+  Leaderboard,
+  ProgressBar,
 } from "@/components/ChallengeParts";
 import TrainerBottomNav from "@/components/TrainerBottomNav";
 import TrainerHeader from "@/components/TrainerHeader";
 import { KFitColors } from "@/constants/theme";
 import {
-    markChallengesSeen,
-    suggestChallenge,
-    timeLeft,
-    useChallengeStore,
+  markChallengesSeen,
+  suggestChallenge,
+  timeLeft,
+  useChallengeStore,
 } from "@/lib/challenges-store";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
