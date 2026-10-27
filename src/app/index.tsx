@@ -39,19 +39,21 @@ const LOCAL_DEV_ACCOUNTS: Record<string, { password: string; route: string }> = 
   "qrcode@gmail.com": { password: "qrcode123", route: "/display" },
 };
 
-type AppRole = "member" | "coach" | "admin";
+type AppRole = "member" | "coach" | "admin" | "trainer";
 type AuthMode = "sign-in" | "sign-up" | "verify-email";
 
 function getDashboardRoute(role: unknown) {
-  switch (role) {
-    case "member":
-      return "/member-dashboard" as const;
-    case "coach":
-      return "/trainer-dashboard" as const;
+  const normalized =
+    typeof role === "string" ? role.toLowerCase().trim() : "";
+  switch (normalized) {
     case "admin":
       return "/dashboard" as const;
+    case "trainer":
+    case "coach":
+      return "/trainer-dashboard" as const;
+    case "member":
     default:
-      throw new Error("Your account role is not configured.");
+      return "/member-dashboard" as const;
   }
 }
 
@@ -219,6 +221,25 @@ function ConfiguredHomeScreen() {
       const client = clientResult.client;
       const currentUserId = userId ?? user?.id;
 
+      // 1. Prioritize Clerk's user.publicMetadata.role
+      const metadataRole = (
+        user?.publicMetadata as Record<string, unknown> | undefined
+      )?.role;
+      const clerkRole =
+        typeof metadataRole === "string" ? metadataRole.toLowerCase().trim() : null;
+
+      if (clerkRole) {
+        // Background sync profile to Supabase
+        void client.functions
+          .invoke("provision-user", {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          })
+          .catch((err) => console.warn("[Background Provision Notice]:", err));
+
+        router.replace(getDashboardRoute(clerkRole));
+        return;
+      }
+
       // 4. Graceful Fallback: If a profile already exists in Supabase, fetch and route immediately
       if (currentUserId) {
         try {
@@ -358,10 +379,29 @@ function ConfiguredHomeScreen() {
     }
   }, [clientResult, email, getToken, router, user, userId]);
 
+  // Role-based routing effect using Clerk's user.publicMetadata.role
   useEffect(() => {
     if (!isLoaded || !isSignedIn) {
       return;
     }
+
+    // 1. Read role from Clerk's publicMetadata via useUser() hook
+    const metadataRole = (
+      user?.publicMetadata as Record<string, unknown> | undefined
+    )?.role;
+    const role =
+      typeof metadataRole === "string" ? metadataRole.toLowerCase().trim() : null;
+
+    // 2. Redirect/routing effect based on user.publicMetadata.role:
+    // - If role === 'admin', redirect to the admin group / dashboard (/dashboard)
+    // - If role === 'trainer', redirect to the trainer group / dashboard (/trainer-dashboard)
+    // - If there is no role or it equals 'member', redirect to default member dashboard (/member-dashboard)
+    if (role === "admin" || role === "trainer" || role === "coach") {
+      router.replace(getDashboardRoute(role));
+      void Promise.resolve().then(() => provisionAndRoute());
+      return;
+    }
+
     // Clerk marks new sessions as 'pending' when session tasks are configured
     // in the dashboard (e.g. email verification, org membership). K-Fit does
     // not use Clerk session tasks — getToken() works on pending sessions and
@@ -369,7 +409,7 @@ function ConfiguredHomeScreen() {
     void Promise.resolve().then(() => {
       return provisionAndRoute();
     });
-  }, [isLoaded, isSignedIn, provisionAndRoute]);
+  }, [isLoaded, isSignedIn, user, provisionAndRoute, router]);
 
   const handleGoogleLogin = async () => {
     setIsSubmitting(true);

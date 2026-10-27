@@ -18,6 +18,7 @@ type ClerkUser = {
   first_name?: unknown;
   last_name?: unknown;
   primary_email_address_id?: unknown;
+  public_metadata?: Record<string, unknown>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -108,7 +109,21 @@ async function provisionUser(request: Request): Promise<Response> {
     return jsonResponse({ error: "Profile service is not configured." }, 500);
   }
 
-  // 1. Graceful Fallback: Check if profile already exists in Supabase
+  // 1. Resolve role from Clerk public metadata
+  const clerkPublicRole =
+    isRecord(clerkUser.public_metadata) &&
+    typeof clerkUser.public_metadata.role === "string"
+      ? clerkUser.public_metadata.role.toLowerCase().trim()
+      : null;
+
+  const resolvedDbRole =
+    clerkPublicRole === "admin"
+      ? "admin"
+      : clerkPublicRole === "trainer" || clerkPublicRole === "coach"
+        ? "coach"
+        : "member";
+
+  // 2. Graceful Fallback: Check if profile already exists in Supabase
   const { data: existingUser } = await admin
     .from("users")
     .select("*")
@@ -122,6 +137,15 @@ async function provisionUser(request: Request): Promise<Response> {
       existingUser.role === "coach" ||
       existingUser.role === "admin")
   ) {
+    // If Clerk role has updated (e.g. upgraded to admin or coach/trainer), sync to Supabase
+    if (clerkPublicRole && existingUser.role !== resolvedDbRole) {
+      await admin
+        .from("users")
+        .update({ role: resolvedDbRole })
+        .eq("id", userId);
+      existingUser.role = resolvedDbRole;
+    }
+
     // Ensure default subscriptions exist if missing
     await admin
       .from("subscriptions_app")
@@ -133,7 +157,7 @@ async function provisionUser(request: Request): Promise<Response> {
     return jsonResponse({ role: existingUser.role, profile: existingUser });
   }
 
-  // 2. Clean Upsert: Use upsert with onConflict: 'id'
+  // 3. Clean Upsert: Use upsert with onConflict: 'id'
   const email = getPrimaryEmail(clerkUser);
   const firstName = getOptionalString(clerkUser.first_name);
   const lastName = getOptionalString(clerkUser.last_name);
@@ -148,7 +172,7 @@ async function provisionUser(request: Request): Promise<Response> {
         first_name: firstName || null,
         last_name: lastName || null,
         full_name: fullName || null,
-        role: "member",
+        role: resolvedDbRole,
       },
       { onConflict: "id" }
     )
