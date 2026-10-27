@@ -41,7 +41,7 @@ export function useRegisterMember() {
       const clerkUserId = `user_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
       // Step 2: Provision user profile in Supabase
-      const { data: profileData, error: profileError } = await supabase.rpc(
+      const { error: profileError } = await supabase.rpc(
         'provision_user_profile',
         {
           p_user_id: clerkUserId,
@@ -62,14 +62,15 @@ export function useRegisterMember() {
       // Use on conflict do nothing to handle existing subscriptions
       const { error: appSubError } = await supabase
         .from('subscriptions_app')
-        .insert({
-          user_id: clerkUserId,
-          active: false,
-          expires_at: null,
-          cancelled_at: null,
-        })
-        .onConflict('user_id')
-        .ignore();
+        .upsert(
+          {
+            user_id: clerkUserId,
+            active: false,
+            expires_at: null,
+            cancelled_at: null,
+          },
+          { onConflict: 'user_id', ignoreDuplicates: true }
+        );
 
       if (appSubError && appSubError.code !== '23505') {
         console.error('App subscription error:', appSubError);
@@ -78,14 +79,15 @@ export function useRegisterMember() {
 
       const { error: gymSubError } = await supabase
         .from('subscriptions_gym')
-        .insert({
-          user_id: clerkUserId,
-          active: false,
-          expires_at: null,
-          cancelled_at: null,
-        })
-        .onConflict('user_id')
-        .ignore();
+        .upsert(
+          {
+            user_id: clerkUserId,
+            active: false,
+            expires_at: null,
+            cancelled_at: null,
+          },
+          { onConflict: 'user_id', ignoreDuplicates: true }
+        );
 
       if (gymSubError && gymSubError.code !== '23505') {
         console.error('Gym subscription error:', gymSubError);
