@@ -8,16 +8,29 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
+  LayoutAnimation,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+// Enable LayoutAnimation on Android
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 /* ───────────────────────── Theme & types ───────────────────────── */
 
@@ -67,6 +80,8 @@ type MemberHeaderProps = {
   setNotifications: React.Dispatch<
     React.SetStateAction<MemberLocalNotification[]>
   >;
+  onOpenSettings?: (key: "notifications" | "privacy" | "language") => void;
+  onOpenSupport?: (key: "help" | "contact" | "terms" | "privacy") => void;
 };
 
 type AccountLink = {
@@ -76,10 +91,14 @@ type AccountLink = {
   route: string;
 };
 
-/**
- * Avatar dropdown rows. Profile + Membership + Payments all live here.
- * Payments was moved out of the bottom nav to avoid duplication.
- */
+type SubLink = {
+  label: string;
+  hint: string;
+  icon: keyof typeof Feather.glyphMap;
+  value?: string;
+  onPress?: () => void;
+};
+
 const ACCOUNT_LINKS: AccountLink[] = [
   {
     label: "Profile",
@@ -219,6 +238,92 @@ function NotificationsPanel({
   );
 }
 
+/* ───────────────────────── Accordion section ───────────────────────── */
+
+function AccordionSection({
+  title,
+  icon,
+  badge,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  icon: keyof typeof Feather.glyphMap;
+  badge?: number;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const rotate = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotate, {
+      toValue: expanded ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, rotate]);
+
+  const chevronRotate = rotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "90deg"],
+  });
+
+  return (
+    <View>
+      <TouchableOpacity
+        style={styles.accordionHeader}
+        onPress={onToggle}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={`${title}, ${expanded ? "expanded" : "collapsed"}`}
+      >
+        <View style={styles.menuIcon}>
+          <Feather name={icon} size={15} color={C.accent} />
+        </View>
+        <Text style={styles.accordionTitle}>{title}</Text>
+        {badge !== undefined && badge > 0 ? (
+          <View style={styles.menuBadge}>
+            <Text style={styles.menuBadgeText}>{badge > 9 ? "9+" : badge}</Text>
+          </View>
+        ) : null}
+        <Animated.View style={{ transform: [{ rotate: chevronRotate }] }}>
+          <Feather name="chevron-right" size={16} color={C.muted} />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {expanded ? <View style={styles.accordionBody}>{children}</View> : null}
+    </View>
+  );
+}
+
+/* ───────────────────────── Sub-link row ───────────────────────── */
+
+function SubLinkRow({ link }: { link: SubLink }) {
+  return (
+    <TouchableOpacity
+      style={styles.subRow}
+      onPress={link.onPress}
+      activeOpacity={0.75}
+      accessibilityRole="button"
+      accessibilityLabel={link.label}
+    >
+      <View style={styles.subIcon}>
+        <Feather name={link.icon} size={13} color={C.accent} />
+      </View>
+      <View style={styles.flex}>
+        <Text style={styles.subLabel}>{link.label}</Text>
+        <Text style={styles.subHint}>{link.hint}</Text>
+      </View>
+      {link.value ? <Text style={styles.subValue}>{link.value}</Text> : null}
+      <Feather name="chevron-right" size={14} color={C.muted} />
+    </TouchableOpacity>
+  );
+}
+
 /* ───────────────────────── Account panel ───────────────────────── */
 
 function AccountPanel({
@@ -230,6 +335,8 @@ function AccountPanel({
   activeRoute,
   onNavigate,
   onLogout,
+  settingsLinks,
+  supportLinks,
 }: {
   name: string;
   tier: string;
@@ -239,7 +346,21 @@ function AccountPanel({
   activeRoute?: string;
   onNavigate: (route: string) => void;
   onLogout: () => void;
+  settingsLinks: SubLink[];
+  supportLinks: SubLink[];
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+
+  const toggle = (
+    setter: React.Dispatch<React.SetStateAction<boolean>>,
+    open: boolean,
+  ) => {
+    void Haptics.selectionAsync();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setter(!open);
+  };
+
   return (
     <>
       <View style={styles.profileTop}>
@@ -254,6 +375,7 @@ function AccountPanel({
         </View>
       </View>
 
+      {/* Account links — always visible */}
       {ACCOUNT_LINKS.map((link) => {
         const active = activeRoute === link.route;
         return (
@@ -282,6 +404,34 @@ function AccountPanel({
           </TouchableOpacity>
         );
       })}
+
+      <View style={styles.divider} />
+
+      {/* Settings accordion */}
+      <AccordionSection
+        title="Settings"
+        icon="settings"
+        expanded={settingsOpen}
+        onToggle={() => toggle(setSettingsOpen, settingsOpen)}
+      >
+        {settingsLinks.map((link) => (
+          <SubLinkRow key={link.label} link={link} />
+        ))}
+      </AccordionSection>
+
+      <View style={styles.divider} />
+
+      {/* Help & Support accordion */}
+      <AccordionSection
+        title="Help & Support"
+        icon="help-circle"
+        expanded={supportOpen}
+        onToggle={() => toggle(setSupportOpen, supportOpen)}
+      >
+        {supportLinks.map((link) => (
+          <SubLinkRow key={link.label} link={link} />
+        ))}
+      </AccordionSection>
 
       <View style={styles.divider} />
 
@@ -316,6 +466,8 @@ export default function MemberHeader({
   activeRoute,
   notifications = [],
   setNotifications,
+  onOpenSettings,
+  onOpenSupport,
 }: MemberHeaderProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -376,12 +528,81 @@ export default function MemberHeader({
     onLogout();
   };
 
+  const settingsLinks: SubLink[] = [
+    {
+      label: "Notifications",
+      hint: "Push alerts & reminders",
+      icon: "bell",
+      onPress: () => {
+        closePanel();
+        onOpenSettings?.("notifications");
+      },
+    },
+    {
+      label: "Privacy Settings",
+      hint: "Who can see your activity",
+      icon: "lock",
+      onPress: () => {
+        closePanel();
+        onOpenSettings?.("privacy");
+      },
+    },
+    {
+      label: "Language",
+      hint: "App display language",
+      icon: "globe",
+      value: "English",
+      onPress: () => {
+        closePanel();
+        onOpenSettings?.("language");
+      },
+    },
+  ];
+
+  const supportLinks: SubLink[] = [
+    {
+      label: "Help Center",
+      hint: "Guides & FAQs",
+      icon: "help-circle",
+      onPress: () => {
+        closePanel();
+        onOpenSupport?.("help");
+      },
+    },
+    {
+      label: "Contact Support",
+      hint: "We're here to help",
+      icon: "message-square",
+      onPress: () => {
+        closePanel();
+        onOpenSupport?.("contact");
+      },
+    },
+    {
+      label: "Terms of Service",
+      hint: "Rules of the club",
+      icon: "file-text",
+      onPress: () => {
+        closePanel();
+        onOpenSupport?.("terms");
+      },
+    },
+    {
+      label: "Privacy Policy",
+      hint: "How we handle your data",
+      icon: "shield",
+      onPress: () => {
+        closePanel();
+        onOpenSupport?.("privacy");
+      },
+    },
+  ];
+
   const panelTop = insets.top + 62;
 
   return (
     <>
       <View style={styles.topBar}>
-        {/* LEFT: name, tier, streak */}
         <View style={styles.titleBlock}>
           <View style={styles.nameRow}>
             <Text style={styles.topName} numberOfLines={1}>
@@ -399,7 +620,6 @@ export default function MemberHeader({
           </View>
         </View>
 
-        {/* RIGHT 1: bell → notifications */}
         <TouchableOpacity
           style={styles.iconBtn}
           onPress={() => openPanel("notifications")}
@@ -417,7 +637,6 @@ export default function MemberHeader({
           )}
         </TouchableOpacity>
 
-        {/* RIGHT 2: avatar → account menu (Profile, Membership, Payments, Log out) */}
         <TouchableOpacity
           style={styles.avatarRing}
           onPress={() => openPanel("profile")}
@@ -472,6 +691,8 @@ export default function MemberHeader({
                 activeRoute={activeRoute}
                 onNavigate={navigateTo}
                 onLogout={handleLogout}
+                settingsLinks={settingsLinks}
+                supportLinks={supportLinks}
               />
             )}
           </Pressable>
@@ -538,7 +759,7 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { color: C.bg, fontSize: 9, fontWeight: "900" },
 
-  /* Avatar (right) */
+  /* Avatar */
   avatarRing: { width: 42, height: 42 },
   avatar: {
     flex: 1,
@@ -570,8 +791,8 @@ const styles = StyleSheet.create({
   panel: {
     width: "100%",
     maxWidth: 340,
-    gap: 4,
-    padding: 14,
+    gap: 2,
+    padding: 12,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: C.border,
@@ -717,6 +938,60 @@ const styles = StyleSheet.create({
     backgroundColor: C.error,
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 4,
   },
   menuBadgeText: { color: "#000", fontSize: 9, fontWeight: "900" },
+
+  /* Accordion */
+  accordionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  accordionTitle: {
+    flex: 1,
+    color: C.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  accordionBody: {
+    marginLeft: 20,
+    marginTop: 2,
+    marginBottom: 4,
+    paddingLeft: 16,
+    borderLeftWidth: 1,
+    borderLeftColor: C.border,
+    gap: 2,
+  },
+
+  /* Sub rows (inside accordion) */
+  subRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  subIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  subLabel: { color: C.text, fontSize: 12, fontWeight: "600" },
+  subHint: { color: C.muted, fontSize: 10, marginTop: 1 },
+  subValue: {
+    color: C.accent,
+    fontSize: 11,
+    fontWeight: "700",
+    marginRight: 4,
+  },
 });
