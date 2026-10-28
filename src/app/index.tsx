@@ -1,26 +1,25 @@
 import { KFitColors, Spacing } from "@/constants/theme";
-import { useAuth, useClerk, useOAuth, useSSO, useUser } from "@clerk/expo";
-import { useSignIn, useSignUp } from "@clerk/expo/legacy";
+import { useLogin } from "@/hooks/use-login";
 import { createMemberSupabaseClient } from "@/utils/supabase";
+import { useAuth, useClerk, useOAuth, useUser } from "@clerk/expo";
+import { useSignIn, useSignUp } from "@clerk/expo/legacy";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import * as AuthSession from "expo-auth-session";
-import { makeRedirectUri } from "expo-auth-session";
 import { Image } from "expo-image";
-import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+    useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -163,6 +162,7 @@ function ConfiguredHomeScreen() {
     signUp,
   } = useSignUp();
   const { startOAuthFlow } = useOAuth({ strategy: "oauth_google" });
+  const { login: supabaseLogin, loading: supabaseLoginLoading } = useLogin();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
@@ -479,28 +479,44 @@ function ConfiguredHomeScreen() {
       return;
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedPassword = password.trim().toLowerCase();
-
-    const localAccount = LOCAL_DEV_ACCOUNTS[normalizedEmail];
-    if (localAccount) {
-      if (localAccount.password.toLowerCase() === normalizedPassword) {
-        setAuthError(null);
-        router.replace(localAccount.route as any);
-        return;
-      }
-      setAuthError("Invalid password for test account.");
-      return;
-    }
-
-    if (!isSignInLoaded || !signIn || !activateSignIn) {
-      setAuthError("Sign in is still loading. Please try again.");
-      return;
-    }
-
     setIsSubmitting(true);
     setAuthError(null);
+
     try {
+      // Try Supabase login first
+      const result = await supabaseLogin({
+        email: email.trim(),
+        password: password.trim(),
+      });
+
+      if (result.success && result.user) {
+        // Route based on user role from Supabase
+        const route = getDashboardRoute(result.user.role);
+        router.replace(route);
+        return;
+      }
+
+      // Fallback to local dev accounts
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPassword = password.trim().toLowerCase();
+      const localAccount = LOCAL_DEV_ACCOUNTS[normalizedEmail];
+      
+      if (localAccount) {
+        if (localAccount.password.toLowerCase() === normalizedPassword) {
+          setAuthError(null);
+          router.replace(localAccount.route as any);
+          return;
+        }
+        setAuthError("Invalid password for test account.");
+        return;
+      }
+
+      // Fallback to Clerk if Supabase and local accounts fail
+      if (!isSignInLoaded || !signIn || !activateSignIn) {
+        setAuthError("Sign in is still loading. Please try again.");
+        return;
+      }
+
       let attempt: Awaited<ReturnType<typeof signIn.create>>;
       try {
         attempt = await signIn.create({
