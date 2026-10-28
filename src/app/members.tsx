@@ -388,7 +388,12 @@ export default function MembersScreen() {
               ) : isWide ? (
                 filteredMembers.map((m) => (
                   <View key={m.id} style={styles.tableRow}>
-                    <View style={[styles.memberInfo, { flex: 2.2 }]}>
+                    <Pressable
+                      style={[styles.memberInfo, { flex: 2.2 }]}
+                      onPress={() => router.push(`/member-attendance/${encodeURIComponent(m.id)}` as any)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View ${m.name} attendance`}
+                    >
                       <View style={styles.memberAvatar}>
                         <Text style={styles.avatarText}>
                           {initials(m.name)}
@@ -402,7 +407,7 @@ export default function MembersScreen() {
                           {m.email}
                         </Text>
                       </View>
-                    </View>
+                    </Pressable>
                     <Text
                       style={[
                         styles.membershipText,
@@ -424,7 +429,13 @@ export default function MembersScreen() {
                 ))
               ) : (
                 filteredMembers.map((m) => (
-                  <View key={m.id} style={styles.memberCard}>
+                  <Pressable
+                    key={m.id}
+                    style={styles.memberCard}
+                    onPress={() => router.push(`/member-attendance/${encodeURIComponent(m.id)}` as any)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${m.name} attendance`}
+                  >
                     <View style={styles.cardTop}>
                       <View style={styles.memberAvatar}>
                         <Text style={styles.avatarText}>
@@ -479,7 +490,7 @@ export default function MembersScreen() {
                         <Text style={styles.metaText}>{m.joinedDate}</Text>
                       </View>
                     </View>
-                  </View>
+                  </Pressable>
                 ))
               )}
             </View>
@@ -956,6 +967,7 @@ const styles = StyleSheet.create({
     color: KFitColors.mutedText,
   },
   planOptionTextOn: { color: KFitColors.accent },
+  saveButtonDisabled: { opacity: 0.55 },
   saveButtonWrapper: {
     marginTop: 16,
     borderRadius: 12,

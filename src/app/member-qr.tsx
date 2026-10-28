@@ -1,12 +1,13 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
 import { KFitColors } from "@/constants/theme";
+import { useAttendance } from "@/hooks/use-attendance";
+import { createQrPayload, currentTotpCounter, generateTotp, generateTotpSecret, TOTP_PERIOD_SECONDS } from "@/utils/totp";
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
 import { Feather } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
-  AppStateStatus,
   ImageBackground,
   ScrollView,
   StyleSheet,
@@ -15,32 +16,17 @@ import {
   View,
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
+import * as SecureStore from "expo-secure-store";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Clears the floating nav (dock + raised QR button + safe area).
 const NAV_CLEARANCE = 140;
-const PASS_LIFETIME = 30; // seconds a code stays valid
+const PASS_LIFETIME = TOTP_PERIOD_SECONDS; // seconds a code stays valid
 const URGENT_AT = 10; // seconds left when the countdown turns red
 const QR_SIZE = 210;
 
-// Replace with real data when available.
-const LAST_CHECK_IN = "Oct 19, 06:00 PM";
-const FALLBACK_MEMBER_ID = "PM-1042";
 
 type FeatherName = keyof typeof Feather.glyphMap;
-
-/**
- * Builds the string encoded in the QR code.
- * IMPORTANT: for production, request a signed, short-lived token from your
- * backend here instead. A code generated only on the phone can be forged,
- * because the kiosk has no way to verify it.
- */
-function createPassToken(memberId: string) {
-  const nonce =
-    Math.random().toString(36).slice(2, 10) +
-    Math.random().toString(36).slice(2, 10);
-  return `FORM|${memberId}|${Date.now()}|${nonce}`;
-}
 
 /* ---------------------------- Small building blocks ---------------------------- */
 
@@ -111,15 +97,18 @@ function Step({ number, text }: { number: number; text: string }) {
 
 export default function MemberQRScreen() {
   const { isSigningOut, logout } = useLogout();
-  const { profile } = useMemberProfile();
+  const { profile, isLoading: profileLoading, error: profileError } = useMemberProfile();
+  const { provision } = useAttendance();
 
+  const [secret, setSecret] = useState<string | null>(null);
   const [token, setToken] = useState("");
   const [expiresAt, setExpiresAt] = useState(0);
+  const [passError, setPassError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(PASS_LIFETIME);
   const [hidden, setHidden] = useState(false);
-  const appState = useRef<AppStateStatus>(AppState.currentState);
+  const isGeneratingRef = useRef(false);
 
-  const memberId = profile?.id || FALLBACK_MEMBER_ID;
+  const memberId = profile?.id;
 
   const today = useMemo(
     () =>
@@ -138,31 +127,71 @@ export default function MemberQRScreen() {
   const fullName = nameParts.join(" ") || "Member";
 
   /* Generate a fresh code and restart the countdown. */
-  const generate = useCallback(() => {
-    setToken(createPassToken(memberId));
-    setExpiresAt(Date.now() + PASS_LIFETIME * 1000);
-    setSecondsLeft(PASS_LIFETIME);
+  const generate = useCallback(async (activeSecret: string) => {
+    if (isGeneratingRef.current) return;
+    isGeneratingRef.current = true;
+    try {
+      const counter = currentTotpCounter();
+      const code = await generateTotp(activeSecret, counter);
+      if (!memberId) throw new Error("Member profile is unavailable.");
+      setToken(createQrPayload(memberId, counter, code));
+      setExpiresAt((counter + 1) * PASS_LIFETIME * 1000);
+      setSecondsLeft(Math.max(1, Math.ceil(((counter + 1) * PASS_LIFETIME * 1000 - Date.now()) / 1000)));
+      setPassError(null);
+    } catch {
+      setToken("");
+      setPassError("Could not generate your secure QR pass.");
+    } finally {
+      isGeneratingRef.current = false;
+    }
   }, [memberId]);
 
   // First code (and a new one if the member id changes).
   useEffect(() => {
-    generate();
-  }, [generate]);
+    if (!memberId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        setToken("");
+        setPassError(null);
+        const key = `kfit.attendance.totp.${memberId}`;
+        let stored = await SecureStore.getItemAsync(key);
+        if (stored) {
+          await provision(stored);
+          if (!cancelled) {
+            setSecret(stored);
+            await generate(stored);
+          }
+          return;
+        }
+        stored = await generateTotpSecret();
+        await provision(stored);
+        await SecureStore.setItemAsync(key, stored);
+        if (!cancelled) {
+          setSecret(stored);
+          await generate(stored);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setToken("");
+          setPassError(error instanceof Error ? error.message : "Could not provision your secure QR pass.");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [generate, memberId, provision]);
 
   // Countdown based on the real clock, so it stays accurate after the app
   // has been in the background.
   useEffect(() => {
-    if (!expiresAt) return;
+    if (!expiresAt || !secret || hidden) return;
     const id = setInterval(() => {
       const remaining = Math.ceil((expiresAt - Date.now()) / 1000);
-      if (remaining <= 0) {
-        generate();
-      } else {
-        setSecondsLeft(remaining);
-      }
+      if (remaining <= 0) void generate(secret);
+      else setSecondsLeft(remaining);
     }, 1000);
     return () => clearInterval(id);
-  }, [expiresAt, generate]);
+  }, [expiresAt, generate, hidden, secret]);
 
   // Hide the code whenever the app leaves the foreground (app switcher
   // screenshots, screen recording). The member taps to reveal it again.
@@ -171,14 +200,13 @@ export default function MemberQRScreen() {
       if (next.match(/inactive|background/)) {
         setHidden(true);
       }
-      appState.current = next;
     });
     return () => sub.remove();
   }, []);
 
-  const reveal = () => {
-    // If the code expired while hidden, give them a fresh one.
-    if (Date.now() >= expiresAt) generate();
+  const reveal = async () => {
+    // Keep the old code concealed until a fresh time-step has been generated.
+    if (secret && Date.now() >= expiresAt) await generate(secret);
     setHidden(false);
   };
 
@@ -248,7 +276,7 @@ export default function MemberQRScreen() {
                   backgroundColor="#FFFFFF"
                 />
               ) : (
-                <Text style={styles.loadingText}>Generating…</Text>
+                <Text style={styles.loadingText}>{passError ?? "Preparing secure pass…"}</Text>
               )}
             </View>
 
@@ -256,7 +284,7 @@ export default function MemberQRScreen() {
             <View style={styles.countdownRow}>
               <Text style={styles.metaLabel}>Refreshes in</Text>
               <Text style={[styles.countdownValue, urgent && styles.urgent]}>
-                {secondsLeft}s
+                {secret ? `${secondsLeft}s` : "—"}
               </Text>
             </View>
             <View style={styles.progressTrack}>
@@ -288,7 +316,7 @@ export default function MemberQRScreen() {
             <GoldButton
               label="Generate new code"
               icon="refresh-cw"
-              onPress={generate}
+              onPress={() => { if (secret) void generate(secret); }}
             />
             <TouchableOpacity
               style={styles.outlineButton}
@@ -338,11 +366,13 @@ export default function MemberQRScreen() {
           <Section title="Check-in Status" icon="map-pin">
             <View style={styles.card}>
               <View style={styles.statusChip}>
-                <View style={styles.statusDot} />
-                <Text style={styles.statusChipText}>Ready to check in</Text>
+                <View style={[styles.statusDot, passError && styles.statusDotError]} />
+                <Text style={[styles.statusChipText, passError && styles.statusChipTextError]}>
+                  {passError || profileError ? "Pass unavailable" : secret ? "Ready to check in" : "Securing your pass"}
+                </Text>
               </View>
               <Text style={styles.statusTime}>
-                Last check-in: {LAST_CHECK_IN}
+                {passError ?? profileError ?? (profileLoading ? "Loading your member profile…" : "Your QR is verified online at the gym entrance.")}
               </Text>
             </View>
           </Section>
@@ -632,7 +662,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: KFitColors.accent,
   },
+  statusDotError: { backgroundColor: KFitColors.error },
   statusChipText: { fontSize: 12, fontWeight: "800", color: KFitColors.accent },
+  statusChipTextError: { color: KFitColors.error },
   statusTime: { fontSize: 13, color: KFitColors.mutedText },
 
   /* Footer */

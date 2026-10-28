@@ -5,21 +5,21 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import Sidebar from '@/components/Sidebar';
+import { useAttendance, type AttendanceScanResult } from '@/hooks/use-attendance';
 
 const SCAN_COOLDOWN_MS = 3000;
 
 export default function AdminScannerScreen() {
-  const router = useRouter();
+  const attendance = useAttendance();
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
+  const isScanningRef = useRef(false);
   const [statusMessage, setStatusMessage] = useState('Ready to scan');
-  const [scanResult, setScanResult] = useState<any>(null);
+  const [scanResult, setScanResult] = useState<AttendanceScanResult | { outcome: 'error'; error: string; member?: { id: string; name: string } } | null>(null);
   const resetScanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -33,55 +33,31 @@ export default function AdminScannerScreen() {
       if (resetScanTimer.current) {
         clearTimeout(resetScanTimer.current);
       }
+      isScanningRef.current = false;
     };
   }, []);
 
-  const handleBarcodeScanned = ({ data }: { data: string }) => {
-    if (isScanning) {
-      return;
-    }
-
+  const handleBarcodeScanned = async ({ data }: { data: string }) => {
+    if (isScanningRef.current) return;
+    isScanningRef.current = true;
     setIsScanning(true);
-    
-    // Parse QR data: "memberId|timestamp|hash"
-    const parts = data.split('|');
-    if (parts.length === 3) {
-      const memberId = parts[0];
-      const timestamp = parts[1];
-      const hash = parts[2];
-
-      // Validate TOTP (simplified - in production, verify hash properly)
-      const now = Date.now();
-      const qrTime = parseInt(timestamp);
-      const timeDiff = Math.abs(now - qrTime);
-
-      if (timeDiff < 30000) {
-        // Valid QR code (within 30 seconds)
-        setScanResult({
-          memberId,
-          status: 'success',
-          message: 'Check-in successful',
-        });
-        setStatusMessage(`Check-in: ${memberId}`);
+    setStatusMessage('Verifying pass…');
+    try {
+      const result = await attendance.scan(data);
+      setScanResult(result);
+      if (result.outcome === 'check_in' || result.outcome === 'check_out') {
+        const label = result.outcome === 'check_in' ? 'Checked in' : 'Checked out';
+        setStatusMessage(`${label}: ${result.member?.name ?? 'Member'}`);
       } else {
-        // Expired QR code
-        setScanResult({
-          memberId,
-          status: 'expired',
-          message: 'QR code expired',
-        });
-        setStatusMessage('QR code expired');
+        setStatusMessage(result.error ?? 'Pass rejected');
       }
-    } else {
-      // Invalid QR format
-      setScanResult({
-        status: 'invalid',
-        message: 'Invalid QR code',
-      });
-      setStatusMessage('Invalid QR code');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Attendance service unavailable.';
+      setScanResult({ outcome: 'error', error: message });
+      setStatusMessage(message);
     }
-
     resetScanTimer.current = setTimeout(() => {
+      isScanningRef.current = false;
       setIsScanning(false);
       setStatusMessage('Ready to scan');
       setScanResult(null);
@@ -146,23 +122,25 @@ export default function AdminScannerScreen() {
                 <View style={[styles.corner, styles.bottomRight]} />
               </View>
 
-              <View style={[styles.status, isScanning && styles.statusSuccess]}>
+              <View style={[
+                styles.status,
+                !scanResult && isScanning && styles.statusPending,
+                scanResult && (scanResult.outcome === 'check_in' || scanResult.outcome === 'check_out') && styles.statusSuccess,
+              ]}>
                 <Text style={styles.statusText}>{statusMessage}</Text>
               </View>
 
               {scanResult && (
                 <View style={styles.resultCard}>
                   <Text style={styles.resultTitle}>Scan Result</Text>
-                  {scanResult.memberId && (
-                    <Text style={styles.resultMember}>Member: {scanResult.memberId}</Text>
-                  )}
+                  {scanResult.member && <Text style={styles.resultMember}>{scanResult.member.name}</Text>}
                   <Text style={[
                     styles.resultStatus,
-                    scanResult.status === 'success' && styles.statusSuccessText,
-                    scanResult.status === 'expired' && styles.statusExpiredText,
-                    scanResult.status === 'invalid' && styles.statusInvalidText,
+                    (scanResult.outcome === 'check_in' || scanResult.outcome === 'check_out') && styles.statusSuccessText,
+                    scanResult.outcome === 'expired' && styles.statusExpiredText,
+                    !['check_in', 'check_out', 'expired'].includes(scanResult.outcome) && styles.statusInvalidText,
                   ]}>
-                    {scanResult.message}
+                    {scanResult.error ?? (scanResult.outcome === 'check_in' ? 'Check-in recorded' : scanResult.outcome === 'check_out' ? 'Check-out recorded' : 'Pass rejected')}
                   </Text>
                 </View>
               )}
@@ -257,6 +235,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 13,
     alignItems: 'center',
+  },
+  statusPending: {
+    backgroundColor: '#374151',
   },
   statusSuccess: {
     backgroundColor: '#16803C',

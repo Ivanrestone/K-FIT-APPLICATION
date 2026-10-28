@@ -3,6 +3,7 @@ import MemberHeader, {
   MemberLocalNotification,
 } from "@/components/MemberHeader";
 import { KFitColors } from "@/constants/theme";
+import { MEMBER_PLACEHOLDER_STATS } from "@/hooks/use-member-header-data";
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
 import { Feather } from "@expo/vector-icons";
@@ -202,6 +203,7 @@ export default function MemberWorkoutScreen() {
   );
 
   const firstName = profile?.firstName?.trim();
+  const name = [firstName, profile?.lastName?.trim()].filter(Boolean).join(" ") || "Member";
   const go = (route: string) => router.replace(route as any);
 
   return (
@@ -209,10 +211,10 @@ export default function MemberWorkoutScreen() {
       <View style={styles.mainContainer}>
         {/* Shared header — matches member dashboard */}
         <MemberHeader
-          name={profile?.fullName ?? firstName ?? "Member"}
-          tier={profile?.tier ?? "VIP"}
-          streakDays={profile?.streakDays ?? 0}
-          points={profile?.points ?? 0}
+          name={name}
+          tier={MEMBER_PLACEHOLDER_STATS.tier}
+          streakDays={MEMBER_PLACEHOLDER_STATS.streakDays}
+          points={MEMBER_PLACEHOLDER_STATS.points}
           checkedIn={false}
           isSigningOut={isSigningOut}
           onLogout={logout}

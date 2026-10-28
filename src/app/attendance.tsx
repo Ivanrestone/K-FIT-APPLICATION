@@ -2,7 +2,8 @@ import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { attendanceDuration, formatAttendanceDate, formatAttendanceTime, useStaffAttendanceHistory } from "@/hooks/use-attendance";
 import {
   Alert,
   Pressable,
@@ -23,6 +24,7 @@ interface AttendanceRecord {
   memberName: string;
   memberId: string;
   plan: string;
+  visitDate: string;
   checkIn: string;
   checkOut: string;
   activity: string;
@@ -30,89 +32,7 @@ interface AttendanceRecord {
   status: Status;
 }
 
-const INITIAL_RECORDS: AttendanceRecord[] = [
-  {
-    id: "1",
-    memberName: "Jordan Lee",
-    memberId: "FM-1042",
-    plan: "Performance",
-    checkIn: "07:04 AM",
-    checkOut: "09:00 AM",
-    activity: "Open gym",
-    duration: "64 min",
-    status: "Completed",
-  },
-  {
-    id: "2",
-    memberName: "Maya Patel",
-    memberId: "FM-0851",
-    plan: "Performance",
-    checkIn: "08:15 AM",
-    checkOut: "09:10 AM",
-    activity: "Mobility Flow",
-    duration: "55 min",
-    status: "Completed",
-  },
-  {
-    id: "3",
-    memberName: "Sam Rivera",
-    memberId: "FM-0908",
-    plan: "Elite",
-    checkIn: "08:30 AM",
-    checkOut: "-",
-    activity: "Personal training",
-    duration: "-",
-    status: "In progress",
-  },
-  {
-    id: "4",
-    memberName: "Emma Davis",
-    memberId: "FM-0753",
-    plan: "Performance",
-    checkIn: "09:14 AM",
-    checkOut: "-",
-    activity: "Open gym",
-    duration: "-",
-    status: "In progress",
-  },
-  {
-    id: "5",
-    memberName: "Ethan Park",
-    memberId: "FM-1284",
-    plan: "Essential",
-    checkIn: "09:38 AM",
-    checkOut: "-",
-    activity: "Strength floor",
-    duration: "-",
-    status: "In progress",
-  },
-];
-
-/* Members the check-in box can recognise (by ID or name) */
-const KNOWN_MEMBERS = [
-  { id: "FM-1042", name: "Jordan Lee", plan: "Performance" },
-  { id: "FM-0851", name: "Maya Patel", plan: "Performance" },
-  { id: "FM-0908", name: "Sam Rivera", plan: "Elite" },
-  { id: "FM-0753", name: "Emma Davis", plan: "Performance" },
-  { id: "FM-1284", name: "Ethan Park", plan: "Essential" },
-  { id: "FM-1100", name: "Noah Williams", plan: "Essential" },
-];
-
 const CAPACITY = 120;
-
-const nowLabel = () =>
-  new Date().toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-const toMinutes = (label: string) => {
-  const m = label.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!m) return 0;
-  let h = parseInt(m[1], 10) % 12;
-  if (m[3].toUpperCase() === "PM") h += 12;
-  return h * 60 + parseInt(m[2], 10);
-};
 
 const initials = (name: string) =>
   name
@@ -127,19 +47,41 @@ export default function AttendanceScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
 
-  const [records, setRecords] = useState<AttendanceRecord[]>(INITIAL_RECORDS);
-  const [checkedInToday, setCheckedInToday] = useState(186);
-  const [inClub, setInClub] = useState(42);
+  const { records: persistedRecords, isLoading, error, refetch } = useStaffAttendanceHistory();
   const [tab, setTab] = useState<"club" | "all">("club");
-  const [memberQuery, setMemberQuery] = useState("");
   const [recordSearch, setRecordSearch] = useState("");
-
+  const records: AttendanceRecord[] = persistedRecords.map((record) => ({
+    id: record.id,
+    memberName: record.member_name,
+    memberId: record.member_id,
+    plan: "",
+    visitDate: formatAttendanceDate(record.scan_timestamp),
+    checkIn: formatAttendanceTime(record.scan_timestamp),
+    checkOut: record.checkout_timestamp ? formatAttendanceTime(record.checkout_timestamp) : "—",
+    activity: "Gym visit",
+    duration: attendanceDuration(record.scan_timestamp, record.checkout_timestamp),
+    status: record.checkout_timestamp ? "Completed" : "In progress",
+  }));
+  const inClub = records.filter((record) => record.status === "In progress").length;
   const today = new Date().toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
+    timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric",
   });
-
+  const checkedInToday = persistedRecords.filter((record) => formatAttendanceDate(record.scan_timestamp) === today).length;
   const capacityPct = Math.min(100, Math.round((inClub / CAPACITY) * 100));
+  useEffect(() => {
+    const timer = setInterval(() => void refetch(), 30_000);
+    return () => clearInterval(timer);
+  }, [refetch]);
+
+  const completedRecords = persistedRecords.filter((record) => record.checkout_timestamp !== null);
+  const averageVisitMinutes = completedRecords.length
+    ? Math.round(completedRecords.reduce((sum, record) => {
+      const checkout = record.checkout_timestamp;
+      return sum + (checkout
+        ? Math.max(0, Math.floor((Date.parse(checkout) - Date.parse(record.scan_timestamp)) / 60_000))
+        : 0);
+    }, 0) / completedRecords.length)
+    : null;
 
   const stats: {
     label: string;
@@ -163,74 +105,17 @@ export default function AttendanceScreen() {
     },
     {
       label: "Average visit",
-      value: "68 min",
-      sub: "Based on today's visits",
+      value: averageVisitMinutes === null ? "—" : `${averageVisitMinutes} min`,
+      sub: "From completed visits",
       icon: "time",
     },
     {
-      label: "Class attendance",
-      value: "94%",
-      sub: "86 attended, 4 no-shows",
+      label: "Attendance records",
+      value: `${records.length}`,
+      sub: "Persisted visits",
       icon: "checkmark-done",
     },
   ];
-
-  const handleCheckIn = () => {
-    const q = memberQuery.trim().toLowerCase();
-    if (!q) {
-      Alert.alert("Enter a member", "Type a member ID or name to check in.");
-      return;
-    }
-    const member = KNOWN_MEMBERS.find(
-      (m) => m.id.toLowerCase() === q || m.name.toLowerCase().includes(q),
-    );
-    if (!member) {
-      Alert.alert("Member not found", `No member matches "${memberQuery}".`);
-      return;
-    }
-    if (
-      records.some(
-        (r) => r.memberId === member.id && r.status === "In progress",
-      )
-    ) {
-      Alert.alert("Already checked in", `${member.name} is already inside.`);
-      return;
-    }
-    setRecords((prev) => [
-      {
-        id: `${Date.now()}`,
-        memberName: member.name,
-        memberId: member.id,
-        plan: member.plan,
-        checkIn: nowLabel(),
-        checkOut: "-",
-        activity: "Open gym",
-        duration: "-",
-        status: "In progress",
-      },
-      ...prev,
-    ]);
-    setCheckedInToday((n) => n + 1);
-    setInClub((n) => n + 1);
-    setMemberQuery("");
-  };
-
-  const handleCheckOut = (id: string) => {
-    const out = nowLabel();
-    setRecords((prev) =>
-      prev.map((r) => {
-        if (r.id !== id) return r;
-        const mins = Math.max(1, toMinutes(out) - toMinutes(r.checkIn));
-        return {
-          ...r,
-          checkOut: out,
-          duration: `${mins} min`,
-          status: "Completed",
-        };
-      }),
-    );
-    setInClub((n) => Math.max(0, n - 1));
-  };
 
   const latest = records[0];
 
@@ -259,7 +144,7 @@ export default function AttendanceScreen() {
               <Text style={styles.eyebrow}>LIVE ATTENDANCE</Text>
               <Text style={styles.headerTitle}>Attendance & check-ins</Text>
               <Text style={styles.headerSubtitle}>
-                Know who's here. Keep the club moving.
+                Know who&apos;s here. Keep the club moving.
               </Text>
             </View>
             <Pressable
@@ -316,43 +201,10 @@ export default function AttendanceScreen() {
 
           {/* Member check-in */}
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Member check-in</Text>
+            <Text style={styles.sectionTitle}>Verify member pass</Text>
             <Text style={styles.sectionSubtitle}>
-              Member ID or name. Try FM-1042 or "Noah".
+              Attendance is recorded only after a valid QR scan.
             </Text>
-
-            <View style={styles.searchContainer}>
-              <Ionicons
-                name="search"
-                size={18}
-                color={KFitColors.mutedText}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="FM-1042"
-                placeholderTextColor={KFitColors.mutedText}
-                value={memberQuery}
-                onChangeText={setMemberQuery}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                onSubmitEditing={handleCheckIn}
-                returnKeyType="done"
-              />
-              {memberQuery.length > 0 && (
-                <Pressable
-                  onPress={() => setMemberQuery("")}
-                  hitSlop={10}
-                  accessibilityLabel="Clear"
-                >
-                  <Ionicons
-                    name="close-circle"
-                    size={18}
-                    color={KFitColors.mutedText}
-                  />
-                </Pressable>
-              )}
-            </View>
 
             <View style={styles.checkInActions}>
               <Pressable
@@ -368,22 +220,6 @@ export default function AttendanceScreen() {
                 <Text style={styles.qrButtonText}>Scan QR code</Text>
               </Pressable>
 
-              <Pressable
-                onPress={handleCheckIn}
-                style={({ pressed }) => [
-                  styles.checkInButton,
-                  pressed && styles.pressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Check in"
-              >
-                <Ionicons
-                  name="log-in-outline"
-                  size={18}
-                  color={KFitColors.onAccent}
-                />
-                <Text style={styles.checkInButtonText}>Check in</Text>
-              </Pressable>
             </View>
           </View>
 
@@ -399,9 +235,7 @@ export default function AttendanceScreen() {
                 </View>
                 <View style={styles.checkInDetails}>
                   <Text style={styles.checkInName}>{latest.memberName}</Text>
-                  <Text style={styles.checkInId}>
-                    {latest.memberId} • {latest.plan}
-                  </Text>
+                  <Text style={styles.checkInId}>{latest.memberId}</Text>
                   <View style={styles.metaItem}>
                     <Ionicons
                       name="time-outline"
@@ -485,17 +319,20 @@ export default function AttendanceScreen() {
             {isWide && (
               <View style={styles.tableHeader}>
                 <Text style={[styles.headerText, { flex: 2 }]}>MEMBER</Text>
-                <Text style={[styles.headerText, { flex: 1 }]}>CHECK IN</Text>
-                <Text style={[styles.headerText, { flex: 1 }]}>CHECK OUT</Text>
-                <Text style={[styles.headerText, { flex: 1.4 }]}>ACTIVITY</Text>
-                <Text style={[styles.headerText, { flex: 1 }]}>DURATION</Text>
+                <Text style={[styles.headerText, { flex: 1.3 }]}>DATE / TIME IN</Text>
+                <Text style={[styles.headerText, { flex: 1 }]}>TIME OUT</Text>
+                <Text style={[styles.headerText, { flex: 1.2 }]}>ACTIVITY / DURATION</Text>
                 <Text style={[styles.headerText, { flex: 1.2 }]}>STATUS</Text>
                 <View style={{ width: 96 }} />
               </View>
             )}
 
             <View style={styles.attendanceList}>
-              {visibleRecords.length === 0 ? (
+              {isLoading ? (
+                <View style={styles.emptyState}><Text style={styles.emptyTitle}>Loading attendance records…</Text></View>
+              ) : error ? (
+                <View style={styles.emptyState}><Text style={styles.emptyTitle}>{error}</Text><Pressable onPress={() => void refetch()}><Text style={styles.qrButtonText}>Retry</Text></Pressable></View>
+              ) : visibleRecords.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Ionicons
                     name="people-outline"
@@ -504,12 +341,18 @@ export default function AttendanceScreen() {
                   />
                   <Text style={styles.emptyTitle}>No records found</Text>
                   <Text style={styles.emptySub}>
-                    Check someone in or change the filter.
+                    Scan a member pass or change the filter.
                   </Text>
                 </View>
               ) : isWide ? (
                 visibleRecords.map((r) => (
-                  <View key={r.id} style={styles.tableRow}>
+                  <Pressable
+                    key={r.id}
+                    style={styles.tableRow}
+                    onPress={() => router.push({ pathname: "/member-attendance/[memberId]", params: { memberId: r.memberId, memberName: r.memberName } } as any)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${r.memberName} attendance`}
+                  >
                     <View style={[styles.memberInfo, { flex: 2 }]}>
                       <View style={styles.memberAvatar}>
                         <Text style={styles.avatarText}>
@@ -523,31 +366,31 @@ export default function AttendanceScreen() {
                         <Text style={styles.memberId}>{r.memberId}</Text>
                       </View>
                     </View>
+                    <View style={{ flex: 1.3, gap: 3 }}>
+                      <Text style={styles.tableText}>{r.visitDate}</Text>
+                      <Text style={styles.tableText}>IN {r.checkIn}</Text>
+                    </View>
                     <Text style={[styles.tableText, { flex: 1 }]}>
-                      {r.checkIn}
+                      {r.checkOut === "—" ? "In progress" : `OUT ${r.checkOut}`}
                     </Text>
-                    <Text style={[styles.tableText, { flex: 1 }]}>
-                      {r.checkOut}
-                    </Text>
-                    <Text style={[styles.tableText, { flex: 1.4 }]}>
-                      {r.activity}
-                    </Text>
-                    <Text style={[styles.tableText, { flex: 1 }]}>
-                      {r.duration}
-                    </Text>
+                    <View style={{ flex: 1.2 }}>
+                      <Text style={styles.tableText}>{r.activity}</Text>
+                      <Text style={styles.tableText}>{r.duration}</Text>
+                    </View>
                     <View style={{ flex: 1.2, alignItems: "flex-start" }}>
                       <StatusBadge status={r.status} />
                     </View>
-                    <View style={{ width: 96, alignItems: "flex-end" }}>
-                      {r.status === "In progress" && (
-                        <CheckOutButton onPress={() => handleCheckOut(r.id)} />
-                      )}
-                    </View>
-                  </View>
+                  </Pressable>
                 ))
               ) : (
                 visibleRecords.map((r) => (
-                  <View key={r.id} style={styles.attendanceCard}>
+                  <Pressable
+                    key={r.id}
+                    style={styles.attendanceCard}
+                    onPress={() => router.push({ pathname: "/member-attendance/[memberId]", params: { memberId: r.memberId, memberName: r.memberName } } as any)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${r.memberName} attendance`}
+                  >
                     <View style={styles.cardTop}>
                       <View style={styles.memberAvatar}>
                         <Text style={styles.avatarText}>
@@ -564,25 +407,20 @@ export default function AttendanceScreen() {
                     </View>
 
                     <View style={styles.infoGrid}>
+                      <Info label="DATE" value={r.visitDate} />
                       <Info label="CHECK IN" value={r.checkIn} />
                       <Info label="CHECK OUT" value={r.checkOut} />
                       <Info label="ACTIVITY" value={r.activity} />
                       <Info label="DURATION" value={r.duration} />
                     </View>
 
-                    {r.status === "In progress" && (
-                      <CheckOutButton
-                        full
-                        onPress={() => handleCheckOut(r.id)}
-                      />
-                    )}
-                  </View>
+                  </Pressable>
                 ))
               )}
             </View>
 
             <Text style={styles.footerText}>
-              Showing {visibleRecords.length} of {records.length} check-ins
+              Showing {visibleRecords.length} of {records.length} check-ins · times in Asia/Manila
             </Text>
           </View>
 
@@ -647,30 +485,6 @@ function Info({ label, value }: { label: string; value: string }) {
         {value}
       </Text>
     </View>
-  );
-}
-
-function CheckOutButton({
-  onPress,
-  full,
-}: {
-  onPress: () => void;
-  full?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.checkOutButton,
-        full && styles.checkOutButtonFull,
-        pressed && styles.pressed,
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel="Check out"
-    >
-      <Ionicons name="log-out-outline" size={14} color={KFitColors.error} />
-      <Text style={styles.checkOutText}>Check out</Text>
-    </Pressable>
   );
 }
 
@@ -991,21 +805,6 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11, fontWeight: "800" },
-
-  checkOutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: KFitColors.error + "66",
-    backgroundColor: KFitColors.error + "14",
-  },
-  checkOutButtonFull: { minHeight: 40 },
-  checkOutText: { fontSize: 12, fontWeight: "700", color: KFitColors.error },
 
   emptyState: {
     alignItems: "center",

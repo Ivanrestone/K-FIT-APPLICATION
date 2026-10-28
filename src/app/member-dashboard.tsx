@@ -4,6 +4,7 @@ import MemberHeader from "@/components/MemberHeader";
 import SubscriptionPaywall from "@/components/SubscriptionPaywall";
 import { MEMBER_ROUTES } from "@/constants/member-routes";
 import { KFitColors } from "@/constants/theme";
+import { useAttendanceHistory, formatAttendanceDate, formatAttendanceTime, attendanceDuration } from "@/hooks/use-attendance";
 import { useLogout } from "@/hooks/use-logout";
 import {
   MEMBER_PLACEHOLDER_STATS,
@@ -47,8 +48,6 @@ const C = {
 /* ------------------------------------------------------------------ */
 const MEMBER = {
   ...MEMBER_PLACEHOLDER_STATS, // tier, streakDays, points (shared with header)
-  id: "PM-1042",
-  visitsThisMonth: 18,
   visitTarget: 20,
   caloriesThisWeek: 3420,
 };
@@ -62,7 +61,7 @@ const OVERVIEW: {
 }[] = [
   { label: "Progress & goals", icon: "target" },
   { label: "Personal profile", icon: "user", route: MEMBER_ROUTES.profile },
-  { label: "Attendance history", icon: "calendar" },
+  { label: "Attendance history", icon: "calendar", route: MEMBER_ROUTES.checkin },
   { label: "My workouts", icon: "activity", route: MEMBER_ROUTES.workout },
 ];
 
@@ -108,30 +107,6 @@ const DETAILS = [
   ["Date of birth", "June 12, 1996"],
   ["Height", "178 cm"],
   ["Emergency contact", "Casey Lee (917) 555-0173"],
-];
-
-const ATTENDANCE = [
-  {
-    date: "Oct 20",
-    time: "07:04 AM",
-    activity: "Open gym",
-    workout: "Mobility & cardio",
-    duration: "64 min",
-  },
-  {
-    date: "Oct 19",
-    time: "06:00 PM",
-    activity: "Strength training",
-    workout: "Upper body A",
-    duration: "55 min",
-  },
-  {
-    date: "Oct 17",
-    time: "08:12 AM",
-    activity: "Strength training",
-    workout: "Full body",
-    duration: "60 min",
-  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -190,9 +165,10 @@ export default function MemberDashboardScreen() {
   const router = useRouter();
   const { isSigningOut, logout } = useLogout();
   const { header, firstName } = useMemberHeaderData();
-
-  const [checkedIn, setCheckedIn] = useState(false);
-  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  const { records: attendanceRecords, isLoading: attendanceLoading, error: attendanceError, refetch: refetchAttendance } = useAttendanceHistory();
+  const activeAttendance = attendanceRecords.find((record) => record.checkout_timestamp === null);
+  const checkedIn = Boolean(activeAttendance);
+  const checkInTime = activeAttendance ? formatAttendanceTime(activeAttendance.scan_timestamp) : null;
   const [notifications, setNotifications] = useState<MemberLocalNotification[]>(
     [
       {
@@ -227,41 +203,6 @@ export default function MemberDashboardScreen() {
     year: "numeric",
   });
 
-  const toggleCheckIn = () => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const now = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    if (!checkedIn) {
-      setCheckedIn(true);
-      setCheckInTime(now);
-      setNotifications((prev) => [
-        {
-          id: Date.now(),
-          title: "Attendance logged",
-          msg: `Checked in at ${now}.`,
-          time: "Just now",
-          read: false,
-        },
-        ...prev,
-      ]);
-    } else {
-      setCheckedIn(false);
-      setCheckInTime(null);
-      setNotifications((prev) => [
-        {
-          id: Date.now(),
-          title: "Session complete",
-          msg: "You checked out. Great session!",
-          time: "Just now",
-          read: false,
-        },
-        ...prev,
-      ]);
-    }
-  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -324,30 +265,30 @@ export default function MemberDashboardScreen() {
                   <Feather
                     name="check-circle"
                     size={14}
-                    color={checkedIn ? C.accent : "#6B7280"}
+                    color={checkedIn && !attendanceLoading && !attendanceError ? C.accent : "#6B7280"}
                   />
                   <Text style={styles.cardHeading}>
-                    {checkedIn
-                      ? `Checked in (${checkInTime})`
-                      : "Not checked in"}
+                  {attendanceLoading
+                    ? "Checking status…"
+                    : attendanceError
+                      ? "Status unavailable"
+                      : checkedIn
+                        ? `Checked in (${checkInTime})`
+                        : "Not checked in"}
                   </Text>
                 </View>
                 <Text style={styles.cardNote}>
-                  {checkedIn
-                    ? "Your session is being logged."
-                    : "Tap to mark manual attendance."}
+                  {attendanceLoading
+                    ? "Checking your latest attendance…"
+                    : attendanceError ?? (checkedIn ? "Your session is active." : "Scan your secure QR pass at the kiosk.")}
                 </Text>
               </View>
               <TouchableOpacity
-                onPress={toggleCheckIn}
+                onPress={() => router.push(MEMBER_ROUTES.checkin as any)}
                 activeOpacity={0.8}
-                style={[styles.checkBtn, checkedIn && styles.checkBtnOut]}
+                style={styles.checkBtn}
               >
-                <Text
-                  style={[styles.checkBtnText, checkedIn && { color: C.error }]}
-                >
-                  {checkedIn ? "Check out" : "Check in now"}
-                </Text>
+                <Text style={styles.checkBtnText}>View records</Text>
               </TouchableOpacity>
             </Card>
 
@@ -417,7 +358,12 @@ export default function MemberDashboardScreen() {
                   <Feather name="check-circle" size={14} color={C.accent} />
                 </View>
                 <Text style={styles.metricValue}>
-                  {MEMBER.visitsThisMonth} visits
+                  {attendanceRecords.filter((record) => {
+                    const visitDate = new Date(record.scan_timestamp);
+                    const currentDate = new Date();
+                    return visitDate.toLocaleDateString("en-US", { timeZone: "Asia/Manila", year: "numeric", month: "numeric" }) ===
+                      currentDate.toLocaleDateString("en-US", { timeZone: "Asia/Manila", year: "numeric", month: "numeric" });
+                  }).length} visits
                 </Text>
                 <Text style={styles.cardNote}>
                   Target: {MEMBER.visitTarget} / month
@@ -629,39 +575,45 @@ export default function MemberDashboardScreen() {
 
             {/* Recent attendance */}
             <View style={styles.section}>
-              <SectionTitle title="Recent attendance" action="View all" />
-              <View style={{ gap: 10 }}>
-                {ATTENDANCE.map((a) => (
-                  <Card key={a.date} style={{ gap: 10 }}>
-                    <View style={styles.rowBetween}>
-                      <Text style={styles.attDate}>{a.date}</Text>
-                      <Text style={styles.statNote}>{a.time}</Text>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.rowBetween}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.attLabel}>ACTIVITY</Text>
-                        <Text style={styles.attValue}>{a.activity}</Text>
+              <SectionTitle title="Recent attendance" action="View all" onAction={() => router.push(MEMBER_ROUTES.checkin as any)} />
+              {attendanceLoading ? (
+                <Text style={styles.statNote}>Loading attendance…</Text>
+              ) : attendanceError ? (
+                <TouchableOpacity onPress={() => void refetchAttendance()} accessibilityRole="button">
+                  <Text style={styles.attValue}>{attendanceError} · Retry</Text>
+                </TouchableOpacity>
+              ) : attendanceRecords.length === 0 ? (
+                <Text style={styles.statNote}>No attendance records yet.</Text>
+              ) : (
+                <View style={{ gap: 10 }}>
+                  {attendanceRecords.slice(0, 3).map((record) => (
+                    <Card key={record.id} style={{ gap: 10 }}>
+                      <View style={styles.rowBetween}>
+                        <Text style={styles.attDate}>{formatAttendanceDate(record.scan_timestamp)}</Text>
+                        <Text style={styles.statNote}>{attendanceDuration(record.scan_timestamp, record.checkout_timestamp)}</Text>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.attLabel}>WORKOUT</Text>
-                        <Text style={styles.attValue}>{a.workout}</Text>
+                      <View style={styles.divider} />
+                      <View style={styles.rowBetween}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.attLabel}>TIME IN</Text>
+                          <Text style={styles.attValue}>{formatAttendanceTime(record.scan_timestamp)}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.attLabel}>TIME OUT</Text>
+                          <Text style={styles.attValue}>{record.checkout_timestamp ? formatAttendanceTime(record.checkout_timestamp) : "In progress"}</Text>
+                        </View>
                       </View>
-                      <View style={styles.durationChip}>
-                        <Feather name="clock" size={11} color={C.accent} />
-                        <Text style={styles.durationText}>{a.duration}</Text>
-                      </View>
-                    </View>
-                  </Card>
-                ))}
-              </View>
+                    </Card>
+                  ))}
+                </View>
+              )}
             </View>
 
             {/* Footer */}
             <View style={styles.footer}>
               <Text style={styles.footerName}>{header.name}</Text>
               <Text style={styles.statNote}>
-                Member • {MEMBER.id} • Joined Sep 11, 2016
+                Member workspace
               </Text>
               <Text style={styles.footerBrand}>
                 FORM ATHLETICS MEMBER WORKSPACE
