@@ -6,8 +6,14 @@ type JwtClaims = {
   azp?: unknown;
 };
 
-type ClerkJwk = JsonWebKey & { kid?: string };
+type ClerkJwk = JsonWebKey & {
+  alg?: string;
+  crv?: string;
+  kid?: string;
+  use?: string;
+};
 type JwkSet = { keys?: ClerkJwk[] };
+type ClerkJwtAlgorithm = "RS256" | "EdDSA";
 let jwksCache: { fetchedAt: number; keys: ClerkJwk[] } | null = null;
 
 function base64UrlBytes(value: string): Uint8Array {
@@ -35,9 +41,10 @@ export async function verifyClerkSession(request: Request): Promise<{ userId: st
   try {
     const header = decodeJson<{ alg?: unknown; kid?: unknown }>(segments[0]);
     const claims = decodeJson<JwtClaims>(segments[1]);
-    if (header.alg !== "RS256" || typeof header.kid !== "string") {
+    if ((header.alg !== "RS256" && header.alg !== "EdDSA") || typeof header.kid !== "string") {
       return { userId: "", error: "Session token algorithm is invalid." };
     }
+    const algorithm = header.alg as ClerkJwtAlgorithm;
     if (claims.iss !== issuer || typeof claims.sub !== "string" || !claims.sub.trim()) {
       return { userId: "", error: "Session token claims are invalid." };
     }
@@ -47,16 +54,14 @@ export async function verifyClerkSession(request: Request): Promise<{ userId: st
       return { userId: "", error: "Session token has expired or is not active." };
     }
 
-    const keys = await loadJwks(jwksUrl);
-    const jwk = keys.find((key) => key.kid === header.kid && key.kty === "RSA");
+    let keys = await loadJwks(jwksUrl);
+    let jwk = keys.find((key) => key.kid === header.kid);
     if (!jwk) {
       jwksCache = null;
-      const refreshed = await loadJwks(jwksUrl);
-      const refreshedKey = refreshed.find((key) => key.kid === header.kid && key.kty === "RSA");
-      if (!refreshedKey || !await verifySignature(refreshedKey, segments)) {
-        return { userId: "", error: "Session signature is invalid." };
-      }
-    } else if (!await verifySignature(jwk, segments)) {
+      keys = await loadJwks(jwksUrl);
+      jwk = keys.find((key) => key.kid === header.kid);
+    }
+    if (!jwk || !isCompatibleSigningKey(jwk, algorithm) || !await verifySignature(jwk, segments, algorithm)) {
       return { userId: "", error: "Session signature is invalid." };
     }
     return { userId: claims.sub };
@@ -66,22 +71,29 @@ export async function verifyClerkSession(request: Request): Promise<{ userId: st
   }
 }
 
-async function verifySignature(jwk: JsonWebKey, segments: string[]): Promise<boolean> {
-  const key = await crypto.subtle.importKey(
-    "jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"],
-  );
+function isCompatibleSigningKey(jwk: ClerkJwk, algorithm: ClerkJwtAlgorithm): boolean {
+  if ((jwk.use && jwk.use !== "sig") || (jwk.alg && jwk.alg !== algorithm)) return false;
+  if (algorithm === "RS256") return jwk.kty === "RSA";
+  return jwk.kty === "OKP" && jwk.crv === "Ed25519";
+}
+
+async function verifySignature(
+  jwk: ClerkJwk,
+  segments: string[],
+  algorithm: ClerkJwtAlgorithm,
+): Promise<boolean> {
+  const importAlgorithm = algorithm === "RS256"
+    ? { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }
+    : { name: "Ed25519" };
+  const key = await crypto.subtle.importKey("jwk", jwk, importAlgorithm, false, ["verify"]);
   const signature = base64UrlBytes(segments[2]);
   const signatureBuffer = new ArrayBuffer(signature.length);
   new Uint8Array(signatureBuffer).set(signature);
   const message = new TextEncoder().encode(`${segments[0]}.${segments[1]}`);
   const messageBuffer = new ArrayBuffer(message.length);
   new Uint8Array(messageBuffer).set(message);
-  return crypto.subtle.verify(
-    "RSASSA-PKCS1-v1_5",
-    key,
-    signatureBuffer,
-    messageBuffer,
-  );
+  const verifyAlgorithm = algorithm === "RS256" ? "RSASSA-PKCS1-v1_5" : "Ed25519";
+  return crypto.subtle.verify(verifyAlgorithm, key, signatureBuffer, messageBuffer);
 }
 
 async function loadJwks(url: string): Promise<ClerkJwk[]> {
