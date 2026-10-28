@@ -1,15 +1,20 @@
 import { Leaderboard, ProgressBar } from "@/components/ChallengeParts";
 import MemberBottomNav from "@/components/MemberBottomNav";
+import MemberHeader, {
+  MemberLocalNotification,
+} from "@/components/MemberHeader";
 import { KFitColors } from "@/constants/theme";
+import { useLogout } from "@/hooks/use-logout";
+import { useMemberProfile } from "@/hooks/use-member-profile";
 import {
-    markChallengesSeen,
-    timeLeft,
-    toggleJoin,
-    useChallengeStore,
+  markChallengesSeen,
+  timeLeft,
+  toggleJoin,
+  useChallengeStore,
 } from "@/lib/challenges-store";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -17,6 +22,12 @@ const NAV_CLEARANCE = 140;
 
 export default function MemberChallengesScreen() {
   const { challenges, member } = useChallengeStore();
+  const { profile } = useMemberProfile();
+  const { isSigningOut, logout } = useLogout();
+
+  const [notifications, setNotifications] = useState<MemberLocalNotification[]>(
+    [],
+  );
 
   // Clear the "new" badge once the member has opened this screen.
   useEffect(() => {
@@ -26,6 +37,19 @@ export default function MemberChallengesScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.main}>
+        <MemberHeader
+          name={profile?.firstName?.trim() || "Member"}
+          tier="VIP"
+          streakDays={0}
+          points={0}
+          checkedIn={false}
+          isSigningOut={isSigningOut}
+          onLogout={logout}
+          activeRoute="/member-challenges"
+          notifications={notifications}
+          setNotifications={setNotifications}
+        />
+
         <ScrollView
           contentContainerStyle={{
             padding: 20,
