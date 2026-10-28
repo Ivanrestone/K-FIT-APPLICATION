@@ -1,19 +1,20 @@
 import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
+import { useMemos } from "@/hooks/use-memos";
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -29,53 +30,6 @@ interface Memo {
   author: string;
 }
 
-const INITIAL_MEMOS: Memo[] = [
-  {
-    id: "1",
-    title: "Gym closure - maintenance day",
-    content:
-      "The gym will be closed on October 25, 2026 for scheduled maintenance. We apologize for any inconvenience and will resume normal operations on October 26.",
-    date: "Oct 20, 2026",
-    priority: "High",
-    author: "Admin",
-  },
-  {
-    id: "2",
-    title: "New class schedule",
-    content:
-      "Starting next week, we are adding new yoga classes on Monday and Wednesday evenings at 6 PM. Sign up through the member app.",
-    date: "Oct 18, 2026",
-    priority: "Medium",
-    author: "Admin",
-  },
-  {
-    id: "3",
-    title: "Holiday hours notice",
-    content:
-      "Please note our modified hours during the upcoming holiday season. We will be open from 8 AM to 6 PM on Thanksgiving Day.",
-    date: "Oct 15, 2026",
-    priority: "Medium",
-    author: "Admin",
-  },
-  {
-    id: "4",
-    title: "Equipment update",
-    content:
-      "New cardio equipment has been installed in the main floor. Please ask staff for a quick tutorial if needed.",
-    date: "Oct 10, 2026",
-    priority: "Low",
-    author: "Admin",
-  },
-  {
-    id: "5",
-    title: "Personal training promotion",
-    content:
-      "Special offer: 20% off personal training packages for the month of October. Contact front desk for details.",
-    date: "Oct 05, 2026",
-    priority: "Low",
-    author: "Admin",
-  },
-];
 
 const PRIORITIES: Priority[] = ["High", "Medium", "Low"];
 const FILTERS: PriorityFilter[] = ["All", ...PRIORITIES];
@@ -95,7 +49,7 @@ const todayLabel = () =>
   });
 
 export default function MemoScreen() {
-  const [memos, setMemos] = useState<Memo[]>(INITIAL_MEMOS);
+  const { memos, loading, refetch, createMemo: dbCreateMemo, deleteMemo: dbDeleteMemo } = useMemos();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<PriorityFilter>("All");
 
@@ -106,6 +60,7 @@ export default function MemoScreen() {
   const [newContent, setNewContent] = useState("");
   const [newPriority, setNewPriority] = useState<Priority>("Medium");
   const [formError, setFormError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const counts = useMemo(() => {
     const base: Record<PriorityFilter, number> = {
@@ -139,23 +94,32 @@ export default function MemoScreen() {
     setCreateOpen(true);
   };
 
-  const createMemo = () => {
+  const createMemo = async () => {
     if (!newTitle.trim() || !newContent.trim()) {
       setFormError("Enter both a title and the memo content.");
       return;
     }
-    setMemos((prev) => [
-      {
-        id: `${Date.now()}`,
-        title: newTitle.trim(),
-        content: newContent.trim(),
-        date: todayLabel(),
-        priority: newPriority,
-        author: "Admin",
-      },
-      ...prev,
-    ]);
-    setCreateOpen(false);
+
+    setIsSubmitting(true);
+    setFormError("");
+
+    const result = await dbCreateMemo({
+      title: newTitle.trim(),
+      content: newContent.trim(),
+      priority: newPriority,
+      author: "Admin",
+    });
+
+    if (result.success) {
+      setNewTitle("");
+      setNewContent("");
+      setNewPriority("Medium");
+      setCreateOpen(false);
+    } else {
+      setFormError(result.error || "Failed to create memo");
+    }
+
+    setIsSubmitting(false);
   };
 
   const deleteMemo = (memo: Memo) => {
@@ -167,9 +131,13 @@ export default function MemoScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => {
-            setMemos((prev) => prev.filter((m) => m.id !== memo.id));
-            setSelectedMemo(null);
+          onPress: async () => {
+            const result = await dbDeleteMemo(memo.id);
+            if (result.success) {
+              setSelectedMemo(null);
+            } else {
+              Alert.alert("Error", result.error || "Failed to delete memo");
+            }
           },
         },
       ],
@@ -487,11 +455,18 @@ export default function MemoScreen() {
               <Pressable
                 style={styles.modalCancel}
                 onPress={() => setCreateOpen(false)}
+                disabled={isSubmitting}
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </Pressable>
-              <Pressable style={styles.modalSave} onPress={createMemo}>
-                <Text style={styles.modalSaveText}>Create memo</Text>
+              <Pressable 
+                style={[styles.modalSave, isSubmitting && styles.modalSaveDisabled]} 
+                onPress={createMemo}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.modalSaveText}>
+                  {isSubmitting ? "Creating..." : "Create memo"}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -876,6 +851,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     backgroundColor: KFitColors.accent,
+  },
+  modalSaveDisabled: {
+    opacity: 0.6,
   },
   modalSaveText: {
     fontSize: 14,
