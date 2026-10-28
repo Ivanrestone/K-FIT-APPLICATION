@@ -1,6 +1,7 @@
 import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
+import { useMembers } from "@/hooks/use-members";
 import { useRegisterMember } from "@/hooks/use-register-member";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -92,46 +93,7 @@ const QUICK_LINKS: { label: string; icon: IconName; route: string }[] = [
   { label: "Scanner", icon: "qr-code", route: "/admin-scanner" },
 ];
 
-const STATS: {
-  label: string;
-  value: string;
-  sub: string;
-  icon: IconName;
-  warn?: boolean;
-}[] = [
-  {
-    label: "Total members",
-    value: "1,342",
-    sub: "Across all memberships",
-    icon: "people",
-  },
-  {
-    label: "Active",
-    value: "1,284",
-    sub: "95.7% of all members",
-    icon: "checkmark-circle",
-  },
-  {
-    label: "Expiring this week",
-    value: "12",
-    sub: "Renewal outreach recommended",
-    icon: "time",
-    warn: true,
-  },
-  {
-    label: "New this month",
-    value: "48",
-    sub: "+14 from September",
-    icon: "trending-up",
-  },
-];
 
-const FILTERS: { label: "All" | Status; count: number }[] = [
-  { label: "All", count: 1342 },
-  { label: "Active", count: 1284 },
-  { label: "Pending", count: 18 },
-  { label: "Expired", count: 40 },
-];
 
 const PLANS = ["Essential", "Performance", "Elite"];
 
@@ -160,11 +122,9 @@ const initials = (name: string) =>
 export default function MembersScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const isWide = width >= 768;
+  const isWide = width >= 820;
+  const { members, loading: membersLoading, refetch } = useMembers();
   const { registerMember, loading: registerLoading } = useRegisterMember();
-
-  const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS);
-  const [selectedFilter, setSelectedFilter] = useState<"All" | Status>("All");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -177,10 +137,15 @@ export default function MembersScreen() {
     const matchesSearch =
       member.name.toLowerCase().includes(q) ||
       member.email.toLowerCase().includes(q);
-    const matchesFilter =
-      selectedFilter === "All" || member.status === selectedFilter;
-    return matchesSearch && matchesFilter;
+    return matchesSearch;
   });
+
+  const stats = {
+    total: members.length,
+    active: members.filter((m) => m.status === "Active").length,
+    pending: members.filter((m) => m.status === "Pending").length,
+    expired: members.filter((m) => m.status === "Expired").length,
+  };
 
   const saveMember = async () => {
     if (!newName.trim()) {
@@ -203,28 +168,12 @@ export default function MembersScreen() {
     });
 
     if (result.success) {
-      const today = new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "2-digit",
-        year: "numeric",
-      });
-      setMembers((prev) => [
-        {
-          id: result.userId || `${Date.now()}`,
-          name: newName.trim(),
-          email: newEmail.trim(),
-          membership: "Paid",
-          trainer: "Unassigned",
-          joinedDate: today,
-          status: "Active",
-        },
-        ...prev,
-      ]);
       setNewName("");
       setNewEmail("");
       setNewPassword("");
       setModalOpen(false);
       Alert.alert("Success", "Member registered successfully!");
+      refetch();
     } else {
       Alert.alert("Registration Error", result.error || "Registration failed");
     }
@@ -330,39 +279,51 @@ export default function MembersScreen() {
 
             {/* Stats */}
             <View style={styles.statsGrid}>
-              {STATS.map((stat) => (
-                <View
-                  key={stat.label}
-                  style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
-                >
-                  <View style={styles.statTop}>
-                    <Text style={styles.statLabel} numberOfLines={1}>
-                      {stat.label}
-                    </Text>
-                    <View
-                      style={[
-                        styles.statIconBox,
-                        stat.warn && styles.statIconBoxWarn,
-                      ]}
-                    >
-                      <Ionicons
-                        name={stat.icon}
-                        size={14}
-                        color={
-                          stat.warn ? KFitColors.warning : KFitColors.accent
-                        }
-                      />
-                    </View>
+              <View style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}>
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel}>Total members</Text>
+                  <View style={styles.statIconBox}>
+                    <Ionicons name="people" size={14} color={KFitColors.accent} />
                   </View>
-                  <Text style={styles.statNumber}>{stat.value}</Text>
-                  <Text
-                    style={stat.warn ? styles.statSubWarn : styles.statSub}
-                    numberOfLines={2}
-                  >
-                    {stat.sub}
-                  </Text>
                 </View>
-              ))}
+                <Text style={styles.statNumber}>{stats.total}</Text>
+                <Text style={styles.statSub}>Across all memberships</Text>
+              </View>
+
+              <View style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}>
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel}>Active</Text>
+                  <View style={styles.statIconBox}>
+                    <Ionicons name="checkmark-circle" size={14} color={KFitColors.accent} />
+                  </View>
+                </View>
+                <Text style={styles.statNumber}>{stats.active}</Text>
+                <Text style={styles.statSub}>
+                  {stats.total > 0 ? `${Math.round((stats.active / stats.total) * 100)}%` : '0%'} of all members
+                </Text>
+              </View>
+
+              <View style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}>
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel}>Pending</Text>
+                  <View style={[styles.statIconBox, styles.statIconBoxWarn]}>
+                    <Ionicons name="time" size={14} color={KFitColors.warning} />
+                  </View>
+                </View>
+                <Text style={styles.statNumber}>{stats.pending}</Text>
+                <Text style={styles.statSubWarn}>Awaiting activation</Text>
+              </View>
+
+              <View style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}>
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel}>Expired</Text>
+                  <View style={[styles.statIconBox, styles.statIconBoxWarn]}>
+                    <Ionicons name="alert-circle" size={14} color={KFitColors.error} />
+                  </View>
+                </View>
+                <Text style={styles.statNumber}>{stats.expired}</Text>
+                <Text style={styles.statSubWarn}>Renewal required</Text>
+              </View>
             </View>
 
             {/* Search */}
@@ -396,53 +357,6 @@ export default function MembersScreen() {
                 </Pressable>
               )}
             </View>
-
-            {/* Filter tabs */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterScroll}
-              contentContainerStyle={styles.filterContainer}
-            >
-              {FILTERS.map((filter) => {
-                const active = selectedFilter === filter.label;
-                return (
-                  <Pressable
-                    key={filter.label}
-                    style={({ pressed }) => [
-                      styles.filterTab,
-                      active && styles.filterTabActive,
-                      pressed && styles.pressed,
-                    ]}
-                    onPress={() => setSelectedFilter(filter.label)}
-                  >
-                    <Text
-                      style={[
-                        styles.filterTabText,
-                        active && styles.filterTabTextActive,
-                      ]}
-                    >
-                      {filter.label}
-                    </Text>
-                    <View
-                      style={[
-                        styles.filterCount,
-                        active && styles.filterCountActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.filterCountText,
-                          active && styles.filterCountTextActive,
-                        ]}
-                      >
-                        {filter.count}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
 
             {/* Table header (wide screens only) */}
             {isWide && (
