@@ -1,5 +1,11 @@
 import { useAuth } from "@clerk/expo";
+import {
+  FunctionsFetchError,
+  FunctionsHttpError,
+  FunctionsRelayError,
+} from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Platform } from "react-native";
 import { createMemberSupabaseClient } from "@/utils/supabase";
 
 export type AttendanceRecord = {
@@ -18,31 +24,117 @@ export type AttendanceScanResult = {
   timestamp?: string;
 };
 
+const PROVISION_REQUEST_TIMEOUT_MS = 9_000;
+
 export function useAttendance() {
   const { getToken, isSignedIn } = useAuth();
   const supabase = useMemo(() => {
     if (!isSignedIn) return null;
     try {
       return createMemberSupabaseClient(() => getToken({ template: "supabase" }));
-    } catch {
+    } catch (error) {
+      console.error("[Attendance Client Initialization Error]", {
+        message: error instanceof Error ? error.message : String(error),
+        supabaseUrlConfigured: Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL),
+        supabaseKeyConfigured: Boolean(process.env.EXPO_PUBLIC_SUPABASE_KEY),
+      });
       return null;
     }
   }, [getToken, isSignedIn]);
 
-  const invoke = useCallback(async <T,>(body: Record<string, unknown>): Promise<T> => {
-    if (!supabase) throw new Error("Sign in to use attendance.");
-    const { data, error } = await supabase.functions.invoke("attendance", { body });
+  const invoke = useCallback(async <T,>(
+    body: Record<string, unknown>,
+    timeout?: number,
+  ): Promise<T> => {
+    if (!isSignedIn) throw new Error("Sign in to use attendance.");
+    if (!supabase) {
+      const missingConfig =
+        !process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_KEY;
+      throw new Error(missingConfig
+        ? "Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_KEY in this app environment."
+        : "Could not initialize the Supabase client. See the [Attendance Client Initialization Error] log.");
+    }
+
+    const { data, error, response: invocationResponse } = await supabase.functions.invoke("attendance", {
+      body,
+      ...(timeout ? { timeout } : {}),
+    });
     if (error) {
-      const responseMessage = typeof data?.error === "string" ? data.error : null;
-      throw new Error(responseMessage ?? "Attendance service is unavailable. Check your connection and retry.");
+      const response = error.context instanceof Response
+        ? error.context
+        : invocationResponse;
+      const responseStatus = response?.status;
+      const responseStatusText = response?.statusText;
+      let responseBody: unknown;
+      let responseText: string | undefined;
+      if (response) {
+        responseText = await response.clone().text().catch(() => undefined);
+        if (responseText) {
+          try {
+            responseBody = JSON.parse(responseText) as unknown;
+          } catch {
+            responseBody = responseText.slice(0, 2000);
+          }
+        }
+      }
+
+      const serviceMessage =
+        typeof responseBody === "object" && responseBody !== null &&
+        "error" in responseBody && typeof responseBody.error === "string"
+          ? responseBody.error
+          : undefined;
+      const errorKind = error instanceof FunctionsHttpError
+        ? "edge-function-http-error"
+        : error instanceof FunctionsRelayError
+          ? "supabase-relay-error"
+          : error instanceof FunctionsFetchError
+            ? "network-fetch-error"
+            : "unknown-function-error";
+      const fetchCause = error instanceof FunctionsFetchError ? error.context : undefined;
+
+      console.error("[Attendance API Error]", {
+        action: body.action,
+        kind: errorKind,
+        name: error.name,
+        message: error.message,
+        status: responseStatus,
+        statusText: responseStatusText,
+        corsAllowOrigin: response?.headers.get("access-control-allow-origin") ?? undefined,
+        responseContentType: response?.headers.get("content-type") ?? undefined,
+        responseBody,
+        networkName: fetchCause instanceof Error ? fetchCause.name : undefined,
+        networkMessage: fetchCause instanceof Error ? fetchCause.message : undefined,
+        platform: Platform.OS,
+        supabaseConfigured: Boolean(
+          process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_KEY,
+        ),
+      });
+
+      const statusSuffix = responseStatus ? ` (HTTP ${responseStatus})` : "";
+      const fetchWasAborted = fetchCause instanceof Error && fetchCause.name === "AbortError";
+      const message = serviceMessage ?? (fetchWasAborted
+        ? "Attendance service request timed out. The local QR pass remains available."
+        : error instanceof FunctionsFetchError
+          ? "Attendance network request failed. Check connectivity; on web, a fetch failure may also indicate a CORS issue."
+          : error.message || "Attendance service is unavailable. Check your connection and retry.");
+      throw new Error(`${message}${statusSuffix}`);
     }
     if (!data || typeof data !== "object") throw new Error("Attendance service returned an invalid response.");
-    if (typeof data.error === "string") throw new Error(data.error);
+    if (typeof data.error === "string") {
+      console.error("[Attendance API Response Error]", {
+        action: body.action,
+        status: invocationResponse?.status,
+        statusText: invocationResponse?.statusText,
+        message: data.error,
+        platform: Platform.OS,
+      });
+      throw new Error(data.error);
+    }
     return data as T;
-  }, [supabase]);
+  }, [isSignedIn, supabase]);
 
   const provision = useCallback((secret: string) =>
-    invoke<{ provisioned: boolean }>({ action: "provision", secret }), [invoke]);
+    invoke<{ provisioned: boolean }>({ action: "provision", secret }, PROVISION_REQUEST_TIMEOUT_MS), [invoke]);
   const scan = useCallback((payload: string) =>
     invoke<AttendanceScanResult>({ action: "scan", payload }), [invoke]);
   const history = useCallback((memberId?: string) =>

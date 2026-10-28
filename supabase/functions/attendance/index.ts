@@ -81,24 +81,47 @@ async function handle(request: Request): Promise<Response> {
   if (body.action === "provision") {
     if (role !== "member") return json({ error: "Only members can provision a pass." }, 403);
     if (typeof body.secret !== "string") return json({ error: "A TOTP secret is required." }, 400);
+    let provisionStage = "validate-secret";
     try {
       if (decodeBase32(body.secret).length !== 20) return json({ error: "TOTP secret must be 160 bits." }, 400);
+
+      provisionStage = "read-existing-secret";
       const { data: existing, error: readError } = await admin.from("member_totp_secrets")
         .select("encrypted_secret").eq("user_id", auth.userId).maybeSingle();
       if (readError) throw readError;
-      if (existing && await decryptSecret(existing.encrypted_secret) === body.secret) {
-        return json({ provisioned: true, unchanged: true });
+      if (existing) {
+        provisionStage = "decrypt-existing-secret";
+        if (await decryptSecret(existing.encrypted_secret) === body.secret) {
+          return json({ provisioned: true, unchanged: true });
+        }
       }
+
+      provisionStage = "encrypt-secret";
       const encryptedSecret = await encryptSecret(body.secret);
+      provisionStage = "write-secret-rpc";
       const { data, error } = await admin.rpc("provision_attendance_secret", {
         p_member_id: auth.userId,
         p_encrypted_secret: encryptedSecret,
       });
       if (error) throw error;
+      console.info("Attendance pass provisioned.", { memberId: auth.userId, unchanged: data === "unchanged" });
       return json({ provisioned: true, unchanged: data === "unchanged" });
     } catch (error) {
-      console.error("Could not provision attendance pass:", error);
-      return json({ error: "Could not securely provision your attendance pass." }, 503);
+      const cause = error as { code?: unknown; details?: unknown; hint?: unknown; message?: unknown; name?: unknown };
+      console.error("Could not provision attendance pass.", {
+        stage: provisionStage,
+        memberId: auth.userId,
+        name: typeof cause?.name === "string" ? cause.name : undefined,
+        message: typeof cause?.message === "string" ? cause.message : String(error),
+        code: typeof cause?.code === "string" ? cause.code : undefined,
+        details: typeof cause?.details === "string" ? cause.details : undefined,
+        hint: typeof cause?.hint === "string" ? cause.hint : undefined,
+      });
+      return json({
+        error: "Could not securely provision your attendance pass.",
+        code: "TOTP_PROVISION_FAILED",
+        stage: provisionStage,
+      }, 503);
     }
   }
 
@@ -194,6 +217,11 @@ async function handle(request: Request): Promise<Response> {
 }
 
 Deno.serve((request) => handle(request).catch((error: unknown) => {
-  console.error("Unexpected attendance request failure:", error);
-  return json({ error: "Could not process attendance request." }, 500);
+  console.error("Unexpected attendance request failure:", {
+    method: request.method,
+    path: new URL(request.url).pathname,
+    name: error instanceof Error ? error.name : undefined,
+    message: error instanceof Error ? error.message : String(error),
+  });
+  return json({ error: "Could not process attendance request.", code: "ATTENDANCE_UNEXPECTED_FAILURE" }, 500);
 }));
