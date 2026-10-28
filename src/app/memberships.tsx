@@ -3,18 +3,18 @@ import { KFitColors } from "@/constants/theme";
 import { useRegisterMember } from "@/hooks/use-register-member";
 import { useMemo, useState } from "react";
 import {
-  Alert,
-  ImageBackground,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions
+    Alert,
+    ImageBackground,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+    useWindowDimensions
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -609,15 +609,20 @@ export default function MembershipsScreen() {
               <Pressable
                 style={styles.modalSaveWrapper}
                 onPress={saveForm}
+                disabled={registerLoading}
               >
                 <ImageBackground
                   source={require("../../assets/images/gold-texture.jpg")}
                   resizeMode="cover"
-                  style={styles.modalSave}
+                  style={[styles.modalSave, registerLoading && styles.modalSaveDisabled]}
                   imageStyle={styles.modalSaveImage}
                 >
                   <Text style={styles.modalSaveText}>
-                    {formMode === "add" ? "Save & issue pass" : "Save changes"}
+                    {registerLoading
+                      ? "Registering..."
+                      : formMode === "add"
+                      ? "Save & issue pass"
+                      : "Save changes"}
                   </Text>
                 </ImageBackground>
               </Pressable>
@@ -986,6 +991,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
+  },
+  modalSaveDisabled: {
+    opacity: 0.6,
   },
   modalSaveImage: {
     borderRadius: 10,

@@ -225,6 +225,8 @@ export default function MembersScreen() {
       setNewPassword("");
       setModalOpen(false);
       Alert.alert("Success", "Member registered successfully!");
+    } else {
+      Alert.alert("Registration Error", result.error || "Registration failed");
     }
   };
 
@@ -637,9 +639,11 @@ export default function MembersScreen() {
 
               <Pressable
                 onPress={saveMember}
+                disabled={registerLoading}
                 style={({ pressed }) => [
                   styles.saveButtonWrapper,
                   pressed && styles.pressed,
+                  registerLoading && styles.saveButtonDisabled,
                 ]}
               >
                 <ImageBackground
@@ -648,12 +652,9 @@ export default function MembersScreen() {
                   style={styles.saveButton}
                   imageStyle={styles.saveButtonImage}
                 >
-                  <Ionicons
-                    name="checkmark"
-                    size={16}
-                    color={KFitColors.onAccent}
-                  />
-                  <Text style={styles.saveButtonText}>Save & issue pass</Text>
+                  <Text style={styles.saveButtonText}>
+                    {registerLoading ? "Registering..." : "Save & issue pass"}
+                  </Text>
                 </ImageBackground>
               </Pressable>
             </Pressable>
