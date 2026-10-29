@@ -35,13 +35,9 @@ if (
 }
 
 type Props = {
-  /** Show a back arrow instead of the brand block (for detail screens). */
   showBack?: boolean;
-  /** Override the small subtitle under the brand title. */
   subtitle?: string;
-  /** Optional: open a settings screen/tab. */
   onOpenSettings?: (key: "notifications" | "privacy" | "language") => void;
-  /** Optional: open a support screen/URL. */
   onOpenSupport?: (key: "help" | "contact" | "terms" | "privacy") => void;
 };
 
@@ -161,6 +157,9 @@ export default function TrainerHeader({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
 
+  /** Logout confirmation dialog state */
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+
   const { notices: notifications, unread } = useNotices("trainer");
 
   const closePanel = () => {
@@ -191,6 +190,26 @@ export default function TrainerHeader({
     void Haptics.selectionAsync();
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setter(!open);
+  };
+
+  /** Open the logout confirmation */
+  const askLogout = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLogoutConfirmOpen(true);
+  };
+
+  /** Confirmed → close panel + dialog, then sign out */
+  const confirmLogout = () => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setLogoutConfirmOpen(false);
+    closePanel();
+    logout();
+  };
+
+  /** Cancel → close dialog only */
+  const cancelLogout = () => {
+    void Haptics.selectionAsync();
+    setLogoutConfirmOpen(false);
   };
 
   /* ── Settings & Support definitions ── */
@@ -264,7 +283,6 @@ export default function TrainerHeader({
     },
   ];
 
-  // Modal content is not inside SafeAreaView, so offset by the top inset.
   const panelTop = insets.top + 62;
 
   return (
@@ -437,7 +455,6 @@ export default function TrainerHeader({
                   </View>
                 </View>
 
-                {/* ✅ Profile link — navigates to /trainer-profile */}
                 <TouchableOpacity
                   style={styles.menuRow}
                   onPress={() => {
@@ -459,30 +476,8 @@ export default function TrainerHeader({
                   />
                 </TouchableOpacity>
 
-                {/* Dashboard */}
-                <TouchableOpacity
-                  style={styles.menuRow}
-                  onPress={() => {
-                    closePanel();
-                    router.replace("/trainer-dashboard" as any);
-                  }}
-                  activeOpacity={0.8}
-                  accessibilityRole="button"
-                >
-                  <View style={styles.menuIcon}>
-                    <Feather name="home" size={15} color={KFitColors.accent} />
-                  </View>
-                  <Text style={styles.menuText}>Dashboard</Text>
-                  <Feather
-                    name="chevron-right"
-                    size={16}
-                    color={KFitColors.mutedText}
-                  />
-                </TouchableOpacity>
-
                 <View style={styles.divider} />
 
-                {/* Settings accordion */}
                 <AccordionSection
                   title="Settings"
                   icon="settings"
@@ -498,7 +493,6 @@ export default function TrainerHeader({
 
                 <View style={styles.divider} />
 
-                {/* Help & Support accordion */}
                 <AccordionSection
                   title="Help & Support"
                   icon="help-circle"
@@ -512,16 +506,14 @@ export default function TrainerHeader({
 
                 <View style={styles.divider} />
 
-                {/* Logout */}
+                {/* Logout — opens confirmation dialog */}
                 <TouchableOpacity
                   style={styles.menuRow}
                   disabled={isSigningOut}
-                  onPress={() => {
-                    closePanel();
-                    logout();
-                  }}
+                  onPress={askLogout}
                   activeOpacity={0.8}
                   accessibilityRole="button"
+                  accessibilityLabel="Log out"
                 >
                   <View style={styles.menuIconDanger}>
                     <Feather
@@ -536,6 +528,55 @@ export default function TrainerHeader({
                 </TouchableOpacity>
               </>
             )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ───────────── Logout confirmation dialog ───────────── */}
+      <Modal
+        visible={logoutConfirmOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelLogout}
+      >
+        <Pressable style={styles.confirmBackdrop} onPress={cancelLogout}>
+          <Pressable
+            style={styles.confirmCard}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.confirmIconWrap}>
+              <Feather name="log-out" size={22} color={KFitColors.error} />
+            </View>
+
+            <Text style={styles.confirmTitle}>Log out?</Text>
+            <Text style={styles.confirmBody}>
+              You&apos;ll need to sign in again to access the trainer workspace.
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmCancel]}
+                onPress={cancelLogout}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel logout"
+              >
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmDanger]}
+                onPress={confirmLogout}
+                activeOpacity={0.85}
+                disabled={isSigningOut}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm logout"
+              >
+                <Feather name="log-out" size={13} color="#fff" />
+                <Text style={styles.confirmDangerText}>
+                  {isSigningOut ? "Signing out…" : "Log out"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -882,5 +923,83 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     marginRight: 4,
+  },
+
+  /* Logout confirmation */
+  confirmBackdrop: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.7)",
+  },
+  confirmCard: {
+    width: "100%",
+    maxWidth: 320,
+    gap: 12,
+    padding: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+    alignItems: "center",
+  },
+  confirmIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.error + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.error + "44",
+    marginBottom: 4,
+  },
+  confirmTitle: {
+    color: KFitColors.text,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+    textAlign: "center",
+  },
+  confirmBody: {
+    color: KFitColors.mutedText,
+    fontSize: 12,
+    textAlign: "center",
+    lineHeight: 18,
+    paddingHorizontal: 4,
+  },
+  confirmActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 6,
+    width: "100%",
+  },
+  confirmBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  confirmCancel: {
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+  },
+  confirmCancelText: {
+    color: KFitColors.mutedText,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  confirmDanger: {
+    backgroundColor: KFitColors.error,
+  },
+  confirmDangerText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "900",
   },
 });

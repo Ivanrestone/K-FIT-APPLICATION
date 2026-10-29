@@ -8,25 +8,69 @@ import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Image,
-    ImageBackground,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TextInputProps,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Image,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleProp,
+  StyleSheet,
+  Text,
+  TextInput,
+  TextInputProps,
+  View,
+  ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const NAV_CLEARANCE = 140;
+const WARNING = "#F59E0B";
 
 type FeatherName = keyof typeof Feather.glyphMap;
+
+/* ---------------- Typed pressable helper ---------------- */
+type PressableBtnProps = {
+  children?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  pressedStyle?: StyleProp<ViewStyle>;
+  onPress?: () => void;
+  disabled?: boolean;
+  accessibilityRole?: "button" | "link" | "none";
+  accessibilityLabel?: string;
+  accessibilityState?: { disabled?: boolean };
+  hitSlop?: number;
+};
+function PressableBtn({
+  children,
+  style,
+  pressedStyle,
+  onPress,
+  disabled,
+  accessibilityRole,
+  accessibilityLabel,
+  accessibilityState,
+  hitSlop,
+}: PressableBtnProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={accessibilityState}
+      hitSlop={hitSlop}
+      style={({ pressed }) => [
+        style,
+        pressed && (pressedStyle ?? styles.pressed),
+      ]}
+    >
+      {children}
+    </Pressable>
+  );
+}
 
 /* ---------- Extra editable profile data (local for now) ---------- */
 type ProfileExtras = {
@@ -157,7 +201,7 @@ function Section({
               <Feather name={icon} size={14} color={KFitColors.accent} />
             </View>
           ) : null}
-          <View style={{ flex: 1 }}>
+          <View style={styles.flex}>
             <Text style={styles.sectionTitle}>{title}</Text>
             {subtitle ? (
               <Text style={styles.sectionSubtitle}>{subtitle}</Text>
@@ -165,7 +209,7 @@ function Section({
           </View>
         </View>
         {onEdit ? (
-          <TouchableOpacity
+          <PressableBtn
             onPress={onEdit}
             accessibilityRole="button"
             accessibilityLabel={`Edit ${title}`}
@@ -174,7 +218,7 @@ function Section({
           >
             <Feather name="edit-2" size={13} color={KFitColors.accent} />
             <Text style={styles.sectionEditText}>Edit</Text>
-          </TouchableOpacity>
+          </PressableBtn>
         ) : null}
       </View>
       {children}
@@ -187,28 +231,30 @@ function InfoRow({
   label,
   value,
   last,
+  empty,
 }: {
   icon?: FeatherName;
   label: string;
   value: string;
   last?: boolean;
+  empty?: boolean;
 }) {
   return (
     <>
       <View style={styles.infoRow}>
         <View style={styles.infoRowLeft}>
           {icon ? (
-            <Feather
-              name={icon}
-              size={14}
-              color={KFitColors.mutedText}
-              style={{ marginRight: 8 }}
-            />
+            <View style={styles.infoIconWrap}>
+              <Feather name={icon} size={12} color={KFitColors.accent} />
+            </View>
           ) : null}
           <Text style={styles.infoLabel}>{label}</Text>
         </View>
-        <Text style={styles.infoValue} numberOfLines={2}>
-          {value}
+        <Text
+          style={[styles.infoValue, empty && styles.infoValueEmpty]}
+          numberOfLines={2}
+        >
+          {value?.trim() || "Not provided"}
         </Text>
       </View>
       {!last ? <View style={styles.divider} /> : null}
@@ -247,59 +293,15 @@ function EditableRow({
             {...inputProps}
           />
         ) : (
-          <Text style={styles.infoValue}>
+          <Text
+            style={[styles.infoValue, !value?.trim() && styles.infoValueEmpty]}
+          >
             {value?.trim() || "Not provided"}
           </Text>
         )}
       </View>
       {!last ? <View style={styles.divider} /> : null}
     </>
-  );
-}
-
-function GoldButton({
-  label,
-  onPress,
-  disabled,
-  fullWidth,
-  icon,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  fullWidth?: boolean;
-  icon?: FeatherName;
-}) {
-  return (
-    <TouchableOpacity
-      style={[
-        styles.goldButton,
-        fullWidth && styles.goldButtonFull,
-        disabled && styles.disabled,
-      ]}
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.85}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: !!disabled }}
-    >
-      <ImageBackground
-        source={require("../../assets/images/gold-texture.jpg")}
-        resizeMode="cover"
-        style={styles.goldButtonBg}
-        imageStyle={styles.goldButtonImage}
-      >
-        {icon ? (
-          <Feather
-            name={icon}
-            size={14}
-            color="#121212"
-            style={{ marginRight: 6 }}
-          />
-        ) : null}
-        <Text style={styles.goldButtonText}>{label}</Text>
-      </ImageBackground>
-    </TouchableOpacity>
   );
 }
 
@@ -334,11 +336,27 @@ function ProfileStatusScreen({
           </Text>
           <Text style={styles.statusMessage}>{message}</Text>
           {onRetry ? (
-            <GoldButton
-              label={actionLabel}
+            <PressableBtn
+              style={styles.goldButton}
               onPress={onRetry}
-              icon="refresh-cw"
-            />
+              accessibilityRole="button"
+              accessibilityLabel={actionLabel}
+            >
+              <ImageBackground
+                source={require("../../assets/images/gold-texture.jpg")}
+                resizeMode="cover"
+                style={styles.goldButtonBg}
+                imageStyle={styles.goldButtonImage}
+              >
+                <Feather
+                  name="refresh-cw"
+                  size={14}
+                  color="#121212"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.goldButtonText}>{actionLabel}</Text>
+              </ImageBackground>
+            </PressableBtn>
           ) : null}
         </View>
         <MemberBottomNav activeRoute="/member-profile" />
@@ -467,11 +485,17 @@ function ConfiguredMemberProfileScreen() {
 
   /* ---------- Missing-fields save ---------- */
   const beginEdit = () => {
+    void Haptics.selectionAsync();
     setEmailDraft(effectiveProfile.email ?? "");
     setFirstNameDraft(effectiveProfile.firstName ?? "");
     setLastNameDraft(effectiveProfile.lastName ?? "");
     setActionError(null);
     setIsEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setActionError(null);
+    setIsEditing(false);
   };
 
   const saveProfile = async () => {
@@ -488,6 +512,7 @@ function ConfiguredMemberProfileScreen() {
         lastName: lastNameDraft,
       });
       setIsEditing(false);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       setActionError(
         e instanceof Error ? e.message : "Could not save your profile.",
@@ -502,6 +527,7 @@ function ConfiguredMemberProfileScreen() {
     setActionError(null);
     try {
       await submitCoachRequest();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       setActionError(
         e instanceof Error ? e.message : "Could not submit your request.",
@@ -522,6 +548,15 @@ function ConfiguredMemberProfileScreen() {
 
   const canRequestCoach =
     coachRequest?.status !== "pending" && coachRequest?.status !== "approved";
+
+  const coachTone =
+    coachRequest?.status === "approved"
+      ? KFitColors.accent
+      : coachRequest?.status === "pending"
+        ? WARNING
+        : coachRequest?.status === "rejected"
+          ? KFitColors.error
+          : KFitColors.mutedText;
 
   const quickActions: { label: string; icon: FeatherName; route: string }[] = [
     { label: "Workouts", icon: "zap", route: "/member-workout" },
@@ -736,7 +771,7 @@ function ConfiguredMemberProfileScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <View>
+            <View style={styles.flex}>
               <Text style={styles.brand}>FORM ATHLETICS</Text>
               <Text style={styles.brandSubtitle}>
                 FORM / Brooklyn · Performance club
@@ -747,33 +782,40 @@ function ConfiguredMemberProfileScreen() {
 
           {/* Hero */}
           <View style={styles.profileHeader}>
-            <TouchableOpacity
+            <PressableBtn
               onPress={openAvatarModal}
-              activeOpacity={0.85}
               accessibilityRole="button"
               accessibilityLabel="Change profile picture"
               style={styles.avatarWrap}
             >
-              {avatarUri ? (
-                <Image source={{ uri: avatarUri }} style={styles.avatar} />
-              ) : (
-                <ImageBackground
-                  source={require("../../assets/images/gold-texture.jpg")}
-                  resizeMode="cover"
-                  style={styles.avatar}
-                  imageStyle={styles.avatarImage}
-                >
-                  <Text style={styles.avatarInitials}>{initials}</Text>
-                </ImageBackground>
-              )}
+              <View style={styles.avatarRing}>
+                {avatarUri ? (
+                  <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                ) : (
+                  <ImageBackground
+                    source={require("../../assets/images/gold-texture.jpg")}
+                    resizeMode="cover"
+                    style={styles.avatar}
+                    imageStyle={styles.avatarImage}
+                  >
+                    <Text style={styles.avatarInitials}>{initials}</Text>
+                  </ImageBackground>
+                )}
+              </View>
               <View style={styles.avatarEditBadge}>
                 <Feather name="camera" size={13} color={KFitColors.onAccent} />
               </View>
-            </TouchableOpacity>
+            </PressableBtn>
 
             <Text style={styles.profileName}>
               {fullName || "Name not provided"}
             </Text>
+            <Text style={styles.profileSubtitle}>
+              {effectiveProfile.role === "coach"
+                ? "Coach · Performance club"
+                : "Member · Performance club"}
+            </Text>
+
             <View style={styles.heroChips}>
               <View style={styles.roleChip}>
                 <Feather
@@ -785,7 +827,7 @@ function ConfiguredMemberProfileScreen() {
                   {effectiveProfile.role.toUpperCase()}
                 </Text>
               </View>
-              <View style={styles.verifiedChip}>
+              <View style={styles.roleChip}>
                 <Feather
                   name="check-circle"
                   size={10}
@@ -795,31 +837,29 @@ function ConfiguredMemberProfileScreen() {
               </View>
             </View>
 
-            <TouchableOpacity
+            <PressableBtn
               style={styles.changeProfileButton}
               onPress={openChangeProfile}
-              activeOpacity={0.8}
               accessibilityRole="button"
+              accessibilityLabel="Change profile"
             >
               <Feather name="edit-3" size={14} color={KFitColors.accent} />
               <Text style={styles.changeProfileButtonText}>Change profile</Text>
-            </TouchableOpacity>
+            </PressableBtn>
           </View>
 
-          {/* Completion card */}
+          {/* Completion */}
           <View style={styles.completionCard}>
             <View style={styles.completionTop}>
-              <View>
+              <View style={styles.flex}>
                 <Text style={styles.completionLabel}>PROFILE COMPLETION</Text>
                 <Text style={styles.completionValue}>
                   {completion}% complete
                 </Text>
               </View>
-              <Feather
-                name={completion === 100 ? "check-circle" : "trending-up"}
-                size={20}
-                color={KFitColors.accent}
-              />
+              <View style={styles.completionRing}>
+                <Text style={styles.completionRingText}>{completion}%</Text>
+              </View>
             </View>
             <View style={styles.completionTrack}>
               <View
@@ -836,10 +876,9 @@ function ConfiguredMemberProfileScreen() {
           {/* Quick actions */}
           <View style={styles.actionsGrid}>
             {quickActions.map((a) => (
-              <TouchableOpacity
+              <PressableBtn
                 key={a.label}
                 style={styles.actionCard}
-                activeOpacity={0.8}
                 onPress={() => router.replace(a.route as any)}
                 accessibilityRole="button"
                 accessibilityLabel={a.label}
@@ -848,7 +887,7 @@ function ConfiguredMemberProfileScreen() {
                   <Feather name={a.icon} size={18} color={KFitColors.accent} />
                 </View>
                 <Text style={styles.actionLabel}>{a.label}</Text>
-              </TouchableOpacity>
+              </PressableBtn>
             ))}
           </View>
 
@@ -859,6 +898,22 @@ function ConfiguredMemberProfileScreen() {
             icon="user"
             onEdit={openChangeProfile}
           >
+            {hasMissingProfileFields ? (
+              <View style={styles.missingBanner}>
+                <View style={styles.missingIconWrap}>
+                  <Feather name="alert-circle" size={14} color={WARNING} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.missingTitle}>
+                    A few details are missing
+                  </Text>
+                  <Text style={styles.missingBody}>
+                    Complete your name and email so we can keep you updated.
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
             <View style={styles.card}>
               <EditableRow
                 label="First Name"
@@ -907,29 +962,47 @@ function ConfiguredMemberProfileScreen() {
               <View style={styles.profileActions}>
                 {isEditing ? (
                   <>
-                    <GoldButton
-                      label={isSaving ? "Saving…" : "Save profile"}
+                    <PressableBtn
+                      style={styles.goldButton}
                       onPress={saveProfile}
                       disabled={isSaving}
-                      icon="check"
-                    />
-                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Save profile"
+                      accessibilityState={{ disabled: isSaving }}
+                    >
+                      <ImageBackground
+                        source={require("../../assets/images/gold-texture.jpg")}
+                        resizeMode="cover"
+                        style={styles.goldButtonBg}
+                        imageStyle={styles.goldButtonImage}
+                      >
+                        <Feather
+                          name="check"
+                          size={14}
+                          color="#121212"
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text style={styles.goldButtonText}>
+                          {isSaving ? "Saving…" : "Save profile"}
+                        </Text>
+                      </ImageBackground>
+                    </PressableBtn>
+                    <PressableBtn
                       style={styles.cancelButton}
-                      onPress={() => {
-                        setActionError(null);
-                        setIsEditing(false);
-                      }}
+                      onPress={cancelEdit}
                       disabled={isSaving}
                       accessibilityRole="button"
+                      accessibilityLabel="Cancel"
                     >
                       <Text style={styles.cancelButtonText}>Cancel</Text>
-                    </TouchableOpacity>
+                    </PressableBtn>
                   </>
                 ) : (
-                  <TouchableOpacity
+                  <PressableBtn
                     style={styles.textButton}
                     onPress={beginEdit}
                     accessibilityRole="button"
+                    accessibilityLabel="Edit missing details"
                   >
                     <Feather
                       name="edit-2"
@@ -939,38 +1012,46 @@ function ConfiguredMemberProfileScreen() {
                     <Text style={styles.textButtonLabel}>
                       Edit missing details
                     </Text>
-                  </TouchableOpacity>
+                  </PressableBtn>
                 )}
               </View>
             ) : null}
 
             {actionError ? (
-              <Text style={styles.errorText} accessibilityRole="alert">
-                {actionError}
-              </Text>
+              <View style={styles.errorRow}>
+                <Feather
+                  name="alert-circle"
+                  size={13}
+                  color={KFitColors.error}
+                />
+                <Text style={styles.errorText} accessibilityRole="alert">
+                  {actionError}
+                </Text>
+              </View>
             ) : null}
           </Section>
 
           {/* Social media */}
           <Section
             title="Social Media"
-            subtitle={`${socialCount} linked`}
+            subtitle={
+              socialCount === 0 ? "Not linked yet" : `${socialCount} linked`
+            }
             icon="link"
             onEdit={openSocials}
           >
             <View style={styles.cardFlush}>
               {socialCount === 0 ? (
-                <TouchableOpacity
+                <PressableBtn
                   style={styles.emptySocialRow}
                   onPress={openSocials}
-                  activeOpacity={0.8}
                   accessibilityRole="button"
                   accessibilityLabel="Add social media links"
                 >
                   <View style={styles.socialIconBox}>
                     <Feather name="plus" size={14} color={KFitColors.accent} />
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.flex}>
                     <Text style={styles.socialLabel}>Add social links</Text>
                     <Text style={styles.socialValue}>
                       Instagram, X, TikTok, YouTube and more
@@ -981,17 +1062,16 @@ function ConfiguredMemberProfileScreen() {
                     size={18}
                     color={KFitColors.mutedText}
                   />
-                </TouchableOpacity>
+                </PressableBtn>
               ) : (
                 linkedSocials.map((meta, idx) => {
                   const isLast = idx === linkedSocials.length - 1;
                   const value = socials[meta.key].trim();
                   return (
                     <View key={meta.key}>
-                      <TouchableOpacity
+                      <PressableBtn
                         style={styles.socialRow}
                         onPress={openSocials}
-                        activeOpacity={0.7}
                         accessibilityRole="button"
                         accessibilityLabel={`Edit ${meta.label}`}
                       >
@@ -1002,7 +1082,7 @@ function ConfiguredMemberProfileScreen() {
                             color={KFitColors.accent}
                           />
                         </View>
-                        <View style={{ flex: 1 }}>
+                        <View style={styles.flex}>
                           <Text style={styles.socialLabel}>{meta.label}</Text>
                           <Text style={styles.socialValue} numberOfLines={1}>
                             {value}
@@ -1013,7 +1093,7 @@ function ConfiguredMemberProfileScreen() {
                           size={18}
                           color={KFitColors.mutedText}
                         />
-                      </TouchableOpacity>
+                      </PressableBtn>
                       {!isLast ? <View style={styles.dividerInset} /> : null}
                     </View>
                   );
@@ -1029,27 +1109,69 @@ function ConfiguredMemberProfileScreen() {
               subtitle="Become a K-Fit coach"
               icon="award"
             >
-              <View style={styles.card}>
-                <Text style={styles.bodyText}>{coachStatusText}</Text>
-                {canRequestCoach ? (
-                  <View style={{ marginTop: Spacing.three }}>
-                    <GoldButton
-                      label={
-                        isRequestingCoach
-                          ? "Submitting…"
-                          : "Request to become a Coach"
-                      }
-                      onPress={requestCoachStatus}
-                      disabled={isRequestingCoach}
-                      icon="arrow-up-right"
-                    />
+              <View style={styles.coachCard}>
+                <View style={styles.coachHeader}>
+                  <View
+                    style={[
+                      styles.coachIconWrap,
+                      {
+                        backgroundColor: coachTone + "1F",
+                        borderColor: coachTone + "44",
+                      },
+                    ]}
+                  >
+                    <Feather name="award" size={16} color={coachTone} />
                   </View>
+                  <View style={styles.flex}>
+                    <Text style={[styles.coachState, { color: coachTone }]}>
+                      {coachRequest?.status
+                        ? coachRequest.status.toUpperCase()
+                        : "NOT REQUESTED"}
+                    </Text>
+                    <Text style={styles.bodyText}>{coachStatusText}</Text>
+                  </View>
+                </View>
+                {canRequestCoach ? (
+                  <PressableBtn
+                    style={styles.goldButtonFull}
+                    onPress={requestCoachStatus}
+                    disabled={isRequestingCoach}
+                    accessibilityRole="button"
+                    accessibilityLabel="Request to become a Coach"
+                    accessibilityState={{ disabled: isRequestingCoach }}
+                  >
+                    <ImageBackground
+                      source={require("../../assets/images/gold-texture.jpg")}
+                      resizeMode="cover"
+                      style={styles.goldButtonBg}
+                      imageStyle={styles.goldButtonImage}
+                    >
+                      <Feather
+                        name="arrow-up-right"
+                        size={14}
+                        color="#121212"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.goldButtonText}>
+                        {isRequestingCoach
+                          ? "Submitting…"
+                          : "Request to become a Coach"}
+                      </Text>
+                    </ImageBackground>
+                  </PressableBtn>
                 ) : null}
               </View>
               {actionError && !isEditing ? (
-                <Text style={styles.errorText} accessibilityRole="alert">
-                  {actionError}
-                </Text>
+                <View style={styles.errorRow}>
+                  <Feather
+                    name="alert-circle"
+                    size={13}
+                    color={KFitColors.error}
+                  />
+                  <Text style={styles.errorText} accessibilityRole="alert">
+                    {actionError}
+                  </Text>
+                </View>
               ) : null}
             </Section>
           ) : null}
@@ -1060,19 +1182,14 @@ function ConfiguredMemberProfileScreen() {
             subtitle="Your plan & billing cycle"
             icon="credit-card"
           >
-            <View style={styles.card}>
-              <InfoRow icon="layers" label="Plan" value="Performance" />
-              <InfoRow
-                icon="calendar"
-                label="Member Since"
-                value="September 11, 2016"
-              />
-              <InfoRow
-                icon="refresh-cw"
-                label="Renewal Date"
-                value="November 01, 2026"
-              />
-              <InfoRow icon="zap" label="Sessions Used" value="18 / 20" last />
+            <View style={styles.membershipStrip}>
+              <MembershipCell label="Plan" value="Performance" accent />
+              <View style={styles.membershipDivider} />
+              <MembershipCell label="Member since" value="Sep 11, 2016" />
+              <View style={styles.membershipDivider} />
+              <MembershipCell label="Renews" value="Nov 01, 2026" />
+              <View style={styles.membershipDivider} />
+              <MembershipCell label="Sessions" value="18 / 20" />
             </View>
           </Section>
 
@@ -1145,13 +1262,13 @@ function ConfiguredMemberProfileScreen() {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.flex}>
                 <Text style={styles.modalTitle}>CHANGE PROFILE</Text>
                 <Text style={styles.modalSubtitle}>
                   Your edits save instantly.
                 </Text>
               </View>
-              <TouchableOpacity
+              <PressableBtn
                 onPress={closeChangeProfile}
                 hitSlop={10}
                 accessibilityRole="button"
@@ -1159,7 +1276,7 @@ function ConfiguredMemberProfileScreen() {
                 disabled={isSavingProfile}
               >
                 <Feather name="x" size={18} color={KFitColors.mutedText} />
-              </TouchableOpacity>
+              </PressableBtn>
             </View>
 
             <ScrollView
@@ -1272,26 +1389,36 @@ function ConfiguredMemberProfileScreen() {
               </FieldGroup>
 
               {changeProfileError ? (
-                <Text style={styles.errorText} accessibilityRole="alert">
-                  {changeProfileError}
-                </Text>
+                <View style={styles.errorRow}>
+                  <Feather
+                    name="alert-circle"
+                    size={13}
+                    color={KFitColors.error}
+                  />
+                  <Text style={styles.errorText} accessibilityRole="alert">
+                    {changeProfileError}
+                  </Text>
+                </View>
               ) : null}
             </ScrollView>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
+              <PressableBtn
                 style={styles.modalCancel}
                 onPress={closeChangeProfile}
                 disabled={isSavingProfile}
-                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </PressableBtn>
+              <PressableBtn
                 style={[styles.modalSave, isSavingProfile && styles.disabled]}
                 onPress={saveFullProfile}
                 disabled={isSavingProfile}
-                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Save changes"
+                accessibilityState={{ disabled: isSavingProfile }}
               >
                 <Feather
                   name="check"
@@ -1302,7 +1429,7 @@ function ConfiguredMemberProfileScreen() {
                 <Text style={styles.modalSaveText}>
                   {isSavingProfile ? "Saving…" : "Save changes"}
                 </Text>
-              </TouchableOpacity>
+              </PressableBtn>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -1321,13 +1448,13 @@ function ConfiguredMemberProfileScreen() {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.flex}>
                 <Text style={styles.modalTitle}>SOCIAL LINKS</Text>
                 <Text style={styles.modalSubtitle}>
                   Leave blank to hide a platform.
                 </Text>
               </View>
-              <TouchableOpacity
+              <PressableBtn
                 onPress={closeSocials}
                 hitSlop={10}
                 accessibilityRole="button"
@@ -1335,7 +1462,7 @@ function ConfiguredMemberProfileScreen() {
                 disabled={isSavingSocials}
               >
                 <Feather name="x" size={18} color={KFitColors.mutedText} />
-              </TouchableOpacity>
+              </PressableBtn>
             </View>
 
             <ScrollView
@@ -1357,7 +1484,7 @@ function ConfiguredMemberProfileScreen() {
                         <Text style={styles.modalFieldLabel}>{meta.label}</Text>
                       </View>
                       {socialDraft[meta.key].length > 0 ? (
-                        <TouchableOpacity
+                        <PressableBtn
                           onPress={() => clearSocialField(meta.key)}
                           hitSlop={8}
                           accessibilityRole="button"
@@ -1368,7 +1495,7 @@ function ConfiguredMemberProfileScreen() {
                             size={13}
                             color={KFitColors.mutedText}
                           />
-                        </TouchableOpacity>
+                        </PressableBtn>
                       ) : null}
                     </View>
                     <TextInput
@@ -1387,26 +1514,36 @@ function ConfiguredMemberProfileScreen() {
               </FieldGroup>
 
               {socialError ? (
-                <Text style={styles.errorText} accessibilityRole="alert">
-                  {socialError}
-                </Text>
+                <View style={styles.errorRow}>
+                  <Feather
+                    name="alert-circle"
+                    size={13}
+                    color={KFitColors.error}
+                  />
+                  <Text style={styles.errorText} accessibilityRole="alert">
+                    {socialError}
+                  </Text>
+                </View>
               ) : null}
             </ScrollView>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
+              <PressableBtn
                 style={styles.modalCancel}
                 onPress={closeSocials}
                 disabled={isSavingSocials}
-                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </PressableBtn>
+              <PressableBtn
                 style={[styles.modalSave, isSavingSocials && styles.disabled]}
                 onPress={saveSocials}
                 disabled={isSavingSocials}
-                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Save links"
+                accessibilityState={{ disabled: isSavingSocials }}
               >
                 <Feather
                   name="check"
@@ -1417,7 +1554,7 @@ function ConfiguredMemberProfileScreen() {
                 <Text style={styles.modalSaveText}>
                   {isSavingSocials ? "Saving…" : "Save links"}
                 </Text>
-              </TouchableOpacity>
+              </PressableBtn>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -1433,13 +1570,13 @@ function ConfiguredMemberProfileScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.flex}>
                 <Text style={styles.modalTitle}>PROFILE PICTURE</Text>
                 <Text style={styles.modalSubtitle}>
                   Square photos look best (1:1).
                 </Text>
               </View>
-              <TouchableOpacity
+              <PressableBtn
                 onPress={closeAvatarModal}
                 hitSlop={10}
                 accessibilityRole="button"
@@ -1447,7 +1584,7 @@ function ConfiguredMemberProfileScreen() {
                 disabled={isSavingAvatar}
               >
                 <Feather name="x" size={18} color={KFitColors.mutedText} />
-              </TouchableOpacity>
+              </PressableBtn>
             </View>
 
             <View style={styles.avatarPreviewWrap}>
@@ -1464,46 +1601,61 @@ function ConfiguredMemberProfileScreen() {
             </View>
 
             <View style={styles.avatarActions}>
-              <TouchableOpacity
+              <PressableBtn
                 style={styles.avatarActionBtn}
                 onPress={() => void pickAvatarFromLibrary()}
-                activeOpacity={0.8}
                 accessibilityRole="button"
+                accessibilityLabel="Pick from library"
               >
                 <Feather name="image" size={16} color={KFitColors.accent} />
                 <Text style={styles.avatarActionText}>Library</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </PressableBtn>
+              <PressableBtn
                 style={styles.avatarActionBtn}
                 onPress={() => void takeAvatarPhoto()}
-                activeOpacity={0.8}
                 accessibilityRole="button"
+                accessibilityLabel="Take a photo"
               >
                 <Feather name="camera" size={16} color={KFitColors.accent} />
                 <Text style={styles.avatarActionText}>Camera</Text>
-              </TouchableOpacity>
+              </PressableBtn>
             </View>
 
             {avatarError ? (
-              <Text style={styles.errorText} accessibilityRole="alert">
-                {avatarError}
-              </Text>
+              <View style={styles.errorRow}>
+                <Feather
+                  name="alert-circle"
+                  size={13}
+                  color={KFitColors.error}
+                />
+                <Text style={styles.errorText} accessibilityRole="alert">
+                  {avatarError}
+                </Text>
+              </View>
             ) : null}
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
+              <PressableBtn
                 style={styles.modalCancel}
                 onPress={closeAvatarModal}
                 disabled={isSavingAvatar}
-                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalSave, isSavingAvatar && styles.disabled]}
+              </PressableBtn>
+              <PressableBtn
+                style={[
+                  styles.modalSave,
+                  (isSavingAvatar || !avatarDraftUri) && styles.disabled,
+                ]}
                 onPress={() => void saveAvatar()}
                 disabled={isSavingAvatar || !avatarDraftUri}
-                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Save photo"
+                accessibilityState={{
+                  disabled: isSavingAvatar || !avatarDraftUri,
+                }}
               >
                 <Feather
                   name="check"
@@ -1514,19 +1666,20 @@ function ConfiguredMemberProfileScreen() {
                 <Text style={styles.modalSaveText}>
                   {isSavingAvatar ? "Saving…" : "Save photo"}
                 </Text>
-              </TouchableOpacity>
+              </PressableBtn>
             </View>
 
             {avatarUri ? (
-              <TouchableOpacity
+              <PressableBtn
                 style={styles.removeAvatarBtn}
                 onPress={() => void removeAvatar()}
                 disabled={isSavingAvatar}
                 accessibilityRole="button"
+                accessibilityLabel="Remove photo"
               >
                 <Feather name="trash-2" size={14} color={KFitColors.error} />
                 <Text style={styles.removeAvatarText}>Remove photo</Text>
-              </TouchableOpacity>
+              </PressableBtn>
             ) : null}
           </View>
         </View>
@@ -1596,6 +1749,28 @@ function ModalField({
   );
 }
 
+function MembershipCell({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <View style={styles.membershipCell}>
+      <Text style={styles.membershipLabel}>{label.toUpperCase()}</Text>
+      <Text
+        style={[styles.membershipValue, accent && { color: KFitColors.accent }]}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 /* ---------------------------------- Styles ---------------------------------- */
 
 const styles = StyleSheet.create({
@@ -1603,6 +1778,8 @@ const styles = StyleSheet.create({
   mainContainer: { flex: 1, backgroundColor: KFitColors.background },
   content: { flex: 1 },
   disabled: { opacity: 0.5 },
+  pressed: { opacity: 0.7 },
+  flex: { flex: 1, minWidth: 0 },
 
   /* Status */
   statusContent: {
@@ -1648,6 +1825,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 12,
     color: KFitColors.mutedText,
+    fontFamily: "monospace",
   },
 
   /* Hero */
@@ -1658,32 +1836,34 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   avatarWrap: {
-    width: 108,
-    height: 108,
+    width: 116,
+    height: 116,
     marginBottom: 14,
     position: "relative",
   },
+  avatarRing: {
+    flex: 1,
+    borderRadius: 58,
+    padding: 4,
+    backgroundColor: KFitColors.accent + "26",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
+  },
   avatar: {
-    width: 100,
-    height: 100,
+    flex: 1,
+    width: undefined,
+    height: undefined,
     borderRadius: 50,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 3,
-    borderColor: KFitColors.accent,
-    elevation: 8,
-    shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 10,
   },
   avatarImage: { borderRadius: 50 },
-  avatarInitials: { color: "#121212", fontSize: 34, fontWeight: "900" },
+  avatarInitials: { color: "#121212", fontSize: 36, fontWeight: "900" },
   avatarEditBadge: {
     position: "absolute",
-    right: 0,
-    bottom: 0,
+    right: 2,
+    bottom: 2,
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -1694,29 +1874,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   profileName: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "900",
     color: KFitColors.text,
-    marginBottom: 10,
     letterSpacing: -0.3,
+  },
+  profileSubtitle: {
+    fontSize: 12,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+    marginBottom: 10,
+    fontFamily: "monospace",
   },
   heroChips: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
     gap: 8,
     marginBottom: 4,
   },
   roleChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: KFitColors.accent + "1F",
-    borderWidth: 1,
-    borderColor: KFitColors.accent + "40",
-  },
-  verifiedChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
@@ -1732,6 +1909,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 0.6,
     color: KFitColors.accent,
+    fontFamily: "monospace",
   },
   changeProfileButton: {
     marginTop: 16,
@@ -1760,12 +1938,13 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent + "14",
     borderWidth: 1,
     borderColor: KFitColors.accent + "40",
-    gap: 8,
+    gap: 10,
   },
   completionTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    gap: 10,
   },
   completionLabel: {
     fontSize: 9,
@@ -1773,11 +1952,29 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     color: KFitColors.accent,
     marginBottom: 3,
+    fontFamily: "monospace",
   },
   completionValue: {
     fontSize: 16,
     fontWeight: "800",
     color: KFitColors.text,
+  },
+  completionRing: {
+    minWidth: 46,
+    height: 46,
+    borderRadius: 23,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "1F",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
+  },
+  completionRingText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
   },
   completionTrack: {
     height: 6,
@@ -1796,34 +1993,37 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  /* Quick actions */
+  /* Quick actions — 2x2 grid */
   actionsGrid: {
     flexDirection: "row",
-    gap: 10,
+    flexWrap: "wrap",
     paddingHorizontal: 20,
     marginBottom: 24,
+    gap: 10,
   },
   actionCard: {
-    flex: 1,
+    width: "48.5%",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderRadius: 16,
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
     borderColor: KFitColors.border,
   },
   actionIconBox: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: KFitColors.accent + "1F",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
     marginBottom: 8,
   },
   actionLabel: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "800",
     color: KFitColors.text,
   },
 
@@ -1871,6 +2071,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 8,
     backgroundColor: KFitColors.accent + "1F",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
   },
   sectionEditText: {
     fontSize: 11,
@@ -1896,14 +2098,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: KFitColors.text,
     lineHeight: 21,
-    paddingVertical: 10,
+    paddingVertical: 6,
     flex: 1,
   },
-  errorText: {
-    marginTop: 10,
-    fontSize: 13,
-    color: KFitColors.error,
-    lineHeight: 18,
+
+  /* Missing fields banner */
+  missingBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: WARNING + "55",
+    backgroundColor: WARNING + "14",
+    marginBottom: 10,
+  },
+  missingIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: WARNING + "22",
+    borderWidth: 1,
+    borderColor: WARNING + "44",
+  },
+  missingTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: WARNING,
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
+  },
+  missingBody: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+    lineHeight: 16,
   },
 
   /* Info rows */
@@ -1917,16 +2149,29 @@ const styles = StyleSheet.create({
   infoRowLeft: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
     flexShrink: 0,
+  },
+  infoIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
   },
   infoLabel: { fontSize: 13, color: KFitColors.mutedText },
   infoValue: {
-    fontSize: 14,
+    fontSize: 13,
     color: KFitColors.text,
-    fontWeight: "600",
+    fontWeight: "700",
     flexShrink: 1,
     textAlign: "right",
+    fontFamily: "monospace",
   },
+  infoValueEmpty: { color: WARNING, fontStyle: "italic" },
   profileInput: {
     flex: 1,
     minWidth: 120,
@@ -1934,14 +2179,14 @@ const styles = StyleSheet.create({
     borderBottomColor: KFitColors.accent,
     paddingVertical: 4,
     color: KFitColors.text,
-    fontSize: 14,
+    fontSize: 13,
     textAlign: "right",
   },
   divider: { height: 1, backgroundColor: KFitColors.border },
   dividerInset: {
     height: 1,
     backgroundColor: KFitColors.border,
-    marginLeft: 16,
+    marginLeft: 60,
   },
 
   /* Address */
@@ -1997,6 +2242,69 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: KFitColors.mutedText,
     marginTop: 2,
+    fontFamily: "monospace",
+  },
+
+  /* Coach */
+  coachCard: {
+    backgroundColor: KFitColors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    padding: 14,
+    gap: 12,
+  },
+  coachHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  coachIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  coachState: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
+  },
+
+  /* Membership strip */
+  membershipStrip: {
+    flexDirection: "row",
+    backgroundColor: KFitColors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    overflow: "hidden",
+  },
+  membershipCell: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    gap: 4,
+  },
+  membershipDivider: {
+    width: 1,
+    backgroundColor: KFitColors.border,
+    marginVertical: 12,
+  },
+  membershipLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  membershipValue: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.text,
   },
 
   /* Buttons */
@@ -2036,7 +2344,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 6,
   },
-  goldButtonFull: { alignSelf: "stretch" },
+  goldButtonFull: {
+    alignSelf: "stretch",
+    minHeight: 44,
+    borderRadius: 12,
+    overflow: "hidden",
+    elevation: 4,
+    shadowColor: KFitColors.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+  },
   goldButtonBg: {
     minHeight: 44,
     paddingHorizontal: 18,
@@ -2056,7 +2374,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     color: KFitColors.text,
   },
-  footerVersion: { fontSize: 12, color: KFitColors.mutedText, marginTop: 4 },
+  footerVersion: {
+    fontSize: 12,
+    color: KFitColors.mutedText,
+    marginTop: 4,
+    fontFamily: "monospace",
+  },
 
   /* Modals */
   modalBackdrop: {
@@ -2088,9 +2411,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     color: KFitColors.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
-    letterSpacing: 1,
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
   },
   modalSubtitle: {
     color: KFitColors.mutedText,
@@ -2104,6 +2428,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.2,
+    fontFamily: "monospace",
   },
   fieldLabelRow: {
     flexDirection: "row",
@@ -2159,6 +2484,18 @@ const styles = StyleSheet.create({
     color: KFitColors.onAccent,
     fontSize: 13,
     fontWeight: "900",
+  },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 4,
+  },
+  errorText: {
+    flexShrink: 1,
+    fontSize: 13,
+    color: KFitColors.error,
+    lineHeight: 18,
   },
 
   socialFieldHeader: {

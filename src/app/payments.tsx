@@ -2,18 +2,20 @@ import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useState } from "react";
+import * as Haptics from "expo-haptics";
+import { useMemo, useState } from "react";
 import {
   Alert,
   Dimensions,
   Modal,
+  Pressable,
   ScrollView,
+  StyleProp,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
+  ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -22,6 +24,7 @@ const { width } = Dimensions.get("window");
 type IconName = keyof typeof Ionicons.glyphMap;
 type InvoiceStatus = "Paid" | "Pending" | "Overdue";
 type PaymentMethod = "Google Pay" | "NFC Card Tap" | "Cash";
+type StatusFilter = "All statuses" | InvoiceStatus;
 
 interface Invoice {
   id: string;
@@ -50,19 +53,19 @@ interface Receipt {
 const POS_ITEMS: PosItem[] = [
   {
     id: "vip",
-    title: "Monthly VIP Unlimited Membership",
+    title: "Monthly VIP Unlimited",
     subtitle: "All-gym access + sauna",
     price: 45,
   },
   {
     id: "whey",
-    title: "Whey Isolate Protein (2kg tub)",
+    title: "Whey Isolate Protein 2kg",
     subtitle: "Nutrition store supplement",
     price: 35,
   },
   {
     id: "pt",
-    title: "1-on-1 Personal Training Session",
+    title: "Personal Training Session",
     subtitle: "60-min master class voucher",
     price: 60,
   },
@@ -80,7 +83,7 @@ const PAYMENT_METHODS: {
   icon: IconName;
 }[] = [
   { method: "Google Pay", label: "Google Pay", icon: "logo-google" },
-  { method: "NFC Card Tap", label: "Credit card NFC", icon: "card-outline" },
+  { method: "NFC Card Tap", label: "NFC card", icon: "card-outline" },
 ];
 
 const REVENUE_MIX: {
@@ -91,12 +94,14 @@ const REVENUE_MIX: {
 }[] = [
   { icon: "people", label: "Memberships", amount: "$37,840", pct: 78 },
   { icon: "barbell", label: "Personal training", amount: "$8,400", pct: 17 },
-  {
-    icon: "storefront",
-    label: "Day passes & retail",
-    amount: "$2,680",
-    pct: 5,
-  },
+  { icon: "storefront", label: "Retail & passes", amount: "$2,680", pct: 5 },
+];
+
+const STATUS_FILTERS: { key: StatusFilter; icon: IconName }[] = [
+  { key: "All statuses", icon: "apps" },
+  { key: "Paid", icon: "checkmark-circle" },
+  { key: "Pending", icon: "time" },
+  { key: "Overdue", icon: "alert-circle" },
 ];
 
 const initialInvoices: Invoice[] = [
@@ -147,63 +152,117 @@ const initialInvoices: Invoice[] = [
   },
 ];
 
+const statusColor = (s: InvoiceStatus) =>
+  s === "Paid"
+    ? KFitColors.accent
+    : s === "Pending"
+      ? KFitColors.warning
+      : KFitColors.error;
+
 const makeTxId = () => `#KF-${Math.floor(100000 + Math.random() * 900000)}`;
 
 const todayLabel = () =>
-  new Date()
-    .toLocaleDateString("en-US", {
-      month: "short",
-      day: "2-digit",
-      year: "numeric",
-    })
-    .replace(/^(\w+) (\d+), (\d+)$/, "$1 $2, $3");
+  new Date().toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+
+const isWide = width > 820;
+const isTablet = width > 600;
+
+/* ------------------------------------------------------------------ */
+/* Typed pressable wrapper — fixes the "style callback" type error.   */
+/* ------------------------------------------------------------------ */
+type PressableBtnProps = {
+  children?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  pressedStyle?: StyleProp<ViewStyle>;
+  onPress?: () => void;
+  disabled?: boolean;
+  accessibilityRole?: "button" | "link" | "none";
+  accessibilityLabel?: string;
+  accessibilityState?: { selected?: boolean; disabled?: boolean };
+  hitSlop?: number;
+  key?: string | number;
+};
+
+function PressableBtn({
+  children,
+  style,
+  pressedStyle,
+  onPress,
+  disabled,
+  accessibilityRole,
+  accessibilityLabel,
+  accessibilityState,
+  hitSlop,
+}: PressableBtnProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={accessibilityState}
+      hitSlop={hitSlop}
+      style={({ pressed }) => [
+        style,
+        pressed && (pressedStyle ?? styles.pressed),
+      ]}
+    >
+      {children}
+    </Pressable>
+  );
+}
 
 export default function PaymentsScreen() {
-  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState("All statuses");
+  const [selectedStatus, setSelectedStatus] =
+    useState<StatusFilter>("All statuses");
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
 
-  // POS state
   const [selectedItem, setSelectedItem] = useState<PosItem>(POS_ITEMS[0]);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Paid":
-        return KFitColors.accent;
-      case "Pending":
-        return KFitColors.warning;
-      case "Overdue":
-        return KFitColors.error;
-      default:
-        return KFitColors.mutedText;
-    }
-  };
+  const statusCounts = useMemo(() => {
+    const base: Record<StatusFilter, number> = {
+      "All statuses": invoices.length,
+      Paid: 0,
+      Pending: 0,
+      Overdue: 0,
+    };
+    invoices.forEach((i) => (base[i.status] += 1));
+    return base;
+  }, [invoices]);
 
-  const filteredInvoices = invoices.filter((invoice) => {
-    const matchesSearch =
-      invoice.memberName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      invoice.invoiceId.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus =
-      selectedStatus === "All statuses" || invoice.status === selectedStatus;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredInvoices = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return invoices.filter((i) => {
+      const matchesSearch =
+        q.length === 0 ||
+        i.memberName.toLowerCase().includes(q) ||
+        i.invoiceId.toLowerCase().includes(q);
+      const matchesStatus =
+        selectedStatus === "All statuses" || i.status === selectedStatus;
+      return matchesSearch && matchesStatus;
+    });
+  }, [invoices, searchQuery, selectedStatus]);
 
-  const outstandingInvoices = invoices.filter((i) => i.status !== "Paid");
+  const outstanding = useMemo(
+    () => invoices.filter((i) => i.status !== "Paid"),
+    [invoices],
+  );
 
-  // ---- POS actions ----
   const processPosPayment = (method: PaymentMethod) => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const txId = makeTxId();
-
     setReceipt({
       txId,
       item: selectedItem.title,
       method,
       amount: selectedItem.price,
     });
-
-    // Record the sale in the invoice list as a paid walk-in invoice
     setInvoices((prev) => [
       {
         id: `pos-${txId}`,
@@ -219,6 +278,7 @@ export default function PaymentsScreen() {
   };
 
   const remindMemberDues = (invoice: Invoice) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
       "Reminder sent",
       `Payment reminder sent to ${invoice.memberName}.`,
@@ -226,6 +286,7 @@ export default function PaymentsScreen() {
   };
 
   const collectMemberDues = (invoice: Invoice) => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setInvoices((prev) =>
       prev.map((i) => (i.id === invoice.id ? { ...i, status: "Paid" } : i)),
     );
@@ -238,7 +299,7 @@ export default function PaymentsScreen() {
   };
 
   const downloadReceipt = () => {
-    // Replace with expo-print + expo-sharing to generate a real PDF
+    void Haptics.selectionAsync();
     Alert.alert("Receipt", "Downloading PDF receipt to storage...");
     setReceipt(null);
   };
@@ -248,7 +309,6 @@ export default function PaymentsScreen() {
       <View style={styles.mainContainer}>
         <Sidebar activeRoute="/payments" />
 
-        {/* Header + scrollable content */}
         <View style={styles.main}>
           <AppHeader />
 
@@ -256,75 +316,115 @@ export default function PaymentsScreen() {
             style={styles.content}
             contentContainerStyle={styles.contentContainer}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            {/* Page title */}
-            <View style={styles.header}>
+            {/* Header */}
+            <View
+              style={[styles.pageHeader, isTablet && styles.pageHeaderWide]}
+            >
               <View style={styles.headerLeft}>
-                <Text style={styles.headerTitle}>Payments & revenue</Text>
+                <Text style={styles.eyebrow}>REVENUE & COLLECTIONS</Text>
+                <Text style={styles.headerTitle}>Payments</Text>
                 <Text style={styles.headerSubtitle}>
-                  A clear view of your club's financial performance.
+                  A clear view of your club&apos;s financial performance.
                 </Text>
               </View>
               <View style={styles.headerButtons}>
-                <TouchableOpacity style={styles.exportButton}>
+                <PressableBtn style={styles.exportButton}>
                   <Ionicons
                     name="download-outline"
-                    size={15}
+                    size={14}
                     color={KFitColors.text}
                   />
                   <Text style={styles.exportButtonText}>Export</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.createButton}>
-                  <Ionicons name="add" size={16} color={KFitColors.onAccent} />
+                </PressableBtn>
+                <PressableBtn style={styles.createButton}>
+                  <Ionicons name="add" size={14} color={KFitColors.onAccent} />
                   <Text style={styles.createButtonText}>Create invoice</Text>
-                </TouchableOpacity>
+                </PressableBtn>
               </View>
             </View>
 
-            {/* Overview Stats */}
-            <View style={styles.overviewSection}>
-              <Text style={styles.sectionTitle}>Overview</Text>
+            {/* Overview */}
+            <View style={styles.section}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionEyebrow}>OVERVIEW</Text>
+                <Text style={styles.sectionCaption}>THIS MONTH</Text>
+              </View>
               <View style={styles.statsGrid}>
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Revenue this month</Text>
+                <View
+                  style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+                >
+                  <View style={styles.statTop}>
+                    <Text style={styles.statLabel}>Revenue</Text>
+                    <View style={styles.statIcon}>
+                      <Ionicons
+                        name="trending-up"
+                        size={12}
+                        color={KFitColors.accent}
+                      />
+                    </View>
+                  </View>
                   <Text style={styles.statNumber}>$48,920</Text>
-                  <Text style={styles.statChange}>+12.8% vs. September</Text>
+                  <Text style={styles.statAccent}>+12.8% vs Sep</Text>
                 </View>
-
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Collected payments</Text>
+                <View
+                  style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+                >
+                  <View style={styles.statTop}>
+                    <Text style={styles.statLabel}>Collected</Text>
+                    <View style={styles.statIcon}>
+                      <Ionicons
+                        name="checkmark-done"
+                        size={12}
+                        color={KFitColors.accent}
+                      />
+                    </View>
+                  </View>
                   <Text style={styles.statNumber}>548</Text>
-                  <Text style={styles.statSubtitle}>97.4% collection rate</Text>
+                  <Text style={styles.statSub}>97.4% rate</Text>
                 </View>
-
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Pending payments</Text>
-                  <Text style={styles.statNumber}>
-                    {invoices.filter((i) => i.status === "Pending").length}
-                  </Text>
-                  <Text style={styles.statSubtitle}>
-                    invoices awaiting payment
-                  </Text>
+                <View
+                  style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+                >
+                  <View style={styles.statTop}>
+                    <Text style={styles.statLabel}>Pending</Text>
+                    <View style={[styles.statIcon, styles.statIconWarn]}>
+                      <Ionicons
+                        name="time"
+                        size={12}
+                        color={KFitColors.warning}
+                      />
+                    </View>
+                  </View>
+                  <Text style={styles.statNumber}>{statusCounts.Pending}</Text>
+                  <Text style={styles.statWarn}>Awaiting payment</Text>
                 </View>
-
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Overdue</Text>
-                  <Text style={styles.statNumber}>
-                    {invoices.filter((i) => i.status === "Overdue").length}
-                  </Text>
-                  <Text style={styles.statSubtitleWarning}>
-                    invoices sent reminders
-                  </Text>
+                <View
+                  style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+                >
+                  <View style={styles.statTop}>
+                    <Text style={styles.statLabel}>Overdue</Text>
+                    <View style={[styles.statIcon, styles.statIconError]}>
+                      <Ionicons
+                        name="alert-circle"
+                        size={12}
+                        color={KFitColors.error}
+                      />
+                    </View>
+                  </View>
+                  <Text style={styles.statNumber}>{statusCounts.Overdue}</Text>
+                  <Text style={styles.statError}>Reminder sent</Text>
                 </View>
               </View>
             </View>
 
             {/* POS Terminal */}
-            <View style={styles.posSection}>
+            <View style={styles.section}>
               <View style={styles.posCard}>
                 <View style={styles.posHeader}>
                   <View>
-                    <Text style={styles.eyebrow}>REGISTER COUNTER</Text>
+                    <Text style={styles.sectionEyebrow}>REGISTER COUNTER</Text>
                     <Text style={styles.posTitle}>POS terminal</Text>
                   </View>
                   <View style={styles.nfcBadge}>
@@ -345,30 +445,38 @@ export default function PaymentsScreen() {
                   {POS_ITEMS.map((item) => {
                     const active = item.id === selectedItem.id;
                     return (
-                      <TouchableOpacity
+                      <PressableBtn
                         key={item.id}
-                        activeOpacity={0.8}
-                        onPress={() => setSelectedItem(item)}
+                        onPress={() => {
+                          void Haptics.selectionAsync();
+                          setSelectedItem(item);
+                        }}
                         style={[styles.posItem, active && styles.posItemActive]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
                       >
-                        <View style={styles.posItemText}>
-                          <Text style={styles.posItemTitle}>{item.title}</Text>
-                          <Text style={styles.posItemSubtitle}>
+                        <View style={styles.flex}>
+                          <Text style={styles.posItemTitle} numberOfLines={1}>
+                            {item.title}
+                          </Text>
+                          <Text
+                            style={styles.posItemSubtitle}
+                            numberOfLines={1}
+                          >
                             {item.subtitle}
                           </Text>
                         </View>
                         <Text style={styles.posItemPrice}>
                           ${item.price.toFixed(2)}
                         </Text>
-                      </TouchableOpacity>
+                      </PressableBtn>
                     );
                   })}
                 </View>
 
-                {/* Checkout total */}
                 <View style={styles.totalBanner}>
-                  <View style={styles.posItemText}>
-                    <Text style={styles.totalLabel}>Checkout total</Text>
+                  <View style={styles.flex}>
+                    <Text style={styles.totalLabel}>CHECKOUT TOTAL</Text>
                     <Text style={styles.totalItem} numberOfLines={1}>
                       {selectedItem.title}
                     </Text>
@@ -378,14 +486,13 @@ export default function PaymentsScreen() {
                   </Text>
                 </View>
 
-                {/* Payment methods */}
                 <View style={styles.payRow}>
                   {PAYMENT_METHODS.map(({ method, label, icon }) => (
-                    <TouchableOpacity
+                    <PressableBtn
                       key={method}
-                      activeOpacity={0.8}
-                      style={styles.payButton}
                       onPress={() => processPosPayment(method)}
+                      style={styles.payButton}
+                      accessibilityRole="button"
                     >
                       <Ionicons
                         name={icon}
@@ -393,44 +500,46 @@ export default function PaymentsScreen() {
                         color={KFitColors.accent}
                       />
                       <Text style={styles.payButtonText}>{label}</Text>
-                    </TouchableOpacity>
+                    </PressableBtn>
                   ))}
                 </View>
 
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={styles.cashButton}
+                <PressableBtn
                   onPress={() => processPosPayment("Cash")}
+                  style={styles.cashButton}
+                  accessibilityRole="button"
                 >
                   <Ionicons
                     name="cash-outline"
-                    size={18}
+                    size={16}
                     color={KFitColors.onAccent}
                   />
                   <Text style={styles.cashButtonText}>
                     Complete cash transaction
                   </Text>
-                </TouchableOpacity>
+                </PressableBtn>
               </View>
             </View>
 
-            {/* Outstanding Invoices */}
-            <View style={styles.outstandingSection}>
+            {/* Outstanding */}
+            <View style={styles.section}>
               <View style={styles.outstandingCard}>
                 <View style={styles.outstandingHeader}>
                   <Text style={styles.outstandingTitle}>
                     Outstanding invoices
                   </Text>
-                  <Text style={styles.outstandingCount}>
-                    {outstandingInvoices.length} pending
-                  </Text>
+                  <View style={styles.outstandingCount}>
+                    <Text style={styles.outstandingCountText}>
+                      {outstanding.length} pending
+                    </Text>
+                  </View>
                 </View>
 
-                {outstandingInvoices.length === 0 ? (
+                {outstanding.length === 0 ? (
                   <View style={styles.emptyRow}>
                     <Ionicons
                       name="checkmark-circle"
-                      size={18}
+                      size={16}
                       color={KFitColors.accent}
                     />
                     <Text style={styles.emptyText}>
@@ -438,45 +547,59 @@ export default function PaymentsScreen() {
                     </Text>
                   </View>
                 ) : (
-                  outstandingInvoices.map((invoice) => (
-                    <View key={invoice.id} style={styles.dueRow}>
-                      <View style={styles.posItemText}>
-                        <Text style={styles.dueName}>{invoice.memberName}</Text>
-                        <Text
-                          style={[
-                            styles.dueMeta,
-                            { color: getStatusColor(invoice.status) },
-                          ]}
-                        >
-                          {invoice.status} • {invoice.description} • $
-                          {invoice.amount.toFixed(2)}
-                        </Text>
+                  outstanding.map((invoice) => {
+                    const tone = statusColor(invoice.status);
+                    return (
+                      <View key={invoice.id} style={styles.dueRow}>
+                        <View style={styles.flex}>
+                          <Text style={styles.dueName} numberOfLines={1}>
+                            {invoice.memberName}
+                          </Text>
+                          <Text style={styles.dueMeta} numberOfLines={1}>
+                            <Text style={{ color: tone, fontWeight: "800" }}>
+                              {invoice.status}
+                            </Text>
+                            {" • "}
+                            {invoice.description}
+                            {" • "}${invoice.amount.toFixed(2)}
+                          </Text>
+                        </View>
+                        <View style={styles.dueActions}>
+                          <PressableBtn
+                            style={styles.remindButton}
+                            onPress={() => remindMemberDues(invoice)}
+                          >
+                            <Ionicons
+                              name="notifications-outline"
+                              size={11}
+                              color={KFitColors.mutedText}
+                            />
+                            <Text style={styles.remindText}>Remind</Text>
+                          </PressableBtn>
+                          <PressableBtn
+                            style={styles.collectButton}
+                            onPress={() => collectMemberDues(invoice)}
+                          >
+                            <Ionicons
+                              name="cash-outline"
+                              size={11}
+                              color={KFitColors.onAccent}
+                            />
+                            <Text style={styles.collectText}>Collect</Text>
+                          </PressableBtn>
+                        </View>
                       </View>
-                      <View style={styles.dueActions}>
-                        <TouchableOpacity
-                          style={styles.remindButton}
-                          onPress={() => remindMemberDues(invoice)}
-                        >
-                          <Text style={styles.remindText}>Remind</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.collectButton}
-                          onPress={() => collectMemberDues(invoice)}
-                        >
-                          <Text style={styles.collectText}>Collect</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))
+                    );
+                  })
                 )}
               </View>
             </View>
 
-            {/* Revenue Overview */}
-            <View style={styles.revenueSection}>
-              <View style={styles.revenueHeader}>
-                <Text style={styles.sectionTitleInline}>Revenue overview</Text>
-                <Text style={styles.revenuePeriod}>Last 6 months</Text>
+            {/* Revenue overview */}
+            <View style={styles.section}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionEyebrow}>REVENUE</Text>
+                <Text style={styles.sectionCaption}>LAST 6 MONTHS</Text>
               </View>
               <View style={styles.chartCard}>
                 <View style={styles.chartPlaceholder}>
@@ -496,7 +619,14 @@ export default function PaymentsScreen() {
                           { height: b.h as `${number}%` },
                         ]}
                       />
-                      <Text style={styles.barLabel}>{b.label}</Text>
+                      <Text
+                        style={[
+                          styles.barLabel,
+                          b.active && styles.barLabelActive,
+                        ]}
+                      >
+                        {b.label}
+                      </Text>
                     </View>
                   ))}
                 </View>
@@ -507,21 +637,25 @@ export default function PaymentsScreen() {
               </View>
             </View>
 
-            {/* Revenue Mix */}
-            <View style={styles.mixSection}>
-              <Text style={styles.sectionTitleTight}>Revenue mix</Text>
-              <Text style={styles.mixPeriod}>October 2026</Text>
+            {/* Revenue mix */}
+            <View style={styles.section}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionEyebrow}>MIX</Text>
+                <Text style={styles.sectionCaption}>OCTOBER 2026</Text>
+              </View>
               <View style={styles.mixGrid}>
                 {REVENUE_MIX.map((m) => (
                   <View key={m.label} style={styles.mixCard}>
                     <View style={styles.mixIconContainer}>
                       <Ionicons
                         name={m.icon}
-                        size={20}
+                        size={16}
                         color={KFitColors.accent}
                       />
                     </View>
-                    <Text style={styles.mixLabel}>{m.label}</Text>
+                    <Text style={styles.mixLabel} numberOfLines={1}>
+                      {m.label}
+                    </Text>
                     <Text style={styles.mixAmount}>{m.amount}</Text>
                     <View style={styles.mixBar}>
                       <View
@@ -534,153 +668,273 @@ export default function PaymentsScreen() {
               </View>
             </View>
 
-            {/* Next Payout */}
-            <View style={styles.payoutSection}>
+            {/* Next payout */}
+            <View style={styles.section}>
               <View style={styles.payoutCard}>
-                <View style={styles.payoutLeft}>
-                  <Text style={styles.payoutLabel}>Next payout</Text>
+                <View style={styles.flex}>
+                  <Text style={styles.payoutEyebrow}>NEXT PAYOUT</Text>
                   <Text style={styles.payoutDate}>Oct 22, 2026</Text>
                 </View>
-                <View style={styles.payoutRight}>
-                  <Text style={styles.payoutAmount}>$25k</Text>
-                </View>
+                <Text style={styles.payoutAmount}>$25k</Text>
               </View>
             </View>
 
-            {/* Search and Filters */}
-            <View style={styles.searchSection}>
+            {/* Search + filters */}
+            <View style={styles.section}>
               <View style={styles.searchContainer}>
                 <Ionicons
                   name="search"
-                  size={18}
+                  size={16}
                   color={KFitColors.mutedText}
-                  style={styles.searchIcon}
                 />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Search Invoice or member"
+                  placeholder="Search invoice or member"
                   placeholderTextColor={KFitColors.mutedText}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  accessibilityLabel="Search invoices"
                 />
                 {searchQuery.length > 0 && (
-                  <TouchableOpacity
+                  <PressableBtn
                     onPress={() => setSearchQuery("")}
                     hitSlop={10}
+                    accessibilityRole="button"
                     accessibilityLabel="Clear search"
                   >
                     <Ionicons
                       name="close-circle"
-                      size={18}
+                      size={16}
                       color={KFitColors.mutedText}
                     />
-                  </TouchableOpacity>
+                  </PressableBtn>
                 )}
               </View>
 
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                style={styles.filterScroll}
-                contentContainerStyle={styles.filterContainer}
+                contentContainerStyle={styles.filterRow}
               >
-                {["All statuses", "Paid", "Pending", "Overdue"].map(
-                  (status) => (
-                    <TouchableOpacity
-                      key={status}
+                {STATUS_FILTERS.map((f) => {
+                  const active = selectedStatus === f.key;
+                  const count = statusCounts[f.key];
+                  return (
+                    <PressableBtn
+                      key={f.key}
+                      onPress={() => {
+                        void Haptics.selectionAsync();
+                        setSelectedStatus(f.key);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={`${f.key}, ${count} invoices`}
                       style={[
                         styles.filterTab,
-                        selectedStatus === status && styles.filterTabActive,
+                        active && styles.filterTabActive,
                       ]}
-                      onPress={() => setSelectedStatus(status)}
                     >
+                      <Ionicons
+                        name={f.icon}
+                        size={11}
+                        color={
+                          active ? KFitColors.onAccent : KFitColors.mutedText
+                        }
+                      />
                       <Text
                         style={[
                           styles.filterTabText,
-                          selectedStatus === status &&
-                            styles.filterTabTextActive,
+                          active && styles.filterTabTextActive,
                         ]}
                       >
-                        {status}
+                        {f.key}
                       </Text>
-                    </TouchableOpacity>
-                  ),
-                )}
+                      <View
+                        style={[
+                          styles.filterCount,
+                          active && styles.filterCountActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.filterCountText,
+                            active && styles.filterCountTextActive,
+                          ]}
+                        >
+                          {count}
+                        </Text>
+                      </View>
+                    </PressableBtn>
+                  );
+                })}
               </ScrollView>
             </View>
 
-            {/* Invoice Table Header */}
-            <View style={styles.listHeader}>
-              <Text style={styles.headerText}>INVOICE</Text>
-              <Text style={styles.headerText}>MEMBER</Text>
-              <Text style={styles.headerText}>DESCRIPTION</Text>
-              <Text style={styles.headerText}>DATE</Text>
-              <Text style={styles.headerText}>AMOUNT</Text>
-              <Text style={styles.headerText}>STATUS</Text>
-            </View>
+            {/* Invoice list */}
+            <View style={styles.section}>
+              <View style={styles.tableCard}>
+                {isWide && filteredInvoices.length > 0 && (
+                  <View style={styles.listHeader}>
+                    <Text style={[styles.headerText, styles.colInvoice]}>
+                      INVOICE
+                    </Text>
+                    <Text style={[styles.headerText, styles.colMember]}>
+                      MEMBER
+                    </Text>
+                    <Text style={[styles.headerText, styles.colDesc]}>
+                      DESCRIPTION
+                    </Text>
+                    <Text style={[styles.headerText, styles.colDate]}>
+                      DATE
+                    </Text>
+                    <Text style={[styles.headerText, styles.colAmount]}>
+                      AMOUNT
+                    </Text>
+                    <Text style={[styles.headerText, styles.colStatus]}>
+                      STATUS
+                    </Text>
+                  </View>
+                )}
 
-            {/* Invoice List */}
-            <View style={styles.invoiceList}>
-              {filteredInvoices.map((invoice) => (
-                <View key={invoice.id} style={styles.invoiceCard}>
-                  <View style={styles.invoiceColumn}>
-                    <Text style={styles.invoiceId}>{invoice.invoiceId}</Text>
-                  </View>
-                  <View style={styles.invoiceColumn}>
-                    <Text style={styles.memberName}>{invoice.memberName}</Text>
-                  </View>
-                  <View style={styles.invoiceColumn}>
-                    <Text style={styles.description}>
-                      {invoice.description}
+                {filteredInvoices.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <View style={styles.emptyIconWrap}>
+                      <Ionicons
+                        name="receipt-outline"
+                        size={22}
+                        color={KFitColors.accent}
+                      />
+                    </View>
+                    <Text style={styles.emptyTitle}>No invoices found</Text>
+                    <Text style={styles.emptySub}>
+                      Try a different search or reset the filter.
                     </Text>
                   </View>
-                  <View style={styles.invoiceColumn}>
-                    <Text style={styles.invoiceDate}>{invoice.date}</Text>
-                  </View>
-                  <View style={styles.invoiceColumn}>
-                    <Text style={styles.amount}>
-                      ${invoice.amount.toFixed(2)}
-                    </Text>
-                  </View>
-                  <View style={styles.invoiceColumn}>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        {
-                          backgroundColor:
-                            getStatusColor(invoice.status) + "20",
-                        },
-                      ]}
-                    >
-                      <Text
+                ) : (
+                  filteredInvoices.map((invoice, i) => {
+                    const isLast = i === filteredInvoices.length - 1;
+                    const tone = statusColor(invoice.status);
+                    return (
+                      <View
+                        key={invoice.id}
                         style={[
-                          styles.statusText,
-                          { color: getStatusColor(invoice.status) },
+                          styles.invoiceRow,
+                          !isLast && styles.rowDivider,
                         ]}
                       >
-                        {invoice.status}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
+                        {isWide ? (
+                          <View style={styles.invoiceRowWide}>
+                            <Text style={[styles.invoiceId, styles.colInvoice]}>
+                              {invoice.invoiceId}
+                            </Text>
+                            <Text
+                              style={[styles.memberName, styles.colMember]}
+                              numberOfLines={1}
+                            >
+                              {invoice.memberName}
+                            </Text>
+                            <Text
+                              style={[styles.description, styles.colDesc]}
+                              numberOfLines={1}
+                            >
+                              {invoice.description}
+                            </Text>
+                            <Text style={[styles.invoiceDate, styles.colDate]}>
+                              {invoice.date}
+                            </Text>
+                            <Text style={[styles.amount, styles.colAmount]}>
+                              ${invoice.amount.toFixed(2)}
+                            </Text>
+                            <View style={styles.colStatus}>
+                              <View
+                                style={[
+                                  styles.statusBadge,
+                                  {
+                                    backgroundColor: tone + "1A",
+                                    borderColor: tone + "44",
+                                  },
+                                ]}
+                              >
+                                <View
+                                  style={[
+                                    styles.statusDot,
+                                    { backgroundColor: tone },
+                                  ]}
+                                />
+                                <Text
+                                  style={[styles.statusText, { color: tone }]}
+                                >
+                                  {invoice.status.toUpperCase()}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={styles.invoiceRowNarrow}>
+                            <View style={styles.rowBetween}>
+                              <Text style={styles.invoiceId}>
+                                {invoice.invoiceId}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.statusBadge,
+                                  {
+                                    backgroundColor: tone + "1A",
+                                    borderColor: tone + "44",
+                                  },
+                                ]}
+                              >
+                                <View
+                                  style={[
+                                    styles.statusDot,
+                                    { backgroundColor: tone },
+                                  ]}
+                                />
+                                <Text
+                                  style={[styles.statusText, { color: tone }]}
+                                >
+                                  {invoice.status.toUpperCase()}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={styles.memberName}>
+                              {invoice.memberName}
+                            </Text>
+                            <Text style={styles.description} numberOfLines={1}>
+                              {invoice.description}
+                            </Text>
+                            <View style={styles.rowBetween}>
+                              <Text style={styles.invoiceDate}>
+                                {invoice.date}
+                              </Text>
+                              <Text style={styles.amount}>
+                                ${invoice.amount.toFixed(2)}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+
+              <Text style={styles.footerText}>
+                Showing {filteredInvoices.length} of {invoices.length} invoices
+              </Text>
             </View>
 
-            <Text style={styles.footerText}>
-              Showing {filteredInvoices.length} of {invoices.length} loaded
-              invoices
-            </Text>
-
             <View style={styles.footer}>
-              <Text style={styles.footerBrand}>
-                FORM ATHLETICS/ADMINISTRATOR WORKSPACE
-              </Text>
+              <Text style={styles.footerBrand}>KFIT · ADMIN WORKSPACE</Text>
             </View>
           </ScrollView>
         </View>
       </View>
 
-      {/* Digital Receipt Modal */}
+      {/* Receipt Modal */}
       <Modal
         visible={receipt !== null}
         transparent
@@ -704,7 +958,7 @@ export default function PaymentsScreen() {
             {receipt && (
               <View style={styles.receiptBody}>
                 <View style={styles.receiptRow}>
-                  <Text style={styles.receiptKey}>Tx ID</Text>
+                  <Text style={styles.receiptKey}>Transaction ID</Text>
                   <Text style={styles.receiptMono}>{receipt.txId}</Text>
                 </View>
                 <View style={styles.receiptRow}>
@@ -727,23 +981,23 @@ export default function PaymentsScreen() {
             )}
 
             <View style={styles.receiptActions}>
-              <TouchableOpacity
+              <PressableBtn
                 style={styles.receiptSecondary}
                 onPress={downloadReceipt}
               >
                 <Ionicons
                   name="download-outline"
-                  size={16}
+                  size={14}
                   color={KFitColors.text}
                 />
                 <Text style={styles.receiptSecondaryText}>Download PDF</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </PressableBtn>
+              <PressableBtn
                 style={styles.receiptPrimary}
                 onPress={() => setReceipt(null)}
               >
                 <Text style={styles.receiptPrimaryText}>Done</Text>
-              </TouchableOpacity>
+              </PressableBtn>
             </View>
           </View>
         </View>
@@ -758,415 +1012,397 @@ const styles = StyleSheet.create({
   main: { flex: 1, backgroundColor: KFitColors.background },
   content: { flex: 1, backgroundColor: KFitColors.background },
   contentContainer: { paddingBottom: 128 },
-  header: {
+  flex: { flex: 1, minWidth: 0 },
+  pressed: { opacity: 0.75 },
+  rowBetween: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: width > 600 ? 24 : 16,
-    paddingTop: 18,
-    paddingBottom: 20,
-    rowGap: 16,
-    columnGap: 20,
+    justifyContent: "space-between",
+    gap: 8,
   },
-  headerLeft: {
-    flex: 1,
-    minWidth: width > 600 ? 260 : "100%",
+
+  /* Page header */
+  pageHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
+    gap: 14,
+  },
+  pageHeaderWide: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+  headerLeft: { flexShrink: 1, gap: 2 },
+  eyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
   },
   headerTitle: {
-    fontSize: width > 600 ? 28 : 25,
-    fontWeight: "800",
+    fontSize: 26,
+    fontWeight: "900",
     color: KFitColors.text,
-    marginBottom: 6,
+    marginTop: 2,
     letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: 13,
-    lineHeight: 19,
     color: KFitColors.mutedText,
+    marginTop: 2,
   },
-  headerButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: 10,
-  },
+  headerButtons: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   exportButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
+    minHeight: 38,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    minHeight: 40,
+    backgroundColor: KFitColors.surface,
   },
-  exportButtonText: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
+  exportButtonText: { fontSize: 12, fontWeight: "800", color: KFitColors.text },
   createButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
+    minHeight: 38,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     backgroundColor: KFitColors.accent,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    minHeight: 40,
   },
   createButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "900",
     color: KFitColors.onAccent,
   },
-  overviewSection: {
-    paddingHorizontal: width > 600 ? 24 : 16,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: KFitColors.text,
-    marginBottom: 16,
-  },
-  sectionTitleInline: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: KFitColors.text,
-  },
-  sectionTitleTight: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: KFitColors.text,
-    marginBottom: 4,
-  },
-  statsGrid: {
+
+  /* Sections */
+  section: { paddingHorizontal: 20, marginBottom: 16 },
+  sectionHead: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
   },
+  sectionEyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+  },
+  sectionCaption: {
+    color: KFitColors.mutedText,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    fontFamily: "monospace",
+  },
+
+  /* Stats */
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   statCard: {
-    width: width > 1000 ? "23.5%" : "48%",
     flexGrow: 1,
     backgroundColor: KFitColors.surface,
     borderRadius: 14,
-    padding: width > 600 ? 17 : 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    gap: 2,
+  },
+  statTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
   },
   statLabel: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 10,
+    fontWeight: "900",
     color: KFitColors.mutedText,
-    marginBottom: 8,
+    letterSpacing: 0.6,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+  },
+  statIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
+  },
+  statIconWarn: {
+    backgroundColor: KFitColors.warning + "14",
+    borderColor: KFitColors.warning + "33",
+  },
+  statIconError: {
+    backgroundColor: KFitColors.error + "14",
+    borderColor: KFitColors.error + "33",
   },
   statNumber: {
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 22,
+    fontWeight: "900",
     color: KFitColors.accent,
-    marginBottom: 4,
+    fontFamily: "monospace",
+    letterSpacing: -0.4,
   },
-  statChange: { fontSize: 11, color: KFitColors.accent, fontWeight: "600" },
-  statSubtitle: { fontSize: 11, color: KFitColors.mutedText },
-  statSubtitleWarning: { fontSize: 11, color: KFitColors.warning },
+  statAccent: {
+    fontSize: 10,
+    color: KFitColors.accent,
+    fontWeight: "700",
+    fontFamily: "monospace",
+  },
+  statSub: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  statWarn: {
+    fontSize: 10,
+    color: KFitColors.warning,
+    fontFamily: "monospace",
+  },
+  statError: { fontSize: 10, color: KFitColors.error, fontFamily: "monospace" },
 
-  // ---- POS ----
-  posSection: { paddingHorizontal: 20, marginBottom: 24 },
+  /* POS */
   posCard: {
     backgroundColor: KFitColors.surface,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    gap: 8,
   },
   posHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
     gap: 8,
-  },
-  eyebrow: {
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1,
-    color: KFitColors.accent,
+    marginBottom: 4,
   },
   posTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 16,
+    fontWeight: "900",
     color: KFitColors.text,
     marginTop: 2,
+    letterSpacing: -0.2,
   },
   nfcBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
+    gap: 4,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: KFitColors.accent + "55",
-    backgroundColor: KFitColors.accent + "1A",
+    borderColor: KFitColors.accent + "44",
+    backgroundColor: KFitColors.accent + "14",
   },
   nfcIcon: { transform: [{ rotate: "90deg" }] },
-  nfcBadgeText: { fontSize: 11, fontWeight: "700", color: KFitColors.accent },
-  fieldLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    color: KFitColors.mutedText,
-    marginBottom: 8,
+  nfcBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
   },
-  posItems: { gap: 8, marginBottom: 16 },
+  fieldLabel: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  posItems: { gap: 6 },
   posItem: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
-    padding: 12,
+    gap: 10,
+    padding: 10,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
   },
-  posItemActive: { borderColor: KFitColors.accent, borderWidth: 2 },
-  posItemText: { flex: 1 },
-  posItemTitle: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
-  posItemSubtitle: { fontSize: 11, color: KFitColors.mutedText, marginTop: 2 },
-  posItemPrice: { fontSize: 15, fontWeight: "bold", color: KFitColors.accent },
+  posItemActive: {
+    borderColor: KFitColors.accent,
+    backgroundColor: KFitColors.accent + "10",
+  },
+  posItemTitle: { fontSize: 12, fontWeight: "800", color: KFitColors.text },
+  posItemSubtitle: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+    fontFamily: "monospace",
+  },
+  posItemPrice: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+  },
   totalBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-    padding: 14,
+    padding: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.background,
-    marginBottom: 12,
+    borderColor: KFitColors.accent + "44",
+    backgroundColor: KFitColors.accent + "10",
+    marginTop: 6,
   },
-  totalLabel: { fontSize: 11, color: KFitColors.mutedText },
+  totalLabel: {
+    fontSize: 9,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+    letterSpacing: 0.8,
+    fontWeight: "900",
+  },
   totalItem: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "800",
     color: KFitColors.text,
     marginTop: 2,
   },
-  totalAmount: { fontSize: 26, fontWeight: "bold", color: KFitColors.accent },
-  payRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  totalAmount: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+    letterSpacing: -0.5,
+  },
+  payRow: { flexDirection: "row", gap: 8, marginTop: 6 },
   payButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
+    gap: 6,
+    paddingVertical: 11,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
   },
-  payButtonText: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
+  payButtonText: { fontSize: 12, fontWeight: "800", color: KFitColors.text },
   cashButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: KFitColors.accent,
-  },
-  cashButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: KFitColors.onAccent,
-  },
-
-  // ---- Outstanding invoices ----
-  outstandingSection: { paddingHorizontal: 20, marginBottom: 24 },
-  outstandingCard: {
-    backgroundColor: KFitColors.surface,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-  },
-  outstandingHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  outstandingTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: KFitColors.text,
-  },
-  outstandingCount: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: KFitColors.warning,
-  },
-  emptyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 8,
-  },
-  emptyText: { fontSize: 13, color: KFitColors.mutedText },
-  dueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.background,
-  },
-  dueName: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
-  dueMeta: { fontSize: 11, marginTop: 2 },
-  dueActions: { flexDirection: "row", gap: 6 },
-  remindButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.surface,
-  },
-  remindText: { fontSize: 12, fontWeight: "600", color: KFitColors.mutedText },
-  collectButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: KFitColors.accent,
-  },
-  collectText: { fontSize: 12, fontWeight: "700", color: KFitColors.onAccent },
-
-  // ---- Receipt modal ----
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.8)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  receiptCard: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: KFitColors.surface,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: KFitColors.accent,
-    padding: 20,
-    alignItems: "center",
-  },
-  receiptCheck: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: KFitColors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  receiptTitle: { fontSize: 18, fontWeight: "bold", color: KFitColors.text },
-  receiptSubtitle: {
-    fontSize: 12,
-    color: KFitColors.mutedText,
-    marginTop: 2,
-    marginBottom: 16,
-  },
-  receiptBody: {
-    width: "100%",
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.background,
-    gap: 8,
-    marginBottom: 16,
-  },
-  receiptRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  receiptKey: { fontSize: 13, color: KFitColors.mutedText },
-  receiptValue: {
-    flex: 1,
-    textAlign: "right",
-    fontSize: 13,
-    fontWeight: "600",
-    color: KFitColors.text,
-  },
-  receiptMono: {
-    fontSize: 13,
-    color: KFitColors.text,
-    fontVariant: ["tabular-nums"],
-  },
-  receiptTotalRow: {
-    borderTopWidth: 1,
-    borderTopColor: KFitColors.border,
-    paddingTop: 10,
-    alignItems: "center",
-  },
-  receiptTotalKey: { fontSize: 14, fontWeight: "bold", color: KFitColors.text },
-  receiptTotalValue: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: KFitColors.accent,
-  },
-  receiptActions: { flexDirection: "row", gap: 8, width: "100%" },
-  receiptSecondary: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
     paddingVertical: 12,
     borderRadius: 10,
+    backgroundColor: KFitColors.accent,
+    marginTop: 8,
+  },
+  cashButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: KFitColors.onAccent,
+    letterSpacing: 0.2,
+  },
+
+  /* Outstanding */
+  outstandingCard: {
+    backgroundColor: KFitColors.surface,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    gap: 8,
+  },
+  outstandingHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  outstandingTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: KFitColors.text,
+  },
+  outstandingCount: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: KFitColors.warning + "1A",
+    borderWidth: 1,
+    borderColor: KFitColors.warning + "44",
+  },
+  outstandingCountText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: KFitColors.warning,
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
+  },
+  emptyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+  },
+  emptyText: { fontSize: 12, color: KFitColors.mutedText },
+  dueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: 10,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
   },
-  receiptSecondaryText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: KFitColors.text,
+  dueName: { fontSize: 12, fontWeight: "800", color: KFitColors.text },
+  dueMeta: {
+    fontSize: 10,
+    marginTop: 2,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
   },
-  receiptPrimary: {
-    flex: 1,
+  dueActions: { flexDirection: "row", gap: 6 },
+  remindButton: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 10,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+  },
+  remindText: { fontSize: 10, fontWeight: "800", color: KFitColors.mutedText },
+  collectButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
     backgroundColor: KFitColors.accent,
   },
-  receiptPrimaryText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: KFitColors.onAccent,
-  },
+  collectText: { fontSize: 10, fontWeight: "900", color: KFitColors.onAccent },
 
-  // ---- Existing sections ----
-  revenueSection: { paddingHorizontal: 20, marginBottom: 24 },
-  revenueHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  revenuePeriod: { fontSize: 12, color: KFitColors.mutedText },
+  /* Revenue chart */
   chartCard: {
     backgroundColor: KFitColors.surface,
-    borderRadius: 12,
-    padding: 18,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
     borderColor: KFitColors.border,
   },
@@ -1176,7 +1412,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     height: 120,
     paddingHorizontal: 4,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   barContainer: {
     flex: 1,
@@ -1184,97 +1420,147 @@ const styles = StyleSheet.create({
     height: "100%",
     justifyContent: "flex-end",
   },
-  bar: { width: 24, backgroundColor: KFitColors.border, borderRadius: 4 },
+  bar: { width: 22, backgroundColor: KFitColors.border, borderRadius: 4 },
   barActive: { backgroundColor: KFitColors.accent },
-  barLabel: { fontSize: 11, color: KFitColors.mutedText, marginTop: 6 },
+  barLabel: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    marginTop: 6,
+    fontFamily: "monospace",
+  },
+  barLabelActive: { color: KFitColors.accent, fontWeight: "900" },
   revenueTotal: { alignItems: "center" },
   revenueTotalLabel: {
-    fontSize: 28,
-    fontWeight: "bold",
+    fontSize: 26,
+    fontWeight: "900",
     color: KFitColors.text,
+    fontFamily: "monospace",
+    letterSpacing: -0.5,
   },
-  revenueTotalSublabel: { fontSize: 12, color: KFitColors.mutedText },
-  mixSection: { paddingHorizontal: 20, marginBottom: 24 },
-  mixPeriod: { fontSize: 12, color: KFitColors.mutedText, marginBottom: 16 },
-  mixGrid: { flexDirection: "row", gap: 12 },
+  revenueTotalSublabel: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+
+  /* Revenue mix */
+  mixGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   mixCard: {
     flex: 1,
+    minWidth: 160,
     backgroundColor: KFitColors.surface,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    gap: 4,
   },
   mixIconContainer: {
-    width: 40,
-    height: 40,
+    width: 34,
+    height: 34,
     borderRadius: 10,
-    backgroundColor: KFitColors.accent + "20",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    marginBottom: 6,
   },
-  mixLabel: { fontSize: 13, color: KFitColors.mutedText, marginBottom: 4 },
+  mixLabel: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
   mixAmount: {
-    fontSize: 20,
-    fontWeight: "bold",
+    fontSize: 18,
+    fontWeight: "900",
     color: KFitColors.text,
-    marginBottom: 8,
+    fontFamily: "monospace",
+    letterSpacing: -0.3,
+    marginBottom: 4,
   },
   mixBar: {
-    height: 6,
-    backgroundColor: KFitColors.border,
+    height: 5,
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
     borderRadius: 3,
     marginBottom: 4,
+    overflow: "hidden",
   },
   mixBarFill: {
     height: "100%",
     backgroundColor: KFitColors.accent,
     borderRadius: 3,
   },
-  mixPercentage: { fontSize: 11, color: KFitColors.mutedText },
-  payoutSection: { paddingHorizontal: 20, marginBottom: 24 },
+  mixPercentage: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+
+  /* Payout */
   payoutCard: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: KFitColors.accent,
-    borderRadius: 12,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
   },
-  payoutLeft: { flex: 1 },
-  payoutLabel: {
-    fontSize: 12,
+  payoutEyebrow: {
+    fontSize: 9,
+    letterSpacing: 1.4,
     color: KFitColors.onAccent,
-    opacity: 0.7,
-    marginBottom: 4,
+    opacity: 0.8,
+    fontFamily: "monospace",
+    fontWeight: "900",
   },
-  payoutDate: { fontSize: 16, fontWeight: "600", color: KFitColors.onAccent },
-  payoutRight: { alignItems: "flex-end" },
+  payoutDate: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: KFitColors.onAccent,
+    marginTop: 2,
+    fontFamily: "monospace",
+  },
   payoutAmount: {
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 26,
+    fontWeight: "900",
     color: KFitColors.onAccent,
+    fontFamily: "monospace",
+    letterSpacing: -0.5,
   },
-  searchSection: { paddingHorizontal: 20, marginBottom: 16 },
+
+  /* Search + filters */
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: KFitColors.surface,
-    borderRadius: 8,
+    gap: 8,
+    height: 42,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
     paddingHorizontal: 12,
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, height: 44, fontSize: 14, color: KFitColors.text },
-  filterScroll: { marginBottom: 16 },
-  filterContainer: { gap: 8 },
+  searchInput: {
+    flex: 1,
+    height: "100%",
+    fontSize: 12,
+    color: KFitColors.text,
+    paddingVertical: 0,
+  },
+  filterRow: { flexDirection: "row", gap: 6 },
   filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingLeft: 10,
+    paddingRight: 5,
+    paddingVertical: 6,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.surface,
@@ -1283,58 +1569,267 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent,
     borderColor: KFitColors.accent,
   },
-  filterTabText: { fontSize: 13, color: KFitColors.text, fontWeight: "500" },
-  filterTabTextActive: { color: KFitColors.onAccent },
+  filterTabText: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontWeight: "700",
+  },
+  filterTabTextActive: { color: KFitColors.onAccent, fontWeight: "900" },
+  filterCount: {
+    minWidth: 20,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 999,
+    alignItems: "center",
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+  },
+  filterCountActive: {
+    backgroundColor: KFitColors.onAccent + "22",
+    borderColor: KFitColors.onAccent + "44",
+  },
+  filterCountText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  filterCountTextActive: { color: KFitColors.onAccent },
+
+  /* Invoice table */
+  tableCard: {
+    backgroundColor: KFitColors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    overflow: "hidden",
+  },
   listHeader: {
     flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
   },
   headerText: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 9,
+    fontWeight: "900",
     color: KFitColors.mutedText,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
   },
-  invoiceList: { paddingHorizontal: 20 },
-  invoiceCard: {
+  colInvoice: { flex: 1.5, paddingRight: 10 },
+  colMember: { flex: 1.6, paddingRight: 10 },
+  colDesc: { flex: 2, paddingRight: 10 },
+  colDate: { flex: 1.3, paddingRight: 10 },
+  colAmount: { flex: 1, paddingRight: 10 },
+  colStatus: { flex: 1.3 },
+
+  invoiceRow: { paddingHorizontal: 14, paddingVertical: 12 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: KFitColors.border },
+  invoiceRowWide: { flexDirection: "row", alignItems: "center" },
+  invoiceRowNarrow: { gap: 8 },
+
+  invoiceId: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: KFitColors.text,
+    fontFamily: "monospace",
+  },
+  memberName: { fontSize: 12, fontWeight: "800", color: KFitColors.text },
+  description: { fontSize: 11, color: KFitColors.mutedText },
+  invoiceDate: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  amount: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.text,
+    fontFamily: "monospace",
+  },
+  statusBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: KFitColors.border,
-  },
-  invoiceColumn: { flex: 1, alignItems: "flex-start" },
-  invoiceId: { fontSize: 12, fontWeight: "600", color: KFitColors.text },
-  memberName: { fontSize: 13, fontWeight: "500", color: KFitColors.text },
-  description: { fontSize: 12, color: KFitColors.mutedText },
-  invoiceDate: { fontSize: 12, color: KFitColors.mutedText },
-  amount: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
-  statusBadge: {
+    gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
     alignSelf: "flex-start",
   },
-  statusText: { fontSize: 11, fontWeight: "600" },
-  footerText: {
-    fontSize: 12,
+  statusDot: { width: 5, height: 5, borderRadius: 3 },
+  statusText: {
+    fontSize: 8,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
+  },
+
+  /* Empty state */
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  emptyIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
+    marginBottom: 4,
+  },
+  emptyTitle: { fontSize: 14, fontWeight: "800", color: KFitColors.text },
+  emptySub: {
+    fontSize: 11,
     color: KFitColors.mutedText,
     textAlign: "center",
-    paddingHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 24,
+    lineHeight: 16,
   },
-  footer: {
+
+  /* Footer */
+  footerText: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    textAlign: "center",
+    marginTop: 12,
+    fontFamily: "monospace",
+    opacity: 0.7,
+  },
+  footer: { alignItems: "center", paddingVertical: 16 },
+  footerBrand: {
+    fontSize: 10,
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+    color: KFitColors.mutedText,
+    opacity: 0.7,
+  },
+
+  /* Receipt modal */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    justifyContent: "center",
+    padding: 20,
+  },
+  receiptCard: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: KFitColors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
+    padding: 20,
+    alignItems: "center",
+    gap: 8,
+  },
+  receiptCheck: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: KFitColors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  receiptTitle: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: KFitColors.text,
+    letterSpacing: -0.3,
+  },
+  receiptSubtitle: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  receiptBody: {
+    width: "100%",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+    gap: 8,
+    marginTop: 8,
+  },
+  receiptRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  receiptKey: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  receiptValue: {
+    flex: 1,
+    textAlign: "right",
+    fontSize: 12,
+    fontWeight: "700",
+    color: KFitColors.text,
+  },
+  receiptMono: {
+    fontSize: 12,
+    color: KFitColors.text,
+    fontFamily: "monospace",
+    fontWeight: "800",
+  },
+  receiptTotalRow: {
     borderTopWidth: 1,
     borderTopColor: KFitColors.border,
+    paddingTop: 10,
+    alignItems: "center",
   },
-  footerBrand: { fontSize: 12, color: KFitColors.mutedText },
+  receiptTotalKey: { fontSize: 12, fontWeight: "900", color: KFitColors.text },
+  receiptTotalValue: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+    letterSpacing: -0.3,
+  },
+  receiptActions: { flexDirection: "row", gap: 8, width: "100%", marginTop: 8 },
+  receiptSecondary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+  },
+  receiptSecondaryText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
+  receiptPrimary: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent,
+  },
+  receiptPrimaryText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.onAccent,
+  },
 });

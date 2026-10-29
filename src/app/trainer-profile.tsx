@@ -4,21 +4,20 @@ import { KFitColors } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-    Image,
-    ImageBackground,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TextInputProps,
-    TouchableOpacity,
-    View,
+  Image,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TextInputProps,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -117,7 +116,7 @@ const SOCIAL_META: {
   },
 ];
 
-/* ---------- Small blocks ---------- */
+/* ---------- Reusable pieces ---------- */
 
 function Section({
   title,
@@ -149,16 +148,19 @@ function Section({
           </View>
         </View>
         {onEdit ? (
-          <TouchableOpacity
+          <Pressable
             onPress={onEdit}
             accessibilityRole="button"
             accessibilityLabel={`Edit ${title}`}
-            style={styles.sectionEditBtn}
+            style={({ pressed }) => [
+              styles.sectionEditBtn,
+              pressed && styles.pressed,
+            ]}
             hitSlop={6}
           >
             <Feather name="edit-2" size={13} color={KFitColors.accent} />
             <Text style={styles.sectionEditText}>Edit</Text>
-          </TouchableOpacity>
+          </Pressable>
         ) : null}
       </View>
       {children}
@@ -182,12 +184,9 @@ function InfoRow({
       <View style={styles.infoRow}>
         <View style={styles.infoRowLeft}>
           {icon ? (
-            <Feather
-              name={icon}
-              size={14}
-              color={KFitColors.mutedText}
-              style={{ marginRight: 8 }}
-            />
+            <View style={styles.infoIconWrap}>
+              <Feather name={icon} size={12} color={KFitColors.accent} />
+            </View>
           ) : null}
           <Text style={styles.infoLabel}>{label}</Text>
         </View>
@@ -197,46 +196,6 @@ function InfoRow({
       </View>
       {!last ? <View style={styles.divider} /> : null}
     </>
-  );
-}
-
-function GoldButton({
-  label,
-  onPress,
-  disabled,
-  icon,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  icon?: FeatherName;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.goldButton, disabled && styles.disabled]}
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.85}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: !!disabled }}
-    >
-      <ImageBackground
-        source={require("../../assets/images/gold-texture.jpg")}
-        resizeMode="cover"
-        style={styles.goldButtonBg}
-        imageStyle={styles.goldButtonImage}
-      >
-        {icon ? (
-          <Feather
-            name={icon}
-            size={14}
-            color="#121212"
-            style={{ marginRight: 6 }}
-          />
-        ) : null}
-        <Text style={styles.goldButtonText}>{label}</Text>
-      </ImageBackground>
-    </TouchableOpacity>
   );
 }
 
@@ -303,8 +262,6 @@ function ModalField({
 /* ---------- Screen ---------- */
 
 export default function TrainerProfileScreen() {
-  const router = useRouter();
-
   const [profile, setProfile] = useState<TrainerProfile>(DEFAULT_PROFILE);
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [socials, setSocials] = useState<SocialLinks>(EMPTY_SOCIAL);
@@ -534,37 +491,45 @@ export default function TrainerProfileScreen() {
 
           {/* ─────────── Hero ─────────── */}
           <View style={styles.hero}>
-            <TouchableOpacity
+            <Pressable
               onPress={openAvatarModal}
-              activeOpacity={0.85}
               accessibilityRole="button"
               accessibilityLabel="Change profile picture"
-              style={styles.avatarWrap}
+              style={({ pressed }) => [
+                styles.avatarWrap,
+                pressed && styles.pressed,
+              ]}
             >
-              {avatarUri ? (
-                <Image source={{ uri: avatarUri }} style={styles.avatar} />
-              ) : (
-                <ImageBackground
-                  source={require("../../assets/images/gold-texture.jpg")}
-                  resizeMode="cover"
-                  style={styles.avatar}
-                  imageStyle={styles.avatarImage}
-                >
-                  <Text style={styles.avatarInitials}>{initials}</Text>
-                </ImageBackground>
-              )}
+              <View style={styles.avatarRing}>
+                {avatarUri ? (
+                  <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                ) : (
+                  <ImageBackground
+                    source={require("../../assets/images/gold-texture.jpg")}
+                    resizeMode="cover"
+                    style={styles.avatar}
+                    imageStyle={styles.avatarImage}
+                  >
+                    <Text style={styles.avatarInitials}>{initials}</Text>
+                  </ImageBackground>
+                )}
+              </View>
               <View style={styles.avatarEditBadge}>
                 <Feather name="camera" size={13} color={KFitColors.onAccent} />
               </View>
-            </TouchableOpacity>
+            </Pressable>
 
             <Text style={styles.fullName}>{fullName || "Trainer"}</Text>
+            <Text style={styles.heroSubtitle}>
+              {profile.specialties.split("·")[0]?.trim() || "Personal Trainer"}
+            </Text>
+
             <View style={styles.heroChips}>
               <View style={styles.roleChip}>
                 <Feather name="award" size={10} color={KFitColors.accent} />
                 <Text style={styles.roleChipText}>HEAD COACH</Text>
               </View>
-              <View style={styles.verifiedChip}>
+              <View style={styles.roleChip}>
                 <Feather
                   name="check-circle"
                   size={10}
@@ -572,58 +537,53 @@ export default function TrainerProfileScreen() {
                 />
                 <Text style={styles.roleChipText}>VERIFIED</Text>
               </View>
+              <View style={styles.roleChip}>
+                <Feather name="map-pin" size={10} color={KFitColors.accent} />
+                <Text style={styles.roleChipText} numberOfLines={1}>
+                  {profile.location.split("·")[0]?.trim() || "ON SITE"}
+                </Text>
+              </View>
             </View>
 
-            <TouchableOpacity
-              style={styles.editButton}
+            <Pressable
+              style={({ pressed }) => [
+                styles.editButton,
+                pressed && styles.pressed,
+              ]}
               onPress={openProfileModal}
-              activeOpacity={0.8}
               accessibilityRole="button"
+              accessibilityLabel="Edit profile"
             >
               <Feather name="edit-3" size={14} color={KFitColors.accent} />
               <Text style={styles.editButtonText}>Edit profile</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           {/* ─────────── Stats ─────────── */}
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <View style={styles.statIconRow}>
-                <Feather name="award" size={14} color={KFitColors.accent} />
-                <Text style={styles.statValue}>{profile.yearsExperience}</Text>
-              </View>
-              <Text style={styles.statLabel}>Years coaching</Text>
-            </View>
-            <View style={styles.statCard}>
-              <View style={styles.statIconRow}>
-                <Feather name="users" size={14} color={KFitColors.accent} />
-                <Text style={styles.statValue}>24</Text>
-              </View>
-              <Text style={styles.statLabel}>Active clients</Text>
-            </View>
-            <View style={styles.statCard}>
-              <View style={styles.statIconRow}>
-                <Feather name="star" size={14} color={KFitColors.accent} />
-                <Text style={styles.statValue}>4.9</Text>
-              </View>
-              <Text style={styles.statLabel}>Rating</Text>
-            </View>
+          <View style={styles.statStrip}>
+            <StatInline
+              icon="award"
+              value={profile.yearsExperience || "—"}
+              label="Years"
+            />
+            <View style={styles.statDivider} />
+            <StatInline icon="users" value="24" label="Clients" />
+            <View style={styles.statDivider} />
+            <StatInline icon="star" value="4.9" label="Rating" />
           </View>
 
           {/* ─────────── Completion ─────────── */}
           <View style={styles.completionCard}>
             <View style={styles.completionTop}>
-              <View>
+              <View style={styles.flex}>
                 <Text style={styles.completionLabel}>PROFILE COMPLETION</Text>
                 <Text style={styles.completionValue}>
                   {completion}% complete
                 </Text>
               </View>
-              <Feather
-                name={completion === 100 ? "check-circle" : "trending-up"}
-                size={20}
-                color={KFitColors.accent}
-              />
+              <View style={styles.completionRing}>
+                <Text style={styles.completionRingText}>{completion}%</Text>
+              </View>
             </View>
             <View style={styles.completionTrack}>
               <View
@@ -738,22 +698,27 @@ export default function TrainerProfileScreen() {
           {/* ─────────── Socials ─────────── */}
           <Section
             title="Social Media"
-            subtitle={`${socialCount} linked`}
+            subtitle={
+              socialCount === 0 ? "Not linked yet" : `${socialCount} linked`
+            }
             icon="link"
             onEdit={openSocialModal}
           >
             <View style={styles.cardFlush}>
               {socialCount === 0 ? (
-                <TouchableOpacity
-                  style={styles.emptySocialRow}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.emptySocialRow,
+                    pressed && styles.pressed,
+                  ]}
                   onPress={openSocialModal}
-                  activeOpacity={0.8}
                   accessibilityRole="button"
+                  accessibilityLabel="Add social links"
                 >
                   <View style={styles.socialIconBox}>
                     <Feather name="plus" size={14} color={KFitColors.accent} />
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.flex}>
                     <Text style={styles.socialLabel}>Add social links</Text>
                     <Text style={styles.socialValue}>
                       Show clients where to find you
@@ -764,17 +729,20 @@ export default function TrainerProfileScreen() {
                     size={18}
                     color={KFitColors.mutedText}
                   />
-                </TouchableOpacity>
+                </Pressable>
               ) : (
                 linkedSocials.map((meta, idx) => {
                   const isLast = idx === linkedSocials.length - 1;
                   return (
                     <View key={meta.key}>
-                      <TouchableOpacity
-                        style={styles.socialRow}
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.socialRow,
+                          pressed && styles.pressed,
+                        ]}
                         onPress={openSocialModal}
-                        activeOpacity={0.7}
                         accessibilityRole="button"
+                        accessibilityLabel={`Edit ${meta.label}`}
                       >
                         <View style={styles.socialIconBox}>
                           <Feather
@@ -783,7 +751,7 @@ export default function TrainerProfileScreen() {
                             color={KFitColors.accent}
                           />
                         </View>
-                        <View style={{ flex: 1 }}>
+                        <View style={styles.flex}>
                           <Text style={styles.socialLabel}>{meta.label}</Text>
                           <Text style={styles.socialValue} numberOfLines={1}>
                             {socials[meta.key]}
@@ -794,7 +762,7 @@ export default function TrainerProfileScreen() {
                           size={18}
                           color={KFitColors.mutedText}
                         />
-                      </TouchableOpacity>
+                      </Pressable>
                       {!isLast ? <View style={styles.dividerInset} /> : null}
                     </View>
                   );
@@ -826,19 +794,21 @@ export default function TrainerProfileScreen() {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.flex}>
                 <Text style={styles.modalTitle}>EDIT PROFILE</Text>
                 <Text style={styles.modalSubtitle}>
                   Update your info — changes save instantly.
                 </Text>
               </View>
-              <TouchableOpacity
+              <Pressable
                 onPress={closeProfileModal}
                 hitSlop={10}
                 disabled={isSavingProfile}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
                 <Feather name="x" size={18} color={KFitColors.mutedText} />
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             <ScrollView
@@ -939,22 +909,40 @@ export default function TrainerProfileScreen() {
               </FieldGroup>
 
               {profileError ? (
-                <Text style={styles.errorText}>{profileError}</Text>
+                <View style={styles.errorRow}>
+                  <Feather
+                    name="alert-circle"
+                    size={13}
+                    color={KFitColors.error}
+                  />
+                  <Text style={styles.errorText}>{profileError}</Text>
+                </View>
               ) : null}
             </ScrollView>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancel}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalCancel,
+                  pressed && styles.pressed,
+                ]}
                 onPress={closeProfileModal}
                 disabled={isSavingProfile}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalSave, isSavingProfile && styles.disabled]}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalSave,
+                  isSavingProfile && styles.disabled,
+                  pressed && !isSavingProfile && styles.pressed,
+                ]}
                 onPress={saveProfile}
                 disabled={isSavingProfile}
+                accessibilityRole="button"
+                accessibilityLabel="Save profile changes"
               >
                 <Feather
                   name="check"
@@ -965,7 +953,7 @@ export default function TrainerProfileScreen() {
                 <Text style={styles.modalSaveText}>
                   {isSavingProfile ? "Saving…" : "Save changes"}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -984,19 +972,21 @@ export default function TrainerProfileScreen() {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.flex}>
                 <Text style={styles.modalTitle}>SOCIAL LINKS</Text>
                 <Text style={styles.modalSubtitle}>
                   Leave blank to hide a platform.
                 </Text>
               </View>
-              <TouchableOpacity
+              <Pressable
                 onPress={closeSocialModal}
                 hitSlop={10}
                 disabled={isSavingSocials}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
                 <Feather name="x" size={18} color={KFitColors.mutedText} />
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             <ScrollView
@@ -1018,18 +1008,20 @@ export default function TrainerProfileScreen() {
                         <Text style={styles.modalFieldLabel}>{meta.label}</Text>
                       </View>
                       {socialDraft[meta.key].length > 0 ? (
-                        <TouchableOpacity
+                        <Pressable
                           onPress={() =>
                             setSocialDraft((p) => ({ ...p, [meta.key]: "" }))
                           }
                           hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Clear ${meta.label}`}
                         >
                           <Feather
                             name="x-circle"
                             size={13}
                             color={KFitColors.mutedText}
                           />
-                        </TouchableOpacity>
+                        </Pressable>
                       ) : null}
                     </View>
                     <TextInput
@@ -1043,28 +1035,47 @@ export default function TrainerProfileScreen() {
                       keyboardType="url"
                       autoCapitalize="none"
                       autoCorrect={false}
+                      accessibilityLabel={meta.label}
                     />
                   </View>
                 ))}
               </FieldGroup>
 
               {socialError ? (
-                <Text style={styles.errorText}>{socialError}</Text>
+                <View style={styles.errorRow}>
+                  <Feather
+                    name="alert-circle"
+                    size={13}
+                    color={KFitColors.error}
+                  />
+                  <Text style={styles.errorText}>{socialError}</Text>
+                </View>
               ) : null}
             </ScrollView>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancel}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalCancel,
+                  pressed && styles.pressed,
+                ]}
                 onPress={closeSocialModal}
                 disabled={isSavingSocials}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalSave, isSavingSocials && styles.disabled]}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalSave,
+                  isSavingSocials && styles.disabled,
+                  pressed && !isSavingSocials && styles.pressed,
+                ]}
                 onPress={saveSocials}
                 disabled={isSavingSocials}
+                accessibilityRole="button"
+                accessibilityLabel="Save social links"
               >
                 <Feather
                   name="check"
@@ -1075,7 +1086,7 @@ export default function TrainerProfileScreen() {
                 <Text style={styles.modalSaveText}>
                   {isSavingSocials ? "Saving…" : "Save links"}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -1091,19 +1102,21 @@ export default function TrainerProfileScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.flex}>
                 <Text style={styles.modalTitle}>PROFILE PICTURE</Text>
                 <Text style={styles.modalSubtitle}>
                   Square photos look best (1:1).
                 </Text>
               </View>
-              <TouchableOpacity
+              <Pressable
                 onPress={closeAvatarModal}
                 hitSlop={10}
                 disabled={isSavingAvatar}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
                 <Feather name="x" size={18} color={KFitColors.mutedText} />
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             <View style={styles.avatarPreviewWrap}>
@@ -1120,38 +1133,69 @@ export default function TrainerProfileScreen() {
             </View>
 
             <View style={styles.avatarActions}>
-              <TouchableOpacity
-                style={styles.avatarActionBtn}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.avatarActionBtn,
+                  pressed && styles.pressed,
+                ]}
                 onPress={() => void pickFromLibrary()}
+                accessibilityRole="button"
+                accessibilityLabel="Pick from library"
               >
                 <Feather name="image" size={16} color={KFitColors.accent} />
                 <Text style={styles.avatarActionText}>Library</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.avatarActionBtn}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.avatarActionBtn,
+                  pressed && styles.pressed,
+                ]}
                 onPress={() => void takePhoto()}
+                accessibilityRole="button"
+                accessibilityLabel="Take a photo"
               >
                 <Feather name="camera" size={16} color={KFitColors.accent} />
                 <Text style={styles.avatarActionText}>Camera</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             {avatarError ? (
-              <Text style={styles.errorText}>{avatarError}</Text>
+              <View style={styles.errorRow}>
+                <Feather
+                  name="alert-circle"
+                  size={13}
+                  color={KFitColors.error}
+                />
+                <Text style={styles.errorText}>{avatarError}</Text>
+              </View>
             ) : null}
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancel}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalCancel,
+                  pressed && styles.pressed,
+                ]}
                 onPress={closeAvatarModal}
                 disabled={isSavingAvatar}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalSave, isSavingAvatar && styles.disabled]}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalSave,
+                  (isSavingAvatar || !avatarDraftUri) && styles.disabled,
+                  pressed &&
+                    !isSavingAvatar &&
+                    avatarDraftUri &&
+                    styles.pressed,
+                ]}
                 onPress={() => void saveAvatar()}
                 disabled={isSavingAvatar || !avatarDraftUri}
+                accessibilityRole="button"
+                accessibilityLabel="Save photo"
               >
                 <Feather
                   name="check"
@@ -1162,18 +1206,23 @@ export default function TrainerProfileScreen() {
                 <Text style={styles.modalSaveText}>
                   {isSavingAvatar ? "Saving…" : "Save photo"}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             {avatarUri ? (
-              <TouchableOpacity
-                style={styles.removeAvatarBtn}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.removeAvatarBtn,
+                  pressed && styles.pressed,
+                ]}
                 onPress={() => void removeAvatar()}
                 disabled={isSavingAvatar}
+                accessibilityRole="button"
+                accessibilityLabel="Remove photo"
               >
                 <Feather name="trash-2" size={14} color={KFitColors.error} />
                 <Text style={styles.removeAvatarText}>Remove photo</Text>
-              </TouchableOpacity>
+              </Pressable>
             ) : null}
           </View>
         </View>
@@ -1182,19 +1231,42 @@ export default function TrainerProfileScreen() {
   );
 }
 
-/* ---------- Styles ---------- */
+/* ---------- Small inline stat ---------- */
+function StatInline({
+  icon,
+  value,
+  label,
+}: {
+  icon: FeatherName;
+  value: string;
+  label: string;
+}) {
+  return (
+    <View style={styles.statInline}>
+      <View style={styles.statInlineTop}>
+        <Feather name={icon} size={13} color={KFitColors.accent} />
+        <Text style={styles.statInlineValue}>{value}</Text>
+      </View>
+      <Text style={styles.statInlineLabel}>{label}</Text>
+    </View>
+  );
+}
 
+/* ---------- Styles ---------- */
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: KFitColors.background },
   main: { flex: 1, backgroundColor: KFitColors.background },
   content: { flex: 1, backgroundColor: KFitColors.background },
   disabled: { opacity: 0.5 },
+  pressed: { opacity: 0.7 },
+  flex: { flex: 1, minWidth: 0 },
 
   date: {
     paddingHorizontal: 20,
     marginTop: 14,
     fontSize: 12,
     color: KFitColors.mutedText,
+    fontFamily: "monospace",
   },
 
   /* ───── Hero ───── */
@@ -1202,35 +1274,37 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     marginTop: 14,
-    marginBottom: 22,
+    marginBottom: 20,
   },
   avatarWrap: {
-    width: 108,
-    height: 108,
+    width: 116,
+    height: 116,
     marginBottom: 14,
     position: "relative",
   },
+  avatarRing: {
+    flex: 1,
+    borderRadius: 58,
+    padding: 4,
+    backgroundColor: KFitColors.accent + "26",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
+  },
   avatar: {
-    width: 100,
-    height: 100,
+    flex: 1,
+    width: undefined,
+    height: undefined,
     borderRadius: 50,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 3,
-    borderColor: KFitColors.accent,
-    elevation: 8,
-    shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 10,
   },
   avatarImage: { borderRadius: 50 },
-  avatarInitials: { color: "#121212", fontSize: 34, fontWeight: "900" },
+  avatarInitials: { color: "#121212", fontSize: 36, fontWeight: "900" },
   avatarEditBadge: {
     position: "absolute",
-    right: 0,
-    bottom: 0,
+    right: 2,
+    bottom: 2,
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -1241,29 +1315,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fullName: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "900",
     color: KFitColors.text,
-    marginBottom: 10,
     letterSpacing: -0.3,
+  },
+  heroSubtitle: {
+    fontSize: 12,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+    marginBottom: 10,
+    fontFamily: "monospace",
   },
   heroChips: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
     gap: 8,
     marginBottom: 4,
   },
   roleChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: KFitColors.accent + "1F",
-    borderWidth: 1,
-    borderColor: KFitColors.accent + "40",
-  },
-  verifiedChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
@@ -1279,6 +1350,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 0.6,
     color: KFitColors.accent,
+    fontFamily: "monospace",
   },
   editButton: {
     marginTop: 16,
@@ -1298,30 +1370,45 @@ const styles = StyleSheet.create({
     color: KFitColors.accent,
   },
 
-  /* ───── Stats ───── */
-  statsGrid: {
+  /* ───── Stat strip ───── */
+  statStrip: {
     flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 20,
+    marginHorizontal: 20,
     marginBottom: 18,
-  },
-  statCard: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 14,
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    borderRadius: 14,
+    overflow: "hidden",
   },
-  statIconRow: {
+  statInline: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 14,
+    gap: 4,
+  },
+  statInlineTop: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 4,
   },
-  statValue: { fontSize: 20, fontWeight: "900", color: KFitColors.text },
-  statLabel: { fontSize: 10, color: KFitColors.mutedText, fontWeight: "600" },
+  statInlineValue: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: KFitColors.text,
+    fontFamily: "monospace",
+    letterSpacing: -0.3,
+  },
+  statInlineLabel: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: KFitColors.border,
+    marginVertical: 12,
+  },
 
   /* ───── Completion card ───── */
   completionCard: {
@@ -1332,12 +1419,13 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent + "14",
     borderWidth: 1,
     borderColor: KFitColors.accent + "40",
-    gap: 8,
+    gap: 10,
   },
   completionTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    gap: 10,
   },
   completionLabel: {
     fontSize: 9,
@@ -1345,11 +1433,29 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     color: KFitColors.accent,
     marginBottom: 3,
+    fontFamily: "monospace",
   },
   completionValue: {
     fontSize: 16,
     fontWeight: "800",
     color: KFitColors.text,
+  },
+  completionRing: {
+    minWidth: 46,
+    height: 46,
+    borderRadius: 23,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "1F",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
+  },
+  completionRingText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
   },
   completionTrack: {
     height: 6,
@@ -1412,6 +1518,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 8,
     backgroundColor: KFitColors.accent + "1F",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
   },
   sectionEditText: {
     fontSize: 11,
@@ -1446,24 +1554,36 @@ const styles = StyleSheet.create({
   infoRowLeft: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
     flexShrink: 0,
+  },
+  infoIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
   },
   infoLabel: { fontSize: 13, color: KFitColors.mutedText },
   infoValue: {
-    fontSize: 14,
+    fontSize: 13,
     color: KFitColors.text,
-    fontWeight: "600",
+    fontWeight: "700",
     flexShrink: 1,
     textAlign: "right",
+    fontFamily: "monospace",
   },
   divider: { height: 1, backgroundColor: KFitColors.border },
   dividerInset: {
     height: 1,
     backgroundColor: KFitColors.border,
-    marginLeft: 16,
+    marginLeft: 60,
   },
 
-  /* ───── Chips (specialties & certs) ───── */
+  /* ───── Chips ───── */
   chipRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1540,30 +1660,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: KFitColors.mutedText,
     marginTop: 2,
+    fontFamily: "monospace",
   },
-
-  /* ───── Gold button ───── */
-  goldButton: {
-    alignSelf: "flex-start",
-    minHeight: 44,
-    borderRadius: 12,
-    overflow: "hidden",
-    elevation: 4,
-    shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-  },
-  goldButtonBg: {
-    minHeight: 44,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  goldButtonImage: { borderRadius: 12 },
-  goldButtonText: { color: "#121212", fontSize: 14, fontWeight: "800" },
 
   /* ───── Footer ───── */
   footer: { paddingVertical: 24, alignItems: "center" },
@@ -1573,7 +1671,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     color: KFitColors.text,
   },
-  footerVersion: { fontSize: 12, color: KFitColors.mutedText, marginTop: 4 },
+  footerVersion: {
+    fontSize: 12,
+    color: KFitColors.mutedText,
+    marginTop: 4,
+    fontFamily: "monospace",
+  },
 
   /* ───── Modals ───── */
   modalBackdrop: {
@@ -1605,9 +1708,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     color: KFitColors.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
-    letterSpacing: 1,
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
   },
   modalSubtitle: {
     color: KFitColors.mutedText,
@@ -1621,6 +1725,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.2,
+    fontFamily: "monospace",
   },
   fieldLabelRow: {
     flexDirection: "row",
@@ -1678,8 +1783,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
   },
-  errorText: {
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     marginTop: 4,
+  },
+  errorText: {
+    flexShrink: 1,
     fontSize: 13,
     color: KFitColors.error,
     lineHeight: 18,

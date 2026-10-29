@@ -5,35 +5,32 @@ import { useRevenue } from "@/hooks/use-revenue";
 import { Feather } from "@expo/vector-icons";
 import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
-import * as Speech from "expo-speech";
-
 import { useRouter } from "expo-router";
+import * as Speech from "expo-speech";
 import { useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    Animated,
-    AppState,
-    Easing,
-    Image,
-    ImageBackground,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-    useWindowDimensions,
+  Alert,
+  Animated,
+  AppState,
+  Easing,
+  Image,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 
-/* ------------------------------------------------------------------ */
-/* Types                                                               */
-/* ------------------------------------------------------------------ */
+/* ─────────── Types ─────────── */
 type TurnstileEvent = {
   id: string;
   memberName: string;
@@ -44,9 +41,6 @@ type TurnstileEvent = {
 
 type FeatherIconName = keyof typeof Feather.glyphMap;
 
-/* ------------------------------------------------------------------ */
-/* Realtime gate stream                                                */
-/* ------------------------------------------------------------------ */
 type GateSignal = {
   memberName: string;
   gate: string;
@@ -65,9 +59,7 @@ const MEMBER_NAMES = [
 ];
 const GATES = ["Gate A", "Gate B", "Main Entrance", "Studio Wing"];
 
-/* ------------------------------------------------------------------ */
-/* Quick action routes (kept in sync with the Sidebar)                 */
-/* ------------------------------------------------------------------ */
+/* ─────────── Quick routes ─────────── */
 type QuickRoute = {
   title: string;
   subtitle: string;
@@ -120,12 +112,7 @@ const QUICK_ROUTES: QuickRoute[] = [
   },
 ];
 
-/**
- * MOCK gate stream: emits a turnstile scan every 1.5 to 4 seconds.
- * To go live, replace the body with your real subscription (WebSocket,
- * Supabase realtime, Firebase onSnapshot...) and keep the same signature:
- * call onSignal() for every scan, and return a function that unsubscribes.
- */
+/* ─────────── Gate stream ─────────── */
 function subscribeToGateEvents(onSignal: (signal: GateSignal) => void) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout>;
@@ -150,9 +137,7 @@ function subscribeToGateEvents(onSignal: (signal: GateSignal) => void) {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* Blinking live indicator                                             */
-/* ------------------------------------------------------------------ */
+/* ─────────── Pulse dot ─────────── */
 function PulseDot({
   active,
   color = KFitColors.accent,
@@ -231,9 +216,7 @@ function PulseDot({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Turnstile row (flashes when a new scan arrives)                     */
-/* ------------------------------------------------------------------ */
+/* ─────────── Turnstile row ─────────── */
 function TurnstileRow({ event }: { event: TurnstileEvent }) {
   const flash = useRef(new Animated.Value(1)).current;
 
@@ -283,23 +266,23 @@ function TurnstileRow({ event }: { event: TurnstileEvent }) {
         </Text>
       </View>
 
-      <Text
+      <View
         style={[
-          styles.turnstileDirectionLabel,
-          isIn ? styles.turnstileInLabel : styles.turnstileOutLabel,
+          styles.turnstilePill,
+          { backgroundColor: tone + "1A", borderColor: tone + "44" },
         ]}
       >
-        {isIn ? "+1" : "−1"}
-      </Text>
+        <Text style={[styles.turnstilePillText, { color: tone }]}>
+          {isIn ? "+1" : "−1"}
+        </Text>
+      </View>
     </Animated.View>
   );
 }
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-/* ------------------------------------------------------------------ */
-/* Facility Metrics + Live Occupancy + Turnstile Log                   */
-/* ------------------------------------------------------------------ */
+/* ─────────── Facility Metrics ─────────── */
 type FacilityMetricsProps = {
   occupancyPercent: number;
   occupancyStatus: string;
@@ -343,14 +326,12 @@ function FacilityMetrics({
   memberCount,
   monthlyRevenue,
 }: FacilityMetricsProps) {
-  // Re-render every second so "Updated Xs ago" stays accurate
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
-  // Smoothly animate the gauge ring
   const offsetAnim = useRef(new Animated.Value(gaugeOffset)).current;
   useEffect(() => {
     Animated.timing(offsetAnim, {
@@ -370,9 +351,9 @@ function FacilityMetrics({
 
   return (
     <View style={styles.facilitySection}>
-      <View style={styles.facilityHeading}>
-        <Text style={styles.facilityEyebrow}>FACILITY METRICS</Text>
-        <Text style={styles.facilityCaption}>TODAY'S OVERVIEW</Text>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionEyebrow}>FACILITY METRICS</Text>
+        <Text style={styles.sectionCaption}>TODAY'S OVERVIEW</Text>
       </View>
 
       {/* Metric Grid */}
@@ -380,45 +361,95 @@ function FacilityMetrics({
         <View style={styles.facilityCard}>
           <View style={styles.facilityCardHeader}>
             <Text style={styles.facilityLabel}>Active Members</Text>
-            <Text style={styles.facilityChange}>+12%</Text>
+            <View
+              style={[
+                styles.facilityPill,
+                {
+                  backgroundColor: KFitColors.accent + "1A",
+                  borderColor: KFitColors.accent + "44",
+                },
+              ]}
+            >
+              <Text
+                style={[styles.facilityPillText, { color: KFitColors.accent }]}
+              >
+                +12%
+              </Text>
+            </View>
           </View>
-          <View style={styles.facilityValueGroup}>
-            <Text style={styles.facilityValue}>{memberCount}</Text>
-            <Text style={styles.facilityDescription}>Subscribed Roster</Text>
-          </View>
+          <Text style={styles.facilityValue}>{memberCount}</Text>
+          <Text style={styles.facilityDescription}>Subscribed Roster</Text>
         </View>
 
         <View style={styles.facilityCard}>
           <View style={styles.facilityCardHeader}>
             <Text style={styles.facilityLabel}>Monthly Revenue</Text>
-            <Text style={styles.facilityChange}>+8%</Text>
+            <View
+              style={[
+                styles.facilityPill,
+                {
+                  backgroundColor: KFitColors.accent + "1A",
+                  borderColor: KFitColors.accent + "44",
+                },
+              ]}
+            >
+              <Text
+                style={[styles.facilityPillText, { color: KFitColors.accent }]}
+              >
+                +8%
+              </Text>
+            </View>
           </View>
-          <View style={styles.facilityValueGroup}>
-            <Text style={styles.facilityValue}>${(monthlyRevenue / 1000).toFixed(1)}K</Text>
-            <Text style={styles.facilityDescription}>MTD Collections</Text>
-          </View>
+          <Text style={styles.facilityValue}>
+            ${(monthlyRevenue / 1000).toFixed(1)}K
+          </Text>
+          <Text style={styles.facilityDescription}>MTD Collections</Text>
         </View>
 
         <View style={styles.facilityCard}>
           <View style={styles.facilityCardHeader}>
             <Text style={styles.facilityLabel}>Today's Gate Scans</Text>
-            <Text style={styles.facilityChange}>+5%</Text>
+            <View
+              style={[
+                styles.facilityPill,
+                {
+                  backgroundColor: KFitColors.accent + "1A",
+                  borderColor: KFitColors.accent + "44",
+                },
+              ]}
+            >
+              <Text
+                style={[styles.facilityPillText, { color: KFitColors.accent }]}
+              >
+                +5%
+              </Text>
+            </View>
           </View>
-          <View style={styles.facilityValueGroup}>
-            <Text style={styles.facilityValue}>{gateScans}</Text>
-            <Text style={styles.facilityDescription}>Turnstile Checks</Text>
-          </View>
+          <Text style={styles.facilityValue}>{gateScans}</Text>
+          <Text style={styles.facilityDescription}>Turnstile Checks</Text>
         </View>
 
         <View style={styles.facilityCard}>
           <View style={styles.facilityCardHeader}>
             <Text style={styles.facilityLabel}>Class Occupancy</Text>
-            <Text style={styles.facilityChangeNegative}>-3%</Text>
+            <View
+              style={[
+                styles.facilityPill,
+                {
+                  backgroundColor: KFitColors.error + "1A",
+                  borderColor: KFitColors.error + "44",
+                },
+              ]}
+            >
+              <Text
+                style={[styles.facilityPillText, { color: KFitColors.error }]}
+              >
+                −3%
+              </Text>
+            </View>
           </View>
-          <View style={styles.facilityValueGroup}>
-            <Text style={styles.facilityValue}>78%</Text>
-            <Text style={styles.facilityDescription}>Studio Attendance</Text>
-          </View>
+          <Text style={styles.facilityValue}>78%</Text>
+          <Text style={styles.facilityDescription}>Studio Attendance</Text>
         </View>
       </View>
 
@@ -427,7 +458,7 @@ function FacilityMetrics({
         <View style={styles.occupancyHeader}>
           <View style={styles.occupancyTitleGroup}>
             <View style={styles.liveEyebrowRow}>
-              <PulseDot active={isLive && !isPaused} />
+              <PulseDot active={isLive && !isPaused} size={5} />
               <Text style={styles.occupancyEyebrow}>
                 {isPaused ? "SENSORS PAUSED" : "REALTIME SENSORS"}
               </Text>
@@ -438,12 +469,12 @@ function FacilityMetrics({
             style={[
               styles.occupancyBadge,
               {
-                borderColor: statusColor,
+                borderColor: statusColor + "55",
                 backgroundColor: statusColor + "1A",
               },
             ]}
           >
-            <PulseDot active={!isPaused} color={statusColor} size={6} />
+            <PulseDot active={!isPaused} color={statusColor} size={5} />
             <Text style={[styles.occupancyStatusText, { color: statusColor }]}>
               {occupancyStatus}
             </Text>
@@ -514,6 +545,8 @@ function FacilityMetrics({
               disabled={isSyncing}
               activeOpacity={0.7}
               style={styles.liveMiniButton}
+              accessibilityRole="button"
+              accessibilityLabel="Sync now"
             >
               <Feather
                 name="refresh-cw"
@@ -525,6 +558,8 @@ function FacilityMetrics({
               onPress={onTogglePause}
               activeOpacity={0.7}
               style={styles.liveMiniButton}
+              accessibilityRole="button"
+              accessibilityLabel={isPaused ? "Resume sensors" : "Pause sensors"}
             >
               <Feather
                 name={isPaused ? "play" : "pause"}
@@ -539,55 +574,52 @@ function FacilityMetrics({
         <View style={styles.occupancyButtonRow}>
           <TouchableOpacity
             style={[
-              styles.occupancyCheckInButton,
-              activeInside >= capacity && styles.occupancyDisabledButton,
+              styles.checkInBtn,
+              activeInside >= capacity && styles.disabledBtn,
             ]}
             onPress={onCheckIn}
             disabled={activeInside >= capacity}
             activeOpacity={0.8}
           >
-            <Text style={styles.occupancyCheckInText}>+ Check-In (+1)</Text>
+            <Feather name="plus" size={13} color={KFitColors.onAccent} />
+            <Text style={styles.checkInText}>Check-In</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.occupancyCheckOutButton,
-              activeInside <= 0 && styles.occupancyDisabledButton,
+              styles.checkOutBtn,
+              activeInside <= 0 && styles.disabledBtn,
             ]}
             onPress={onCheckOut}
             disabled={activeInside <= 0}
             activeOpacity={0.8}
           >
-            <Text style={styles.occupancyCheckOutText}>- Check-Out (-1)</Text>
+            <Feather name="minus" size={13} color={KFitColors.text} />
+            <Text style={styles.checkOutText}>Check-Out</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Capacity Limit */}
-        <View style={styles.occupancyThresholdSection}>
-          <View style={styles.occupancyThresholdHeader}>
-            <Text style={styles.occupancyMutedText}>
-              Capacity Limit Threshold:
-            </Text>
-            <Text style={styles.occupancyCapacityLabel}>
-              Max Limit: {capacity}
-            </Text>
+        {/* Capacity chips */}
+        <View style={styles.capacitySection}>
+          <View style={styles.capacityHeader}>
+            <Text style={styles.capacityLabel}>CAPACITY LIMIT</Text>
+            <Text style={styles.capacityValue}>Max: {capacity}</Text>
           </View>
-          <View style={styles.occupancyCapacityRow}>
+          <View style={styles.capacityRow}>
             {[150, 200, 250, 300].map((limit) => (
               <TouchableOpacity
                 key={limit}
                 onPress={() => onSetCapacity(limit)}
                 activeOpacity={0.8}
                 style={[
-                  styles.occupancyCapacityChip,
-                  capacity === limit && styles.occupancyCapacityChipActive,
+                  styles.capacityChip,
+                  capacity === limit && styles.capacityChipActive,
                 ]}
               >
                 <Text
                   style={[
-                    styles.occupancyCapacityChipText,
-                    capacity === limit &&
-                      styles.occupancyCapacityChipTextActive,
+                    styles.capacityChipText,
+                    capacity === limit && styles.capacityChipTextActive,
                   ]}
                 >
                   {limit}
@@ -598,17 +630,17 @@ function FacilityMetrics({
         </View>
       </View>
 
-      {/* Live Turnstile Stream Log */}
+      {/* Turnstile log */}
       <View style={styles.turnstileCard}>
         <View style={styles.turnstileHeader}>
           <View style={styles.turnstileTitleGroup}>
             <View style={styles.liveEyebrowRow}>
-              <PulseDot active={!isPaused} />
+              <PulseDot active={!isPaused} size={5} />
               <Text style={styles.turnstileEyebrow}>
                 {isPaused ? "GATE STREAM · PAUSED" : "GATE STREAM · LIVE"}
               </Text>
             </View>
-            <Text style={styles.turnstileTitle}>Turnstile Activity Log</Text>
+            <Text style={styles.turnstileTitle}>Turnstile Activity</Text>
           </View>
           <View style={styles.turnstileCountBadge}>
             <Text style={styles.turnstileCountText}>
@@ -619,9 +651,12 @@ function FacilityMetrics({
 
         <View style={styles.turnstileList}>
           {streamLog.length === 0 ? (
-            <Text style={styles.turnstileEmpty}>
-              Waiting for gate activity…
-            </Text>
+            <View style={styles.turnstileEmpty}>
+              <Feather name="radio" size={16} color={KFitColors.mutedText} />
+              <Text style={styles.turnstileEmptyText}>
+                Waiting for gate activity…
+              </Text>
+            </View>
           ) : (
             streamLog.map((event) => (
               <TurnstileRow key={event.id} event={event} />
@@ -633,9 +668,7 @@ function FacilityMetrics({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Attention item (icon + text + count)                                */
-/* ------------------------------------------------------------------ */
+/* ─────────── Attention item ─────────── */
 function AttentionItem({
   icon,
   tone,
@@ -651,26 +684,35 @@ function AttentionItem({
 }) {
   return (
     <View style={styles.attentionItem}>
-      <View style={[styles.attentionIcon, { backgroundColor: tone + "1A" }]}>
-        <Feather name={icon} size={18} color={tone} />
+      <View
+        style={[
+          styles.attentionIcon,
+          {
+            backgroundColor: tone + "14",
+            borderColor: tone + "44",
+            borderWidth: 1,
+          },
+        ]}
+      >
+        <Feather name={icon} size={16} color={tone} />
       </View>
       <View style={styles.attentionContent}>
         <Text style={styles.attentionTitle}>{title}</Text>
         <Text style={styles.attentionSubtitle}>{subtitle}</Text>
       </View>
-      <Text style={styles.attentionCount}>{count}</Text>
+      <View
+        style={[
+          styles.attentionCountPill,
+          { backgroundColor: tone + "1A", borderColor: tone + "44" },
+        ]}
+      >
+        <Text style={[styles.attentionCount, { color: tone }]}>{count}</Text>
+      </View>
     </View>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Sound effects + voice announcements                                 */
-/* ------------------------------------------------------------------ */
-/**
- * Preloads the short sound files and exposes play helpers.
- * The helpers read `enabled` from a ref, so they are safe to call from the
- * gate-stream subscription (which would otherwise see a stale value).
- */
+/* ─────────── Sound effects hook ─────────── */
 function useSoundEffects(enabled: boolean) {
   const scanIn = useAudioPlayer(require("@/assets/sounds/scan-in.wav"));
   const scanOut = useAudioPlayer(require("@/assets/sounds/scan-out.wav"));
@@ -683,7 +725,6 @@ function useSoundEffects(enabled: boolean) {
     if (!enabled) Speech.stop();
   }, [enabled]);
 
-  // Let sounds play even when the iPhone silent switch is on
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
     return () => {
@@ -718,22 +759,18 @@ function useSoundEffects(enabled: boolean) {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* Dashboard Screen                                                    */
-/* ------------------------------------------------------------------ */
+/* ─────────── Screen ─────────── */
 export default function DashboardScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { members } = useMembers();
   const { monthlyRevenue } = useRevenue();
 
-  /* ---------------- Push alert state ---------------- */
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastText, setBroadcastText] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* ---------------- Realtime occupancy state ---------------- */
   const [activeInside, setActiveInside] = useState(156);
   const [capacity, setCapacity] = useState(200);
   const [lastUpdated, setLastUpdated] = useState<number | null>(Date.now());
@@ -742,10 +779,8 @@ export default function DashboardScreen() {
   const [isPaused, setIsPaused] = useState(false);
   const [gateScans, setGateScans] = useState(156);
 
-  /* ---------------- Turnstile stream log ---------------- */
   const [streamLog, setStreamLog] = useState<TurnstileEvent[]>([]);
 
-  /* ---------------- Sound ---------------- */
   const [soundEnabled, setSoundEnabled] = useState(false);
   const sounds = useSoundEffects(soundEnabled);
 
@@ -764,11 +799,6 @@ export default function DashboardScreen() {
     capacityRef.current = capacity;
   }, [capacity]);
 
-  /**
-   * One place that handles every scan (live stream OR manual buttons):
-   * updates the headcount, the gate-scan counter and the activity log together,
-   * so the gauge and the turnstile log can never disagree.
-   */
   const registerGateEvent = (
     requested: "IN" | "OUT",
     memberName: string,
@@ -810,7 +840,6 @@ export default function DashboardScreen() {
     setStreamLog((prev) => [event, ...prev].slice(0, 6));
   };
 
-  // Realtime: listen to the gate stream while not paused
   useEffect(() => {
     if (isPaused) return;
     return subscribeToGateEvents((signal) =>
@@ -819,7 +848,6 @@ export default function DashboardScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPaused]);
 
-  // Manual refresh (button / pull-to-refresh): brief "Syncing…" state
   const syncOnce = async () => {
     if (isSyncing) return;
     setIsSyncing(true);
@@ -829,14 +857,10 @@ export default function DashboardScreen() {
     setIsSyncing(false);
   };
 
-  // Pause everything when app goes to background
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "background" || state === "inactive") {
-        setIsPaused(true);
-      } else if (state === "active") {
-        setIsPaused(false);
-      }
+      if (state === "background" || state === "inactive") setIsPaused(true);
+      else if (state === "active") setIsPaused(false);
     });
     return () => sub.remove();
   }, []);
@@ -847,7 +871,6 @@ export default function DashboardScreen() {
     syncOnce();
   };
 
-  /* ---------------- Derived gauge values ---------------- */
   const occupancyPercent = Math.min(
     100,
     Math.round((activeInside / capacity) * 100),
@@ -863,14 +886,12 @@ export default function DashboardScreen() {
   const gaugeCircumference = 2 * Math.PI * 42;
   const gaugeOffset = gaugeCircumference * (1 - occupancyPercent / 100);
 
-  /* ---------------- Manual overrides ---------------- */
   const handleCheckIn = () =>
     registerGateEvent("IN", "Walk-in Member", "Front Desk");
 
   const handleCheckOut = () =>
     registerGateEvent("OUT", "Walk-in Member", "Front Desk");
 
-  /* ---------------- Pull to refresh ---------------- */
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
 
   const handlePullRefresh = async () => {
@@ -886,7 +907,6 @@ export default function DashboardScreen() {
     }
   };
 
-  /* ---------------- Push alert handlers ---------------- */
   const dismissToast = () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToastMessage(null);
@@ -911,7 +931,6 @@ export default function DashboardScreen() {
     };
   }, []);
 
-  /* ---------------- Responsive layout ---------------- */
   const horizontalPadding = width < 360 ? 16 : width >= 768 ? 28 : 20;
 
   return (
@@ -1042,34 +1061,42 @@ export default function DashboardScreen() {
           />
 
           {/* Attention Needed */}
-          <Text style={styles.sectionTitle}>Attention Needed</Text>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>ATTENTION NEEDED</Text>
+            <Text style={styles.sectionCaption}>PRIORITY TASKS</Text>
+          </View>
 
           <View style={styles.attentionCard}>
             <AttentionItem
               icon="alert-triangle"
               tone={KFitColors.error}
-              title="12 Membership Renewals"
-              subtitle="Expiring this week"
+              title="Membership Renewals"
+              subtitle="12 expiring this week"
               count={12}
             />
+            <View style={styles.attentionDivider} />
             <AttentionItem
               icon="credit-card"
-              tone={KFitColors.accent}
-              title="5 Unpaid Invoices"
+              tone="#F59E0B"
+              title="Unpaid Invoices"
               subtitle="Total: $1,250"
               count={5}
             />
+            <View style={styles.attentionDivider} />
             <AttentionItem
               icon="trending-up"
               tone={KFitColors.accent}
-              title="3 Classes Near Capacity"
+              title="Classes Near Capacity"
               subtitle="Yoga, HIIT, Spin"
               count={3}
             />
           </View>
 
           {/* Upcoming Sessions */}
-          <Text style={styles.sectionTitle}>Upcoming Sessions</Text>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>TODAY'S SCHEDULE</Text>
+            <Text style={styles.sectionCaption}>UPCOMING SESSIONS</Text>
+          </View>
 
           <View style={styles.sessionsCard}>
             {[
@@ -1080,6 +1107,7 @@ export default function DashboardScreen() {
                 trainer: "Sarah Johnson",
                 room: "Studio A",
                 booked: "18/20",
+                tone: KFitColors.accent,
               },
               {
                 time: "10:30",
@@ -1088,6 +1116,7 @@ export default function DashboardScreen() {
                 trainer: "Mike Chen",
                 room: "Studio B",
                 booked: "24/25",
+                tone: "#F59E0B",
               },
               {
                 time: "2:00",
@@ -1096,6 +1125,7 @@ export default function DashboardScreen() {
                 trainer: "Emma Davis",
                 room: "Studio C",
                 booked: "15/20",
+                tone: KFitColors.accent,
               },
               {
                 time: "5:00",
@@ -1104,58 +1134,89 @@ export default function DashboardScreen() {
                 trainer: "John Smith",
                 room: "Main Floor",
                 booked: "12/15",
+                tone: KFitColors.accent,
               },
-            ].map((session) => (
-              <View key={session.title} style={styles.sessionItem}>
-                <View style={styles.sessionTime}>
-                  <Text style={styles.sessionTimeText}>{session.time}</Text>
-                  <Text style={styles.sessionAmPm}>{session.ap}</Text>
-                </View>
-                <View style={styles.sessionDivider} />
-                <View style={styles.sessionContent}>
-                  <Text style={styles.sessionTitle}>{session.title}</Text>
-                  <Text style={styles.sessionTrainer}>
-                    with {session.trainer}
-                  </Text>
-                  <View style={styles.sessionMeta}>
-                    <Text style={styles.sessionLocation}>{session.room}</Text>
-                    <Text style={styles.sessionBooking}>
-                      {session.booked} booked
+            ].map((session, i, arr) => (
+              <View key={session.title}>
+                <View style={styles.sessionItem}>
+                  <View style={styles.sessionTime}>
+                    <Text
+                      style={[styles.sessionTimeText, { color: session.tone }]}
+                    >
+                      {session.time}
                     </Text>
+                    <Text style={styles.sessionAmPm}>{session.ap}</Text>
+                  </View>
+                  <View style={styles.sessionDivider} />
+                  <View style={styles.sessionContent}>
+                    <Text style={styles.sessionTitle}>{session.title}</Text>
+                    <Text style={styles.sessionTrainer}>
+                      with {session.trainer}
+                    </Text>
+                    <View style={styles.sessionMeta}>
+                      <Feather
+                        name="map-pin"
+                        size={10}
+                        color={KFitColors.mutedText}
+                      />
+                      <Text style={styles.sessionMetaText}>{session.room}</Text>
+                      <Text style={styles.sessionMetaDot}>·</Text>
+                      <Text
+                        style={[styles.sessionBooking, { color: session.tone }]}
+                      >
+                        {session.booked} booked
+                      </Text>
+                    </View>
                   </View>
                 </View>
+                {i < arr.length - 1 && <View style={styles.attentionDivider} />}
               </View>
             ))}
           </View>
 
           {/* Quick Actions */}
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>SHORTCUTS</Text>
+            <Text style={styles.sectionCaption}>QUICK ACTIONS</Text>
+          </View>
 
-          {QUICK_ROUTES.map((item) => (
-            <TouchableOpacity
-              key={item.route}
-              style={styles.actionButton}
-              onPress={() => router.push(item.route as any)}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel={item.title}
-            >
-              <View style={styles.actionIconBox}>
-                <Feather name={item.icon} size={18} color={KFitColors.accent} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>{item.title}</Text>
-                <Text style={styles.actionSubtitle}>{item.subtitle}</Text>
-              </View>
-              <Feather
-                name="chevron-right"
-                size={20}
-                color={KFitColors.mutedText}
-              />
-            </TouchableOpacity>
-          ))}
+          <View style={styles.quickList}>
+            {QUICK_ROUTES.map((item) => (
+              <TouchableOpacity
+                key={item.route}
+                style={styles.actionButton}
+                onPress={() => router.push(item.route as any)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={item.title}
+              >
+                <View style={styles.actionIconBox}>
+                  <Feather
+                    name={item.icon}
+                    size={16}
+                    color={KFitColors.accent}
+                  />
+                </View>
+                <View style={styles.actionContent}>
+                  <Text style={styles.actionTitle}>{item.title}</Text>
+                  <Text style={styles.actionSubtitle} numberOfLines={1}>
+                    {item.subtitle}
+                  </Text>
+                </View>
+                <Feather
+                  name="chevron-right"
+                  size={18}
+                  color={KFitColors.mutedText}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
 
-          <Text style={styles.footer}>K-FIT · Gym Management Dashboard</Text>
+          <View style={styles.footer}>
+            <Text style={styles.footerLabel}>
+              K-FIT · GYM MANAGEMENT DASHBOARD
+            </Text>
+          </View>
         </ScrollView>
       </View>
 
@@ -1163,7 +1224,7 @@ export default function DashboardScreen() {
       {toastMessage && (
         <View style={styles.toast}>
           <View style={styles.toastIcon}>
-            <Feather name="bell" size={18} color={KFitColors.onAccent} />
+            <Feather name="bell" size={16} color={KFitColors.onAccent} />
           </View>
           <View style={styles.toastBody}>
             <View style={styles.toastHeaderRow}>
@@ -1197,7 +1258,9 @@ export default function DashboardScreen() {
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <Feather name="bell" size={16} color={KFitColors.accent} />
+                <View style={styles.modalIcon}>
+                  <Feather name="bell" size={14} color={KFitColors.accent} />
+                </View>
                 <Text style={styles.modalTitle}>Dispatch Push Alert</Text>
               </View>
               <TouchableOpacity
@@ -1210,12 +1273,12 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalFieldLabel}>BROADCAST CONTENT:</Text>
+            <Text style={styles.modalFieldLabel}>BROADCAST CONTENT</Text>
             <TextInput
               style={styles.modalInput}
               value={broadcastText}
               onChangeText={setBroadcastText}
-              placeholder="Type notification message..."
+              placeholder="Type notification message…"
               placeholderTextColor={KFitColors.mutedText}
               multiline
               textAlignVertical="top"
@@ -1226,7 +1289,10 @@ export default function DashboardScreen() {
               onPress={dispatchBroadcast}
               activeOpacity={0.8}
             >
-              <Text style={styles.modalPrimaryText}>Dispatch Push Banner</Text>
+              <Feather name="send" size={13} color={KFitColors.onAccent} />
+              <Text style={styles.modalPrimaryText}>
+                Dispatch to All Members
+              </Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -1235,47 +1301,57 @@ export default function DashboardScreen() {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Styles (single StyleSheet, every key defined once)                  */
-/* ------------------------------------------------------------------ */
+/* ─────────── Styles ─────────── */
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: KFitColors.background,
-  },
-
-  mainContainer: {
-    flex: 1,
-    flexDirection: "row",
-  },
-
-  content: {
-    flex: 1,
-    backgroundColor: KFitColors.background,
-  },
-
+  safeArea: { flex: 1, backgroundColor: KFitColors.background },
+  mainContainer: { flex: 1, flexDirection: "row" },
+  content: { flex: 1, backgroundColor: KFitColors.background },
   container: {
     width: "100%",
     maxWidth: 1100,
     alignSelf: "center",
-    paddingTop: 20,
+    paddingTop: 16,
     paddingBottom: 144,
+    gap: 4,
   },
 
-  /* ---------------- Header ---------------- */
+  /* Section head */
+  sectionHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  sectionEyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+  },
+  sectionCaption: {
+    color: KFitColors.mutedText,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    fontFamily: "monospace",
+  },
+
+  /* Header */
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 24,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
     backgroundColor: KFitColors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: KFitColors.border,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    borderRadius: 14,
     gap: 10,
   },
-
   headerBrand: {
     flexDirection: "row",
     alignItems: "center",
@@ -1283,7 +1359,6 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 10,
   },
-
   brandIconWrapper: {
     width: 34,
     height: 34,
@@ -1294,67 +1369,50 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 3,
-    shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
     flexShrink: 0,
   },
-
-  brandLogo: {
-    width: 34,
-    height: 34,
-  },
-
-  headerText: {
-    flex: 1,
-    minWidth: 0,
-  },
-
+  brandLogo: { width: 34, height: 34 },
+  headerText: { flex: 1, minWidth: 0 },
   brandTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
     gap: 6,
   },
-
   brandTitle: {
     color: KFitColors.text,
-    fontSize: 14,
-    fontWeight: "800",
+    fontSize: 13,
+    fontWeight: "900",
     letterSpacing: 0.6,
   },
-
   versionBadge: {
     backgroundColor: KFitColors.accentDark + "33",
     borderWidth: 1,
     borderColor: KFitColors.accentDark,
     borderRadius: 999,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
   },
-
   versionBadgeText: {
     color: KFitColors.accentLight,
-    fontSize: 9,
-    fontWeight: "800",
+    fontSize: 8,
+    fontWeight: "900",
     letterSpacing: 0.8,
+    fontFamily: "monospace",
   },
-
   brandSubtitle: {
     color: KFitColors.mutedText,
-    fontSize: 10,
+    fontSize: 9,
     marginTop: 2,
+    letterSpacing: 1,
+    fontFamily: "monospace",
   },
-
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
     flexShrink: 0,
   },
-
   broadcastButton: {
     width: 32,
     height: 32,
@@ -1365,140 +1423,86 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   soundButtonOn: {
     borderColor: KFitColors.accent,
-    backgroundColor: KFitColors.accent + "1A",
+    backgroundColor: KFitColors.accent + "14",
   },
-
   addButtonWrapper: {
     borderRadius: 8,
     overflow: "hidden",
-    elevation: 3,
-    shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
+    width: 32,
+    height: 32,
   },
-
   addButton: {
     width: 32,
     height: 32,
     alignItems: "center",
     justifyContent: "center",
   },
+  addButtonImage: { borderRadius: 8 },
 
-  addButtonImage: {
-    borderRadius: 8,
-  },
-
-  /* ---------------- Facility metrics ---------------- */
-  facilitySection: {
-    marginBottom: 24,
-  },
-
-  facilityHeading: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 10,
-    paddingHorizontal: 2,
-  },
-
-  facilityEyebrow: {
-    color: KFitColors.accent,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.4,
-  },
-
-  facilityCaption: {
-    color: KFitColors.mutedText,
-    fontSize: 10,
-    fontFamily: "monospace",
-  },
-
+  /* Facility */
+  facilitySection: { gap: 0 },
   facilityGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
   },
-
   facilityCard: {
     flexBasis: "48%",
     flexGrow: 1,
     maxWidth: "49%",
     minWidth: 0,
-    minHeight: 112,
+    minHeight: 108,
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
     borderColor: KFitColors.border,
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 12,
     justifyContent: "space-between",
+    gap: 6,
   },
-
   facilityCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    flexWrap: "wrap",
-    gap: 5,
+    gap: 6,
   },
-
   facilityLabel: {
     flexShrink: 1,
     color: KFitColors.mutedText,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "700",
+    letterSpacing: 0.6,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
   },
-
-  facilityChange: {
-    color: KFitColors.accent,
-    backgroundColor: KFitColors.accent + "26",
-    borderColor: KFitColors.accent + "66",
-    borderWidth: 1,
-    overflow: "hidden",
-    borderRadius: 20,
+  facilityPill: {
     paddingHorizontal: 6,
-    paddingVertical: 3,
-    fontSize: 9,
-    fontWeight: "800",
-  },
-
-  facilityChangeNegative: {
-    color: KFitColors.error,
-    backgroundColor: KFitColors.error + "26",
-    borderColor: KFitColors.error + "66",
+    paddingVertical: 2,
+    borderRadius: 999,
     borderWidth: 1,
-    overflow: "hidden",
-    borderRadius: 20,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    fontSize: 9,
-    fontWeight: "800",
   },
-
-  facilityValueGroup: {
-    marginTop: 12,
+  facilityPillText: {
+    fontSize: 8,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.3,
   },
-
   facilityValue: {
     color: KFitColors.text,
-    fontSize: 23,
+    fontSize: 22,
     fontWeight: "900",
     letterSpacing: -0.5,
+    fontFamily: "monospace",
   },
-
   facilityDescription: {
     color: KFitColors.mutedText,
     fontSize: 9,
-    marginTop: 3,
+    fontFamily: "monospace",
   },
 
-  /* ---------------- Live gym occupancy ---------------- */
+  /* Occupancy */
   occupancyCard: {
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
@@ -1506,28 +1510,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginTop: 14,
-    marginBottom: 10,
-    shadowColor: KFitColors.accent,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
+    gap: 4,
   },
-
   occupancyHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     flexWrap: "wrap",
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 8,
   },
-
-  occupancyTitleGroup: {
-    flex: 1,
-    minWidth: 140,
-  },
-
+  occupancyTitleGroup: { flex: 1, minWidth: 140 },
   liveEyebrowRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1535,110 +1528,96 @@ const styles = StyleSheet.create({
     marginBottom: 3,
     marginLeft: -4,
   },
-
   occupancyEyebrow: {
     color: KFitColors.accent,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.5,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
   },
-
   occupancyTitle: {
     color: KFitColors.text,
     fontSize: 16,
-    fontWeight: "800",
+    fontWeight: "900",
+    letterSpacing: -0.2,
   },
-
   occupancyBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
+    gap: 4,
+    paddingLeft: 4,
+    paddingRight: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: KFitColors.accent,
-    backgroundColor: KFitColors.accent + "1A",
   },
-
   occupancyStatusText: {
-    color: KFitColors.accent,
     fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.5,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    fontFamily: "monospace",
   },
-
   occupancyChartArea: {
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    flexWrap: "wrap",
-    gap: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
-
   occupancyRing: {
     width: 150,
     height: 150,
     alignItems: "center",
     justifyContent: "center",
   },
-
   occupancyCenter: {
     position: "absolute",
     alignItems: "center",
     justifyContent: "center",
   },
-
   occupancyPercentage: {
     color: KFitColors.text,
     fontSize: 30,
     fontWeight: "900",
     letterSpacing: -1,
+    fontFamily: "monospace",
   },
-
   occupancyCount: {
     color: KFitColors.accent,
     fontSize: 12,
     fontWeight: "800",
     marginTop: 2,
+    fontFamily: "monospace",
   },
-
   occupancyCenterLabel: {
     color: KFitColors.mutedText,
-    fontSize: 9,
-    fontWeight: "700",
+    fontSize: 8,
+    fontWeight: "900",
     letterSpacing: 1.5,
     marginTop: 2,
+    fontFamily: "monospace",
   },
-
   liveStatusRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 2,
     marginTop: 4,
-    marginBottom: 4,
   },
-
   liveStatusLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
-
   liveStatusText: {
     color: KFitColors.mutedText,
     fontSize: 10,
     fontWeight: "600",
+    fontFamily: "monospace",
   },
-
   liveStatusActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
   },
-
   liveMiniButton: {
     width: 26,
     height: 26,
@@ -1649,84 +1628,74 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: KFitColors.border,
   },
-
   occupancyButtonRow: {
     flexDirection: "row",
     gap: 8,
     marginTop: 12,
   },
-
-  occupancyCheckInButton: {
+  checkInBtn: {
     flex: 1,
-    minHeight: 42,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    minHeight: 42,
     backgroundColor: KFitColors.accent,
-    borderRadius: 12,
-    paddingHorizontal: 6,
+    borderRadius: 10,
   },
-
-  occupancyCheckInText: {
+  checkInText: {
     color: KFitColors.onAccent,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "900",
+    letterSpacing: 0.2,
   },
-
-  occupancyCheckOutButton: {
+  checkOutBtn: {
     flex: 1,
-    minHeight: 42,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    minHeight: 42,
     backgroundColor: KFitColors.background,
     borderWidth: 1,
     borderColor: KFitColors.border,
-    borderRadius: 12,
-    paddingHorizontal: 6,
+    borderRadius: 10,
   },
-
-  occupancyCheckOutText: {
+  checkOutText: {
     color: KFitColors.text,
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.2,
   },
-
-  occupancyDisabledButton: {
-    opacity: 0.4,
-  },
-
-  occupancyThresholdSection: {
+  disabledBtn: { opacity: 0.4 },
+  capacitySection: {
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: KFitColors.border,
+    gap: 8,
   },
-
-  occupancyThresholdHeader: {
+  capacityHeader: {
     flexDirection: "row",
-    flexWrap: "wrap",
     justifyContent: "space-between",
-    gap: 5,
-    marginBottom: 10,
-  },
-
-  occupancyMutedText: {
-    color: KFitColors.mutedText,
-    fontSize: 10,
-    fontWeight: "600",
-  },
-
-  occupancyCapacityLabel: {
-    color: KFitColors.accent,
-    fontSize: 10,
-    fontWeight: "800",
-  },
-
-  occupancyCapacityRow: {
-    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
-
-  occupancyCapacityChip: {
+  capacityLabel: {
+    color: KFitColors.mutedText,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
+  },
+  capacityValue: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    fontFamily: "monospace",
+  },
+  capacityRow: { flexDirection: "row", gap: 6 },
+  capacityChip: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -1736,88 +1705,77 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
   },
-
-  occupancyCapacityChipActive: {
+  capacityChipActive: {
     borderColor: KFitColors.accent,
-    backgroundColor: KFitColors.accent + "26",
+    backgroundColor: KFitColors.accent + "1A",
   },
-
-  occupancyCapacityChipText: {
+  capacityChipText: {
     color: KFitColors.mutedText,
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "800",
+    fontFamily: "monospace",
   },
+  capacityChipTextActive: { color: KFitColors.accent },
 
-  occupancyCapacityChipTextActive: {
-    color: KFitColors.accent,
-  },
-
-  /* ---------------- Turnstile stream log ---------------- */
+  /* Turnstile */
   turnstileCard: {
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
     borderColor: KFitColors.border,
     borderRadius: 16,
     padding: 16,
-    marginTop: 6,
-    marginBottom: 10,
+    marginTop: 14,
+    gap: 12,
   },
-
   turnstileHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    flexWrap: "wrap",
     gap: 8,
-    marginBottom: 12,
   },
-
-  turnstileTitleGroup: {
-    flex: 1,
-    minWidth: 140,
-  },
-
+  turnstileTitleGroup: { flex: 1, minWidth: 140 },
   turnstileEyebrow: {
     color: KFitColors.accent,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.5,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
   },
-
   turnstileTitle: {
     color: KFitColors.text,
     fontSize: 16,
-    fontWeight: "800",
+    fontWeight: "900",
     marginTop: 4,
+    letterSpacing: -0.2,
   },
-
   turnstileCountBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
+    paddingVertical: 4,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
   },
-
   turnstileCountText: {
     color: KFitColors.mutedText,
-    fontSize: 10,
-    fontWeight: "700",
+    fontSize: 9,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
   },
-
-  turnstileList: {
-    gap: 8,
-  },
-
+  turnstileList: { gap: 6 },
   turnstileEmpty: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 20,
+  },
+  turnstileEmptyText: {
     color: KFitColors.mutedText,
     fontSize: 11,
     fontStyle: "italic",
-    paddingVertical: 10,
-    textAlign: "center",
   },
-
   turnstileRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1827,7 +1785,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: KFitColors.background,
   },
-
   turnstileDirectionIcon: {
     width: 26,
     height: 26,
@@ -1836,188 +1793,166 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
   },
-
   turnstileInIcon: {
     borderColor: KFitColors.accent + "59",
     backgroundColor: KFitColors.accent + "1A",
   },
-
   turnstileOutIcon: {
     borderColor: KFitColors.error + "59",
     backgroundColor: KFitColors.error + "1A",
   },
-
-  turnstileRowContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-
+  turnstileRowContent: { flex: 1, minWidth: 0 },
   turnstileMemberName: {
     color: KFitColors.text,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
   },
-
   turnstileMeta: {
     color: KFitColors.mutedText,
     fontSize: 10,
     marginTop: 2,
+    fontFamily: "monospace",
   },
-
-  turnstileDirectionLabel: {
-    fontSize: 12,
+  turnstilePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  turnstilePillText: {
+    fontSize: 10,
     fontWeight: "900",
-    letterSpacing: 0.5,
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
   },
 
-  turnstileInLabel: {
-    color: KFitColors.accent,
-  },
-
-  turnstileOutLabel: {
-    color: KFitColors.error,
-  },
-
-  /* ---------------- Attention / Sessions ---------------- */
-  sectionTitle: {
-    color: KFitColors.text,
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 16,
-    marginTop: 8,
-  },
-
+  /* Attention */
   attentionCard: {
     backgroundColor: KFitColors.surface,
     borderRadius: 16,
-    padding: 16,
+    padding: 4,
     borderWidth: 1,
     borderColor: KFitColors.border,
-    marginBottom: 24,
   },
-
   attentionItem: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: KFitColors.border,
   },
-
-  attentionIcon: {
-    width: 40,
-    minHeight: 40,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    backgroundColor: KFitColors.border,
-  },
-
-  attentionContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  attentionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: KFitColors.text,
-    flexShrink: 1,
-  },
-
-  attentionSubtitle: {
-    fontSize: 13,
-    color: KFitColors.mutedText,
-    marginTop: 2,
-    flexShrink: 1,
-  },
-
-  attentionCount: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: KFitColors.accent,
-    marginLeft: 8,
-  },
-
-  sessionsCard: {
-    backgroundColor: KFitColors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    marginBottom: 24,
-  },
-
-  sessionItem: {
-    flexDirection: "row",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: KFitColors.border,
-  },
-
-  sessionTime: {
-    width: 56,
-    flexShrink: 0,
-    alignItems: "center",
-  },
-
-  sessionTimeText: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: KFitColors.text,
-  },
-
-  sessionAmPm: {
-    fontSize: 11,
-    color: KFitColors.mutedText,
-  },
-
-  sessionDivider: {
-    width: 1,
+  attentionDivider: {
+    height: 1,
     backgroundColor: KFitColors.border,
     marginHorizontal: 12,
   },
-
-  sessionContent: {
-    flex: 1,
-    minWidth: 0,
-    paddingLeft: 8,
+  attentionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
-
-  sessionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: KFitColors.text,
-    flexShrink: 1,
-  },
-
-  sessionTrainer: {
+  attentionContent: { flex: 1, minWidth: 0, gap: 2 },
+  attentionTitle: {
     fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
+  attentionSubtitle: {
+    fontSize: 11,
     color: KFitColors.mutedText,
-    marginTop: 2,
-    flexShrink: 1,
+    fontFamily: "monospace",
+  },
+  attentionCountPill: {
+    minWidth: 28,
+    height: 24,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attentionCount: {
+    fontSize: 12,
+    fontWeight: "900",
+    fontFamily: "monospace",
   },
 
+  /* Sessions */
+  sessionsCard: {
+    backgroundColor: KFitColors.surface,
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+  },
+  sessionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  sessionTime: {
+    width: 52,
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  sessionTimeText: {
+    fontSize: 15,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: -0.3,
+  },
+  sessionAmPm: {
+    fontSize: 9,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+    fontWeight: "700",
+    marginTop: 1,
+  },
+  sessionDivider: {
+    width: 1,
+    alignSelf: "stretch",
+    backgroundColor: KFitColors.border,
+    marginVertical: 2,
+  },
+  sessionContent: { flex: 1, minWidth: 0, gap: 2 },
+  sessionTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
+  sessionTrainer: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+  },
   sessionMeta: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginTop: 6,
-    gap: 12,
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
   },
-
-  sessionLocation: {
-    fontSize: 12,
+  sessionMetaText: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  sessionMetaDot: {
+    fontSize: 10,
     color: KFitColors.mutedText,
   },
-
   sessionBooking: {
-    fontSize: 12,
-    color: KFitColors.accent,
-    fontWeight: "600",
+    fontSize: 10,
+    fontWeight: "800",
+    fontFamily: "monospace",
   },
 
-  /* ---------------- Quick actions ---------------- */
+  /* Quick actions */
+  quickList: { gap: 8 },
   actionButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -2027,45 +1962,44 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: KFitColors.border,
     borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-
   actionIconBox: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: KFitColors.accent + "1A",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
   },
-
-  actionContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-
+  actionContent: { flex: 1, minWidth: 0 },
   actionTitle: {
     color: KFitColors.text,
-    fontWeight: "600",
-    fontSize: 14,
+    fontWeight: "800",
+    fontSize: 13,
   },
-
   actionSubtitle: {
     color: KFitColors.mutedText,
-    fontSize: 13,
-    marginTop: 3,
-    flexShrink: 1,
+    fontSize: 11,
+    marginTop: 2,
   },
 
   footer: {
+    alignItems: "center",
+    paddingVertical: 24,
+  },
+  footerLabel: {
     color: KFitColors.mutedText,
-    fontSize: 11,
-    textAlign: "center",
-    marginTop: 24,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+    opacity: 0.7,
   },
 
-  /* ---------------- Push alert banner + modal ---------------- */
+  /* Toast */
   toast: {
     position: "absolute",
     top: 12,
@@ -2076,45 +2010,38 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 12,
     padding: 14,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: KFitColors.accent,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
     backgroundColor: KFitColors.surface,
     elevation: 8,
   },
-
   toastIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: KFitColors.accent,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  toastBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-
+  toastBody: { flex: 1, minWidth: 0 },
   toastHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   toastLabel: {
     color: KFitColors.accent,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
   },
-
   toastTime: {
     color: KFitColors.mutedText,
     fontSize: 10,
+    fontFamily: "monospace",
   },
-
   toastMessage: {
     color: KFitColors.text,
     fontSize: 12,
@@ -2122,6 +2049,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  /* Modal */
   modalBackdrop: {
     flex: 1,
     alignItems: "center",
@@ -2129,10 +2057,9 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: "rgba(0, 0, 0, 0.8)",
   },
-
   modalCard: {
     width: "100%",
-    maxWidth: 360,
+    maxWidth: 380,
     gap: 12,
     padding: 20,
     borderRadius: 16,
@@ -2140,54 +2067,61 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.surface,
   },
-
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   modalTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-
+  modalIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
+  },
   modalTitle: {
     color: KFitColors.text,
     fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "900",
   },
-
   modalFieldLabel: {
     color: KFitColors.mutedText,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
   },
-
   modalInput: {
     minHeight: 84,
     backgroundColor: KFitColors.background,
     borderWidth: 1,
     borderColor: KFitColors.border,
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 10,
     color: KFitColors.text,
-    fontSize: 13,
+    fontSize: 12,
   },
-
   modalPrimaryButton: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: KFitColors.accent,
   },
-
   modalPrimaryText: {
     color: KFitColors.onAccent,
-    fontSize: 13,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.2,
   },
 });

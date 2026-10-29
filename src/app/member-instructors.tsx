@@ -27,7 +27,7 @@ const MAX_COMMENT = 300;
 type Review = {
   id: string;
   author: string;
-  rating: number; // 1-5
+  rating: number;
   comment: string;
   date: string;
   mine?: boolean;
@@ -37,14 +37,13 @@ type Instructor = {
   id: string;
   name: string;
   specialty: string;
-  rating: number; // average
-  reviewCount: number; // total ratings behind the average
+  rating: number;
+  reviewCount: number;
   sessions: number;
   nextSlot: string;
-  reviews: Review[]; // most recent first
+  reviews: Review[];
 };
 
-// TODO: replace with data from your backend.
 const INSTRUCTORS: Instructor[] = [
   {
     id: "i1",
@@ -158,8 +157,7 @@ const initialsOf = (name: string) =>
     .join("")
     .slice(0, 2);
 
-/* ---------------------------- Small building blocks ---------------------------- */
-
+/* ─────────── Building blocks ─────────── */
 function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
   return (
     <View
@@ -208,7 +206,7 @@ function StarPicker({
         >
           <Ionicons
             name={n <= value ? "star" : "star-outline"}
-            size={32}
+            size={30}
             color={n <= value ? KFitColors.accent : KFitColors.mutedText}
           />
         </TouchableOpacity>
@@ -226,17 +224,17 @@ function ReviewItem({ review }: { review: Review }) {
             {initialsOf(review.author)}
           </Text>
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={styles.flex}>
           <View style={styles.reviewNameRow}>
             <Text style={styles.reviewAuthor}>{review.author}</Text>
             {review.mine ? (
               <View style={styles.youChip}>
-                <Text style={styles.youChipText}>You</Text>
+                <Text style={styles.youChipText}>YOU</Text>
               </View>
             ) : null}
           </View>
           <View style={styles.reviewMeta}>
-            <StarRow rating={review.rating} size={12} />
+            <StarRow rating={review.rating} size={11} />
             <Text style={styles.reviewDate}>{review.date}</Text>
           </View>
         </View>
@@ -248,8 +246,7 @@ function ReviewItem({ review }: { review: Review }) {
   );
 }
 
-/* ---------------------------------- Screen ---------------------------------- */
-
+/* ─────────── Screen ─────────── */
 export default function MemberInstructorsScreen() {
   const { header, profile } = useMemberHeaderData();
   const { isSigningOut, logout } = useLogout();
@@ -263,7 +260,6 @@ export default function MemberInstructorsScreen() {
   const [draftComment, setDraftComment] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Minimal local notification state to feed MemberHeader.
   const [notifications, setNotifications] = useState<MemberLocalNotification[]>(
     [],
   );
@@ -360,7 +356,6 @@ export default function MemberInstructorsScreen() {
       }),
     );
 
-    // TODO: send { instructorId, rating, comment } to your backend here.
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     closeForm();
   };
@@ -368,7 +363,6 @@ export default function MemberInstructorsScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <View style={styles.main}>
-        {/* Shared header — matches member dashboard + workout */}
         <MemberHeader
           {...header}
           checkedIn={false}
@@ -379,24 +373,26 @@ export default function MemberInstructorsScreen() {
         />
 
         <KeyboardAvoidingView
-          style={{ flex: 1 }}
+          style={styles.flex}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <ScrollView
-            contentContainerStyle={{ paddingBottom: NAV_CLEARANCE }}
+            contentContainerStyle={styles.contentInner}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            {/* ── Header ────────────────────────── */}
             <View style={styles.header}>
+              <Text style={styles.eyebrow}>COACHING</Text>
               <Text style={styles.title}>Choose your instructor</Text>
               <Text style={styles.subtitle}>
                 Pick the coach you want to train with.
               </Text>
             </View>
 
-            {/* Search */}
+            {/* ── Search ────────────────────────── */}
             <View style={styles.searchBox}>
-              <Feather name="search" size={16} color={KFitColors.mutedText} />
+              <Feather name="search" size={14} color={KFitColors.mutedText} />
               <TextInput
                 style={styles.searchInput}
                 value={query}
@@ -404,39 +400,52 @@ export default function MemberInstructorsScreen() {
                 placeholder="Search by name or specialty"
                 placeholderTextColor={KFitColors.mutedText}
                 autoCorrect={false}
+                returnKeyType="search"
                 accessibilityLabel="Search instructors"
               />
               {query ? (
                 <TouchableOpacity
                   onPress={() => setQuery("")}
+                  hitSlop={8}
                   accessibilityLabel="Clear search"
                 >
-                  <Feather name="x" size={16} color={KFitColors.mutedText} />
+                  <Feather name="x" size={14} color={KFitColors.mutedText} />
                 </TouchableOpacity>
               ) : null}
             </View>
 
-            {/* Current selection */}
+            {/* ── Selected banner ───────────────── */}
             {selected ? (
               <View style={styles.selectedBanner}>
-                <Feather
-                  name="check-circle"
-                  size={16}
-                  color={KFitColors.accent}
-                />
+                <View style={styles.selectedDot} />
                 <Text style={styles.selectedText}>
                   Your instructor:{" "}
                   <Text style={styles.selectedName}>{selected.name}</Text>
                 </Text>
+                <Feather
+                  name="check-circle"
+                  size={14}
+                  color={KFitColors.accent}
+                />
               </View>
             ) : null}
 
-            {/* List */}
+            {/* ── List ──────────────────────────── */}
             <View style={styles.list}>
               {results.length === 0 ? (
-                <Text style={styles.empty}>
-                  No instructors match your search.
-                </Text>
+                <View style={styles.emptyCard}>
+                  <View style={styles.emptyIconWrap}>
+                    <Feather
+                      name="user-x"
+                      size={20}
+                      color={KFitColors.accent}
+                    />
+                  </View>
+                  <Text style={styles.emptyTitle}>No matches</Text>
+                  <Text style={styles.emptyText}>
+                    No instructors match “{query}”. Try a different search.
+                  </Text>
+                </View>
               ) : (
                 results.map((i) => {
                   const isSelected = i.id === selectedId;
@@ -455,12 +464,12 @@ export default function MemberInstructorsScreen() {
                             {initialsOf(i.name)}
                           </Text>
                         </View>
-                        <View style={styles.cardInfo}>
+                        <View style={styles.flex}>
                           <Text style={styles.name}>{i.name}</Text>
                           <Text style={styles.specialty}>{i.specialty}</Text>
                           <View style={styles.metaRow}>
-                            <StarRow rating={i.rating} />
-                            <Text style={styles.metaText}>
+                            <StarRow rating={i.rating} size={12} />
+                            <Text style={styles.metaScore}>
                               {i.rating.toFixed(1)}
                             </Text>
                             <Text style={styles.metaDot}>·</Text>
@@ -475,7 +484,7 @@ export default function MemberInstructorsScreen() {
                         <View style={styles.slotRow}>
                           <Feather
                             name="clock"
-                            size={13}
+                            size={11}
                             color={KFitColors.mutedText}
                           />
                           <Text style={styles.slotText}>
@@ -492,6 +501,13 @@ export default function MemberInstructorsScreen() {
                           accessibilityRole="button"
                           accessibilityState={{ selected: isSelected }}
                         >
+                          {isSelected && (
+                            <Feather
+                              name="check"
+                              size={11}
+                              color={KFitColors.accent}
+                            />
+                          )}
                           <Text
                             style={[
                               styles.chooseText,
@@ -503,7 +519,6 @@ export default function MemberInstructorsScreen() {
                         </TouchableOpacity>
                       </View>
 
-                      {/* Reviews toggle */}
                       <TouchableOpacity
                         style={styles.reviewsToggle}
                         onPress={() => toggleReviews(i.id)}
@@ -512,30 +527,35 @@ export default function MemberInstructorsScreen() {
                         accessibilityState={{ expanded: isExpanded }}
                       >
                         <View style={styles.reviewsToggleLeft}>
-                          <Feather
-                            name="message-square"
-                            size={14}
-                            color={KFitColors.accent}
-                          />
+                          <View style={styles.reviewsIconWrap}>
+                            <Feather
+                              name="message-square"
+                              size={11}
+                              color={KFitColors.accent}
+                            />
+                          </View>
                           <Text style={styles.reviewsToggleText}>
-                            Ratings & reviews ({i.reviewCount})
+                            Ratings & reviews
+                          </Text>
+                          <Text style={styles.reviewsCount}>
+                            {i.reviewCount}
                           </Text>
                         </View>
                         <Feather
                           name={isExpanded ? "chevron-up" : "chevron-down"}
-                          size={18}
+                          size={16}
                           color={KFitColors.mutedText}
                         />
                       </TouchableOpacity>
 
                       {isExpanded ? (
                         <View style={styles.reviewsPanel}>
-                          <View style={styles.summaryRow}>
+                          <View style={styles.summaryCard}>
                             <Text style={styles.summaryScore}>
                               {i.rating.toFixed(1)}
                             </Text>
-                            <View>
-                              <StarRow rating={i.rating} size={16} />
+                            <View style={styles.summaryInfo}>
+                              <StarRow rating={i.rating} size={14} />
                               <Text style={styles.summaryCount}>
                                 Based on {i.reviewCount} ratings
                               </Text>
@@ -581,21 +601,27 @@ export default function MemberInstructorsScreen() {
                               ) : null}
                               <View style={styles.formActions}>
                                 <TouchableOpacity
-                                  style={styles.chooseButton}
+                                  style={styles.cancelButton}
+                                  onPress={closeForm}
+                                  accessibilityRole="button"
+                                  activeOpacity={0.85}
+                                >
+                                  <Text style={styles.cancelText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={styles.submitButton}
                                   onPress={() => submitReview(i.id)}
                                   activeOpacity={0.85}
                                   accessibilityRole="button"
                                 >
-                                  <Text style={styles.chooseText}>
-                                    {mine ? "Update review" : "Submit review"}
+                                  <Feather
+                                    name="check"
+                                    size={13}
+                                    color={KFitColors.onAccent}
+                                  />
+                                  <Text style={styles.submitText}>
+                                    {mine ? "Update" : "Submit"}
                                   </Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  style={styles.cancelButton}
-                                  onPress={closeForm}
-                                  accessibilityRole="button"
-                                >
-                                  <Text style={styles.cancelText}>Cancel</Text>
                                 </TouchableOpacity>
                               </View>
                             </View>
@@ -603,12 +629,12 @@ export default function MemberInstructorsScreen() {
                             <TouchableOpacity
                               style={styles.writeButton}
                               onPress={() => openForm(i)}
-                              activeOpacity={0.8}
+                              activeOpacity={0.85}
                               accessibilityRole="button"
                             >
                               <Feather
                                 name="edit-3"
-                                size={14}
+                                size={13}
                                 color={KFitColors.accent}
                               />
                               <Text style={styles.writeButtonText}>
@@ -617,9 +643,11 @@ export default function MemberInstructorsScreen() {
                             </TouchableOpacity>
                           )}
 
-                          {i.reviews.map((r) => (
-                            <ReviewItem key={r.id} review={r} />
-                          ))}
+                          <View style={styles.reviewsList}>
+                            {i.reviews.map((r) => (
+                              <ReviewItem key={r.id} review={r} />
+                            ))}
+                          </View>
                         </View>
                       ) : null}
                     </View>
@@ -636,102 +664,206 @@ export default function MemberInstructorsScreen() {
   );
 }
 
+/* ─────────── Styles ─────────── */
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: KFitColors.background },
   main: { flex: 1, backgroundColor: KFitColors.background },
+  flex: { flex: 1, minWidth: 0 },
+  contentInner: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: NAV_CLEARANCE,
+    gap: 14,
+  },
 
-  header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
-  title: { fontSize: 24, fontWeight: "900", color: KFitColors.text },
-  subtitle: { fontSize: 13, color: KFitColors.mutedText, marginTop: 4 },
+  /* Header */
+  header: { gap: 2, marginTop: 4 },
+  eyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: KFitColors.text,
+    letterSpacing: -0.4,
+    marginTop: 2,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+  },
 
+  /* Search */
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginHorizontal: 20,
-    paddingHorizontal: 14,
-    height: 46,
-    borderRadius: 14,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
     borderColor: KFitColors.border,
   },
-  searchInput: { flex: 1, color: KFitColors.text, fontSize: 14 },
+  searchInput: {
+    flex: 1,
+    color: KFitColors.text,
+    fontSize: 12,
+    paddingVertical: 0,
+    minHeight: 20,
+  },
 
+  /* Selected banner */
   selectedBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginHorizontal: 20,
-    marginTop: 14,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: KFitColors.accent + "1F",
+    padding: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent + "14",
     borderWidth: 1,
-    borderColor: KFitColors.accent + "40",
+    borderColor: KFitColors.accent + "44",
   },
-  selectedText: { fontSize: 13, color: KFitColors.text },
-  selectedName: { fontWeight: "800", color: KFitColors.accent },
+  selectedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: KFitColors.accent,
+  },
+  selectedText: { fontSize: 12, color: KFitColors.text, flex: 1 },
+  selectedName: {
+    fontWeight: "800",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+  },
 
-  list: { paddingHorizontal: 20, marginTop: 16, gap: 12 },
-  empty: {
-    textAlign: "center",
-    color: KFitColors.mutedText,
-    fontSize: 14,
+  /* List */
+  list: { gap: 10 },
+  emptyCard: {
+    alignItems: "center",
     paddingVertical: 32,
+    paddingHorizontal: 24,
+    gap: 8,
+    backgroundColor: KFitColors.surface,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    borderRadius: 14,
+  },
+  emptyIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
+    marginBottom: 4,
+  },
+  emptyTitle: {
+    color: KFitColors.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  emptyText: {
+    color: KFitColors.mutedText,
+    fontSize: 11,
+    textAlign: "center",
+    lineHeight: 16,
   },
 
+  /* Card */
   card: {
     backgroundColor: KFitColors.surface,
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: KFitColors.border,
     gap: 12,
   },
-  cardSelected: { borderColor: KFitColors.accent },
+  cardSelected: {
+    borderColor: KFitColors.accent,
+    backgroundColor: KFitColors.accent + "10",
+  },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
   avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: KFitColors.accent + "1F",
+    backgroundColor: KFitColors.accent + "14",
     borderWidth: 1,
-    borderColor: KFitColors.accent + "40",
+    borderColor: KFitColors.accent + "44",
   },
-  avatarText: { fontSize: 18, fontWeight: "900", color: KFitColors.accent },
-  cardInfo: { flex: 1 },
-  name: { fontSize: 16, fontWeight: "800", color: KFitColors.text },
-  specialty: { fontSize: 12, color: KFitColors.mutedText, marginTop: 2 },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+  },
+  name: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: KFitColors.text,
+    letterSpacing: -0.2,
+  },
+  specialty: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+  },
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
-    gap: 6,
-    marginTop: 6,
+    gap: 5,
+    marginTop: 4,
   },
-  metaText: { fontSize: 12, color: KFitColors.text, fontWeight: "700" },
-  metaMuted: { fontSize: 12, color: KFitColors.mutedText },
-  metaDot: { color: KFitColors.mutedText },
-
+  metaScore: {
+    fontSize: 11,
+    color: KFitColors.text,
+    fontWeight: "900",
+    fontFamily: "monospace",
+  },
+  metaMuted: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  metaDot: {
+    color: KFitColors.mutedText,
+    fontSize: 10,
+  },
   starRow: { flexDirection: "row", alignItems: "center", gap: 1 },
 
   cardBottom: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: KFitColors.border,
   },
-  slotRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  slotText: { fontSize: 12, color: KFitColors.mutedText },
+  slotRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  slotText: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
   chooseButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: KFitColors.accent,
   },
   chooseButtonActive: {
@@ -739,110 +871,233 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: KFitColors.accent,
   },
-  chooseText: { fontSize: 13, fontWeight: "800", color: KFitColors.onAccent },
+  chooseText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: KFitColors.onAccent,
+    fontFamily: "monospace",
+  },
   chooseTextActive: { color: KFitColors.accent },
 
+  /* Reviews toggle */
   reviewsToggle: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: KFitColors.border,
-    minHeight: 32,
   },
   reviewsToggleLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  reviewsIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
+  },
   reviewsToggleText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "800",
     color: KFitColors.text,
   },
-  reviewsPanel: { gap: 14 },
+  reviewsCount: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+    fontWeight: "900",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    overflow: "hidden",
+  },
+  reviewsPanel: { gap: 12 },
 
-  summaryRow: { flexDirection: "row", alignItems: "center", gap: 14 },
-  summaryScore: { fontSize: 36, fontWeight: "900", color: KFitColors.accent },
-  summaryCount: { fontSize: 12, color: KFitColors.mutedText, marginTop: 4 },
+  /* Summary */
+  summaryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+  },
+  summaryScore: {
+    fontSize: 34,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+    letterSpacing: -0.8,
+  },
+  summaryInfo: { gap: 4 },
+  summaryCount: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
 
+  /* Write button */
   writeButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    minHeight: 44,
-    borderRadius: 12,
+    gap: 6,
+    minHeight: 42,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: KFitColors.accent,
+    borderColor: KFitColors.accent + "55",
+    backgroundColor: KFitColors.accent + "10",
   },
   writeButtonText: {
-    fontSize: 14,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "900",
     color: KFitColors.accent,
   },
 
+  /* Form */
   form: {
-    padding: 14,
-    borderRadius: 14,
+    padding: 12,
+    borderRadius: 12,
     backgroundColor: KFitColors.background,
     borderWidth: 1,
     borderColor: KFitColors.border,
     gap: 10,
   },
-  formTitle: { fontSize: 14, fontWeight: "800", color: KFitColors.text },
+  formTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: KFitColors.text,
+  },
   pickerRow: { flexDirection: "row", gap: 8 },
   commentInput: {
-    minHeight: 90,
-    padding: 12,
-    borderRadius: 12,
-    fontSize: 14,
-    lineHeight: 20,
+    minHeight: 80,
+    padding: 10,
+    borderRadius: 10,
+    fontSize: 12,
+    lineHeight: 18,
     color: KFitColors.text,
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
     borderColor: KFitColors.border,
   },
-  counter: { fontSize: 11, color: KFitColors.mutedText, textAlign: "right" },
-  errorText: { fontSize: 13, color: KFitColors.error },
-  formActions: { flexDirection: "row", alignItems: "center", gap: 8 },
-  cancelButton: { paddingHorizontal: 12, paddingVertical: 9 },
-  cancelText: { fontSize: 13, fontWeight: "600", color: KFitColors.mutedText },
-
-  reviewItem: {
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: KFitColors.border,
-    gap: 8,
+  counter: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    textAlign: "right",
+    fontFamily: "monospace",
   },
-  reviewTop: { flexDirection: "row", alignItems: "center", gap: 10 },
-  reviewAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: KFitColors.accent + "1F",
+  errorText: {
+    fontSize: 11,
+    color: KFitColors.error,
+    fontWeight: "700",
   },
-  reviewAvatarText: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: KFitColors.accent,
-  },
-  reviewNameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  reviewAuthor: { fontSize: 13, fontWeight: "700", color: KFitColors.text },
-  youChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 1,
-    borderRadius: 999,
-    backgroundColor: KFitColors.accent + "1F",
-    borderWidth: 1,
-    borderColor: KFitColors.accent + "40",
-  },
-  youChipText: { fontSize: 10, fontWeight: "800", color: KFitColors.accent },
-  reviewMeta: {
+  formActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginTop: 2,
   },
-  reviewDate: { fontSize: 11, color: KFitColors.mutedText },
-  reviewComment: { fontSize: 13, lineHeight: 19, color: KFitColors.mutedText },
+  cancelButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+  },
+  cancelText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: KFitColors.mutedText,
+  },
+  submitButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent,
+  },
+  submitText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.onAccent,
+  },
+
+  /* Reviews list */
+  reviewsList: { gap: 10 },
+  reviewItem: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    gap: 8,
+  },
+  reviewTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  reviewAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
+  },
+  reviewAvatarText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+  },
+  reviewNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  reviewAuthor: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
+  youChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    backgroundColor: KFitColors.accent + "1A",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
+  },
+  youChipText: {
+    fontSize: 8,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+    letterSpacing: 0.6,
+  },
+  reviewMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  reviewDate: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  reviewComment: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: KFitColors.mutedText,
+  },
 });

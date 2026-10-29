@@ -1,6 +1,8 @@
 import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -14,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+type IconName = keyof typeof Ionicons.glyphMap;
 type Status = "Available" | "Fully booked" | "In session";
 type StatusFilter = "All" | Status;
 
@@ -87,14 +90,39 @@ const mockTrainers: Trainer[] = [
   },
 ];
 
-const STATUS_FILTERS: StatusFilter[] = [
-  "All",
-  "Available",
-  "In session",
-  "Fully booked",
+const STATUS_FILTERS: {
+  key: StatusFilter;
+  icon: IconName;
+}[] = [
+  { key: "All", icon: "apps" },
+  { key: "Available", icon: "checkmark-circle" },
+  { key: "In session", icon: "play-circle" },
+  { key: "Fully booked", icon: "close-circle" },
 ];
 
 const WIDE_BREAKPOINT = 820;
+
+const statusColor = (status: Status) =>
+  status === "Available"
+    ? KFitColors.accent
+    : status === "Fully booked"
+      ? KFitColors.error
+      : KFitColors.warning;
+
+const loadColor = (ratio: number) =>
+  ratio >= 1
+    ? KFitColors.error
+    : ratio >= 0.85
+      ? KFitColors.warning
+      : KFitColors.accent;
+
+const initials = (name: string) =>
+  name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
 export default function TrainersScreen() {
   const router = useRouter();
@@ -103,24 +131,6 @@ export default function TrainersScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<StatusFilter>("All");
-
-  const statusColor = (status: Status) => {
-    switch (status) {
-      case "Available":
-        return KFitColors.accent;
-      case "Fully booked":
-        return KFitColors.error;
-      case "In session":
-        return KFitColors.warning;
-    }
-  };
-
-  const loadColor = (ratio: number) =>
-    ratio >= 1
-      ? KFitColors.error
-      : ratio >= 0.85
-        ? KFitColors.warning
-        : KFitColors.accent;
 
   const counts = useMemo(() => {
     const base: Record<StatusFilter, number> = {
@@ -137,7 +147,7 @@ export default function TrainersScreen() {
     const q = searchQuery.trim().toLowerCase();
     return mockTrainers.filter((t) => {
       const matchesSearch =
-        !q ||
+        q.length === 0 ||
         t.name.toLowerCase().includes(q) ||
         t.specialization.toLowerCase().includes(q) ||
         t.certification.toLowerCase().includes(q);
@@ -147,61 +157,48 @@ export default function TrainersScreen() {
     });
   }, [searchQuery, selectedFilter]);
 
-  const openProfile = (id: string) =>
+  const openProfile = (id: string) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({ pathname: "/trainers/[id]", params: { id } } as any);
+  };
 
-  const stats = [
-    { label: "Total trainers", value: "12" },
-    { label: "Available today", value: "8" },
-    { label: "Assigned clients", value: "186" },
-    { label: "Sessions this week", value: "94" },
+  const stats: {
+    label: string;
+    value: string;
+    icon: IconName;
+    tone: string;
+  }[] = [
+    {
+      label: "Total trainers",
+      value: "12",
+      icon: "people",
+      tone: KFitColors.accent,
+    },
+    {
+      label: "Available today",
+      value: "8",
+      icon: "checkmark-circle",
+      tone: "#22C55E",
+    },
+    {
+      label: "Assigned clients",
+      value: "186",
+      icon: "person",
+      tone: "#3B82F6",
+    },
+    {
+      label: "Sessions this week",
+      value: "94",
+      icon: "calendar",
+      tone: "#F59E0B",
+    },
   ];
-
-  const renderStatus = (status: Status) => {
-    const color = statusColor(status);
-    return (
-      <View style={[styles.statusBadge, { borderColor: color }]}>
-        <View style={[styles.statusDot, { backgroundColor: color }]} />
-        <Text style={[styles.statusText, { color }]}>{status}</Text>
-      </View>
-    );
-  };
-
-  const renderLoad = (t: Trainer) => {
-    const ratio = t.clients / t.capacity;
-    return (
-      <View style={styles.loadWrap}>
-        <Text style={styles.clientsText}>
-          {t.clients}
-          <Text style={styles.clientsCap}> / {t.capacity} clients</Text>
-        </Text>
-        <View style={styles.progressTrack}>
-          <View
-            style={[
-              styles.progressFill,
-              {
-                width: `${Math.min(ratio, 1) * 100}%`,
-                backgroundColor: loadColor(ratio),
-              },
-            ]}
-          />
-        </View>
-      </View>
-    );
-  };
-
-  const initials = (name: string) =>
-    name
-      .split(" ")
-      .map((n) => n[0])
-      .join("");
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mainContainer}>
         <Sidebar activeRoute="/trainers" />
 
-        {/* Header + scrollable content */}
         <View style={styles.main}>
           <AppHeader />
 
@@ -209,17 +206,22 @@ export default function TrainersScreen() {
             style={styles.content}
             contentContainerStyle={styles.contentContainer}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            {/* Page title */}
-            <View style={[styles.header, !isWide && styles.headerStacked]}>
+            {/* Page header */}
+            <View style={[styles.pageHeader, isWide && styles.pageHeaderWide]}>
               <View style={styles.headerLeft}>
+                <Text style={styles.eyebrow}>COACHING TEAM</Text>
                 <Text style={styles.headerTitle}>The coaching team</Text>
                 <Text style={styles.headerSubtitle}>
-                  Expert people. Personal progress. Manage your club's coaching
-                  capacity.
+                  Expert people. Personal progress. Manage your club&apos;s
+                  coaching capacity.
                 </Text>
               </View>
               <Pressable
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }}
                 accessibilityRole="button"
                 accessibilityLabel="Add trainer"
                 style={({ pressed }) => [
@@ -227,7 +229,8 @@ export default function TrainersScreen() {
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={styles.addButtonText}>+ Add trainer</Text>
+                <Ionicons name="add" size={16} color={KFitColors.onAccent} />
+                <Text style={styles.addButtonText}>Add trainer</Text>
               </Pressable>
             </View>
 
@@ -235,7 +238,22 @@ export default function TrainersScreen() {
             <View style={styles.statsGrid}>
               {stats.map((s) => (
                 <View key={s.label} style={styles.statCard}>
-                  <Text style={styles.statLabel}>{s.label}</Text>
+                  <View style={styles.statTop}>
+                    <Text style={styles.statLabel} numberOfLines={1}>
+                      {s.label}
+                    </Text>
+                    <View
+                      style={[
+                        styles.statIconBox,
+                        {
+                          backgroundColor: s.tone + "14",
+                          borderColor: s.tone + "44",
+                        },
+                      ]}
+                    >
+                      <Ionicons name={s.icon} size={13} color={s.tone} />
+                    </View>
+                  </View>
                   <Text style={styles.statNumber}>{s.value}</Text>
                 </View>
               ))}
@@ -243,21 +261,45 @@ export default function TrainersScreen() {
 
             {/* Capacity overview */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Capacity overview</Text>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionEyebrow}>CAPACITY</Text>
+                <Text style={styles.sectionCaption}>OVERVIEW</Text>
+              </View>
               <View style={styles.capacityGrid}>
                 <View style={styles.capacityCard}>
-                  <Text style={styles.capacityLabel}>Team</Text>
+                  <View style={styles.capacityHead}>
+                    <Text style={styles.capacityLabel}>Team</Text>
+                    <View style={styles.capacityIcon}>
+                      <Ionicons
+                        name="people"
+                        size={12}
+                        color={KFitColors.accent}
+                      />
+                    </View>
+                  </View>
                   <Text style={styles.capacityNumber}>12</Text>
                   <Text style={styles.capacitySublabel}>
                     10 full-time · 2 part-time
                   </Text>
-                  <Text style={styles.capacityHighlight}>
-                    4 currently in session
-                  </Text>
+                  <View style={styles.capacityBadge}>
+                    <View style={styles.capacityDot} />
+                    <Text style={styles.capacityBadgeText}>
+                      4 in session now
+                    </Text>
+                  </View>
                 </View>
 
                 <View style={styles.capacityCard}>
-                  <Text style={styles.capacityLabel}>Load</Text>
+                  <View style={styles.capacityHead}>
+                    <Text style={styles.capacityLabel}>Load</Text>
+                    <View style={styles.capacityIcon}>
+                      <Ionicons
+                        name="trending-up"
+                        size={12}
+                        color={KFitColors.accent}
+                      />
+                    </View>
+                  </View>
                   <Text style={styles.capacityNumber}>15.5</Text>
                   <Text style={styles.capacitySublabel}>
                     clients per trainer
@@ -265,7 +307,16 @@ export default function TrainersScreen() {
                 </View>
 
                 <View style={styles.capacityCard}>
-                  <Text style={styles.capacityLabel}>Open time</Text>
+                  <View style={styles.capacityHead}>
+                    <Text style={styles.capacityLabel}>Open time</Text>
+                    <View style={styles.capacityIcon}>
+                      <Ionicons
+                        name="time"
+                        size={12}
+                        color={KFitColors.accent}
+                      />
+                    </View>
+                  </View>
                   <Text style={styles.capacityNumber}>28</Text>
                   <Text style={styles.capacitySublabel}>
                     coaching hours available
@@ -277,7 +328,11 @@ export default function TrainersScreen() {
             {/* Search + filters */}
             <View style={styles.section}>
               <View style={styles.searchContainer}>
-                <Text style={styles.searchIcon}>🔍</Text>
+                <Ionicons
+                  name="search"
+                  size={16}
+                  color={KFitColors.mutedText}
+                />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Search by name, specialization or certification"
@@ -290,10 +345,15 @@ export default function TrainersScreen() {
                 {searchQuery.length > 0 && (
                   <Pressable
                     onPress={() => setSearchQuery("")}
-                    hitSlop={8}
+                    hitSlop={10}
+                    accessibilityRole="button"
                     accessibilityLabel="Clear search"
                   >
-                    <Text style={styles.clearIcon}>✕</Text>
+                    <Ionicons
+                      name="close-circle"
+                      size={16}
+                      color={KFitColors.mutedText}
+                    />
                   </Pressable>
                 )}
               </View>
@@ -303,35 +363,55 @@ export default function TrainersScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.filterContainer}
               >
-                {STATUS_FILTERS.map((filter) => {
-                  const active = selectedFilter === filter;
+                {STATUS_FILTERS.map((f) => {
+                  const active = selectedFilter === f.key;
+                  const count = counts[f.key];
                   return (
                     <Pressable
-                      key={filter}
-                      onPress={() => setSelectedFilter(filter)}
+                      key={f.key}
+                      onPress={() => {
+                        void Haptics.selectionAsync();
+                        setSelectedFilter(f.key);
+                      }}
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
-                      style={[
+                      accessibilityLabel={`${f.key}, ${count} trainers`}
+                      style={({ pressed }) => [
                         styles.filterTab,
                         active && styles.filterTabActive,
+                        pressed && styles.pressed,
                       ]}
                     >
+                      <Ionicons
+                        name={f.icon}
+                        size={12}
+                        color={
+                          active ? KFitColors.onAccent : KFitColors.mutedText
+                        }
+                      />
                       <Text
                         style={[
                           styles.filterTabText,
                           active && styles.filterTabTextActive,
                         ]}
                       >
-                        {filter}
+                        {f.key}
                       </Text>
-                      <Text
+                      <View
                         style={[
                           styles.filterCount,
-                          active && styles.filterTabTextActive,
+                          active && styles.filterCountActive,
                         ]}
                       >
-                        {counts[filter]}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.filterCountText,
+                            active && styles.filterCountTextActive,
+                          ]}
+                        >
+                          {count}
+                        </Text>
+                      </View>
                     </Pressable>
                   );
                 })}
@@ -341,45 +421,63 @@ export default function TrainersScreen() {
             {/* List */}
             <View style={styles.section}>
               <View style={styles.tableCard}>
-                {isWide && (
+                {isWide && filteredTrainers.length > 0 && (
                   <View style={styles.listHeader}>
                     <Text style={[styles.headerText, styles.colTrainer]}>
-                      Trainer
+                      TRAINER
                     </Text>
                     <Text style={[styles.headerText, styles.colSpec]}>
-                      Specialization
+                      SPECIALIZATION
                     </Text>
                     <Text style={[styles.headerText, styles.colClients]}>
-                      Clients
+                      LOAD
                     </Text>
                     <Text style={[styles.headerText, styles.colNext]}>
-                      Next available
+                      NEXT AVAILABLE
                     </Text>
                     <Text style={[styles.headerText, styles.colStatus]}>
-                      Status
+                      STATUS
                     </Text>
                   </View>
                 )}
 
                 {filteredTrainers.length === 0 ? (
                   <View style={styles.emptyState}>
+                    <View style={styles.emptyIconWrap}>
+                      <Ionicons
+                        name="search"
+                        size={22}
+                        color={KFitColors.accent}
+                      />
+                    </View>
                     <Text style={styles.emptyTitle}>No trainers found</Text>
                     <Text style={styles.emptyText}>
-                      Try a different search or clear the filter.
+                      Try a different search or reset the filter.
                     </Text>
                     <Pressable
                       onPress={() => {
+                        void Haptics.selectionAsync();
                         setSearchQuery("");
                         setSelectedFilter("All");
                       }}
-                      style={styles.resetButton}
+                      style={({ pressed }) => [
+                        styles.resetButton,
+                        pressed && styles.pressed,
+                      ]}
                     >
+                      <Ionicons
+                        name="refresh"
+                        size={13}
+                        color={KFitColors.accent}
+                      />
                       <Text style={styles.resetText}>Reset filters</Text>
                     </Pressable>
                   </View>
                 ) : (
                   filteredTrainers.map((t, i) => {
                     const isLast = i === filteredTrainers.length - 1;
+                    const tone = statusColor(t.status);
+                    const ratio = t.clients / t.capacity;
 
                     const identity = (
                       <View style={styles.identity}>
@@ -389,10 +487,51 @@ export default function TrainersScreen() {
                           </Text>
                         </View>
                         <View style={styles.flex1}>
-                          <Text style={styles.trainerName}>{t.name}</Text>
+                          <Text style={styles.trainerName} numberOfLines={1}>
+                            {t.name}
+                          </Text>
                           <Text style={styles.trainerCertification}>
                             {t.certification}
                           </Text>
+                        </View>
+                      </View>
+                    );
+
+                    const statusBadge = (
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor: tone + "1A",
+                            borderColor: tone + "44",
+                          },
+                        ]}
+                      >
+                        <View
+                          style={[styles.statusDot, { backgroundColor: tone }]}
+                        />
+                        <Text style={[styles.statusText, { color: tone }]}>
+                          {t.status.toUpperCase()}
+                        </Text>
+                      </View>
+                    );
+
+                    const load = (
+                      <View style={styles.loadWrap}>
+                        <Text style={styles.clientsText}>
+                          {t.clients}
+                          <Text style={styles.clientsCap}> / {t.capacity}</Text>
+                        </Text>
+                        <View style={styles.progressTrack}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              {
+                                width: `${Math.min(ratio, 1) * 100}%`,
+                                backgroundColor: loadColor(ratio),
+                              },
+                            ]}
+                          />
                         </View>
                       </View>
                     );
@@ -413,44 +552,61 @@ export default function TrainersScreen() {
                           <View style={styles.rowWide}>
                             <View style={styles.colTrainer}>{identity}</View>
                             <View style={styles.colSpec}>
-                              <Text style={styles.specializationText}>
+                              <Text
+                                style={styles.specializationText}
+                                numberOfLines={2}
+                              >
                                 {t.specialization}
                               </Text>
                             </View>
-                            <View style={styles.colClients}>
-                              {renderLoad(t)}
-                            </View>
+                            <View style={styles.colClients}>{load}</View>
                             <View style={styles.colNext}>
                               <Text style={styles.availableText}>
                                 {t.nextAvailable}
                               </Text>
-                              <Text style={styles.subText}>{t.hours}</Text>
+                              <Text style={styles.subText} numberOfLines={1}>
+                                {t.hours}
+                              </Text>
                             </View>
-                            <View style={[styles.colStatus, styles.statusCol]}>
-                              {renderStatus(t.status)}
-                              <Text style={styles.chevron}>›</Text>
-                            </View>
+                            <View style={styles.colStatus}>{statusBadge}</View>
+                            <Ionicons
+                              name="chevron-forward"
+                              size={16}
+                              color={KFitColors.mutedText}
+                            />
                           </View>
                         ) : (
                           <View style={styles.rowNarrow}>
                             <View style={styles.rowNarrowTop}>
                               {identity}
-                              {renderStatus(t.status)}
+                              {statusBadge}
                             </View>
-                            <Text style={styles.specializationText}>
+                            <Text
+                              style={styles.specializationText}
+                              numberOfLines={2}
+                            >
                               {t.specialization}
                             </Text>
-                            {renderLoad(t)}
+                            {load}
                             <View style={styles.rowNarrowBottom}>
                               <View style={styles.flex1}>
                                 <Text style={styles.availableText}>
                                   Next: {t.nextAvailable}
                                 </Text>
-                                <Text style={styles.subText}>{t.hours}</Text>
+                                <Text style={styles.subText} numberOfLines={1}>
+                                  {t.hours}
+                                </Text>
                               </View>
-                              <Text style={styles.viewProfileText}>
-                                View profile ›
-                              </Text>
+                              <View style={styles.viewProfile}>
+                                <Text style={styles.viewProfileText}>
+                                  View profile
+                                </Text>
+                                <Ionicons
+                                  name="chevron-forward"
+                                  size={12}
+                                  color={KFitColors.accent}
+                                />
+                              </View>
                             </View>
                           </View>
                         )}
@@ -462,14 +618,12 @@ export default function TrainersScreen() {
 
               <Text style={styles.footerText}>
                 Showing {filteredTrainers.length} of {mockTrainers.length}{" "}
-                loaded trainers · 12 total
+                loaded · 12 total
               </Text>
             </View>
 
             <View style={styles.footer}>
-              <Text style={styles.footerBrand}>
-                FORM ATHLETICS • ADMINISTRATOR WORKSPACE
-              </Text>
+              <Text style={styles.footerBrand}>KFIT · ADMIN WORKSPACE</Text>
             </View>
           </ScrollView>
         </View>
@@ -483,136 +637,237 @@ const styles = StyleSheet.create({
   mainContainer: { flex: 1, flexDirection: "row" },
   main: { flex: 1, backgroundColor: KFitColors.background },
   content: { flex: 1, backgroundColor: KFitColors.background },
-  contentContainer: { paddingBottom: 96 },
-  flex1: { flex: 1 },
-  pressed: { opacity: 0.8 },
+  contentContainer: { paddingBottom: 128 },
+  flex1: { flex: 1, minWidth: 0 },
+  pressed: { opacity: 0.75 },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
+  /* Page header */
+  pageHeader: {
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 24,
+    paddingTop: 16,
+    paddingBottom: 16,
+    gap: 14,
   },
-  headerStacked: { flexDirection: "column", alignItems: "flex-start" },
-  headerLeft: { flexShrink: 1 },
+  pageHeaderWide: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+  headerLeft: { flexShrink: 1, gap: 2 },
+  eyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+  },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    letterSpacing: -0.5,
+    fontSize: 26,
+    fontWeight: "900",
     color: KFitColors.text,
-    marginBottom: 6,
+    marginTop: 2,
+    letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 19,
     color: KFitColors.mutedText,
+    marginTop: 2,
     maxWidth: 520,
   },
   addButton: {
-    backgroundColor: KFitColors.accent,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: 42,
+    paddingHorizontal: 14,
     borderRadius: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    backgroundColor: KFitColors.accent,
   },
   addButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "900",
     color: KFitColors.onAccent,
+    letterSpacing: 0.2,
   },
 
-  // Stats
+  /* Stats */
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 28,
+    gap: 10,
+    marginBottom: 16,
   },
   statCard: {
     flexGrow: 1,
     flexBasis: 140,
     backgroundColor: KFitColors.surface,
     borderRadius: 14,
-    padding: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: KFitColors.border,
   },
-  statLabel: {
-    fontSize: 12,
-    color: KFitColors.mutedText,
+  statTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
     marginBottom: 8,
   },
+  statLabel: {
+    flexShrink: 1,
+    fontSize: 10,
+    fontWeight: "900",
+    color: KFitColors.mutedText,
+    letterSpacing: 0.6,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+  },
+  statIconBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
   statNumber: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: KFitColors.accent,
+    fontSize: 24,
+    fontWeight: "900",
+    color: KFitColors.text,
+    letterSpacing: -0.5,
+    fontFamily: "monospace",
   },
 
-  // Sections
-  section: { paddingHorizontal: 20, marginBottom: 24 },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: KFitColors.text,
-    marginBottom: 12,
+  /* Sections */
+  section: { paddingHorizontal: 20, marginBottom: 16 },
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
   },
-  capacityGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  sectionEyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+  },
+  sectionCaption: {
+    color: KFitColors.mutedText,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    fontFamily: "monospace",
+  },
+
+  /* Capacity */
+  capacityGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   capacityCard: {
     flexGrow: 1,
     flexBasis: 200,
     backgroundColor: KFitColors.surface,
     borderRadius: 14,
-    padding: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    gap: 4,
   },
-  capacityLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    color: KFitColors.mutedText,
-    marginBottom: 6,
-  },
-  capacityNumber: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: KFitColors.text,
+  capacityHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 2,
   },
-  capacitySublabel: { fontSize: 12, color: KFitColors.mutedText },
-  capacityHighlight: {
-    fontSize: 12,
-    fontWeight: "600",
+  capacityLabel: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  capacityIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
+  },
+  capacityNumber: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: KFitColors.text,
+    fontFamily: "monospace",
+    letterSpacing: -0.4,
+  },
+  capacitySublabel: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  capacityBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: KFitColors.accent + "1A",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
+    alignSelf: "flex-start",
+    marginTop: 6,
+  },
+  capacityDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: KFitColors.accent,
+  },
+  capacityBadgeText: {
     color: KFitColors.accent,
-    marginTop: 8,
+    fontSize: 9,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
   },
 
-  // Search + filters
+  /* Search */
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: KFitColors.surface,
+    gap: 8,
+    height: 42,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
     paddingHorizontal: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  searchIcon: { fontSize: 14, marginRight: 10 },
-  searchInput: { flex: 1, height: 46, fontSize: 14, color: KFitColors.text },
-  clearIcon: { fontSize: 14, color: KFitColors.mutedText, padding: 4 },
-  filterContainer: { gap: 8 },
+  searchInput: {
+    flex: 1,
+    height: "100%",
+    fontSize: 12,
+    color: KFitColors.text,
+    paddingVertical: 0,
+  },
+
+  /* Filters */
+  filterContainer: { gap: 6 },
   filterTab: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    gap: 5,
+    paddingLeft: 10,
+    paddingRight: 5,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: KFitColors.border,
@@ -622,11 +877,35 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent,
     borderColor: KFitColors.accent,
   },
-  filterTabText: { fontSize: 13, color: KFitColors.text, fontWeight: "600" },
-  filterTabTextActive: { color: KFitColors.onAccent },
-  filterCount: { fontSize: 12, color: KFitColors.mutedText, fontWeight: "600" },
+  filterTabText: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontWeight: "700",
+  },
+  filterTabTextActive: { color: KFitColors.onAccent, fontWeight: "900" },
+  filterCount: {
+    minWidth: 20,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 999,
+    alignItems: "center",
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+  },
+  filterCountActive: {
+    backgroundColor: KFitColors.onAccent + "22",
+    borderColor: KFitColors.onAccent + "44",
+  },
+  filterCountText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  filterCountTextActive: { color: KFitColors.onAccent },
 
-  // Table / list
+  /* Table */
   tableCard: {
     backgroundColor: KFitColors.surface,
     borderRadius: 14,
@@ -636,30 +915,32 @@ const styles = StyleSheet.create({
   },
   listHeader: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
   },
   headerText: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 9,
+    fontWeight: "900",
     color: KFitColors.mutedText,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
   },
   colTrainer: { flex: 2.2, paddingRight: 12 },
   colSpec: { flex: 2, paddingRight: 12 },
   colClients: { flex: 1.8, paddingRight: 12 },
   colNext: { flex: 1.8, paddingRight: 12 },
-  colStatus: { flex: 1.4 },
+  colStatus: { flex: 1.6, paddingRight: 8 },
 
-  row: { paddingHorizontal: 16, paddingVertical: 14 },
+  row: { paddingHorizontal: 14, paddingVertical: 12 },
   rowDivider: {
     borderBottomWidth: 1,
     borderBottomColor: KFitColors.border,
   },
-  rowPressed: { opacity: 0.7 },
+  rowPressed: { opacity: 0.75 },
   rowWide: { flexDirection: "row", alignItems: "center" },
   rowNarrow: { gap: 10 },
   rowNarrowTop: {
@@ -672,113 +953,178 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 8,
   },
 
   identity: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     flexShrink: 1,
   },
   trainerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: KFitColors.accent,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { fontSize: 14, fontWeight: "800", color: KFitColors.onAccent },
-  trainerName: { fontSize: 14, fontWeight: "700", color: KFitColors.text },
+  avatarText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+    letterSpacing: 0.3,
+  },
+  trainerName: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.text,
+    letterSpacing: -0.2,
+  },
   trainerCertification: {
-    fontSize: 11,
+    fontSize: 10,
     color: KFitColors.mutedText,
     marginTop: 2,
+    fontFamily: "monospace",
   },
   specializationText: {
-    fontSize: 13,
+    fontSize: 12,
     color: KFitColors.text,
-    fontWeight: "500",
+    fontWeight: "600",
   },
 
-  loadWrap: { gap: 6 },
-  clientsText: { fontSize: 13, fontWeight: "700", color: KFitColors.text },
-  clientsCap: { fontWeight: "400", color: KFitColors.mutedText },
+  loadWrap: { gap: 5 },
+  clientsText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.text,
+    fontFamily: "monospace",
+  },
+  clientsCap: {
+    fontWeight: "400",
+    color: KFitColors.mutedText,
+  },
   progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: KFitColors.border,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
     overflow: "hidden",
-    maxWidth: 160,
+    maxWidth: 140,
   },
-  progressFill: { height: "100%", borderRadius: 3 },
+  progressFill: { height: "100%", borderRadius: 2 },
 
-  availableText: { fontSize: 13, color: KFitColors.text, fontWeight: "600" },
-  subText: { fontSize: 11, color: KFitColors.mutedText, marginTop: 2 },
-
-  statusCol: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  availableText: {
+    fontSize: 12,
+    color: KFitColors.text,
+    fontWeight: "800",
   },
+  subText: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+    fontFamily: "monospace",
+  },
+
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
     alignSelf: "flex-start",
   },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 11, fontWeight: "700" },
-  chevron: { fontSize: 22, color: KFitColors.mutedText, marginLeft: 8 },
+  statusDot: { width: 5, height: 5, borderRadius: 3 },
+  statusText: {
+    fontSize: 8,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
+  },
+  viewProfile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
   viewProfileText: {
-    fontSize: 12,
+    fontSize: 11,
     color: KFitColors.accent,
-    fontWeight: "600",
+    fontWeight: "900",
   },
 
-  // Empty state
+  /* Empty state */
   emptyState: {
     alignItems: "center",
-    paddingVertical: 40,
-    paddingHorizontal: 20,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    gap: 8,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: KFitColors.text,
+  emptyIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
     marginBottom: 4,
   },
-  emptyText: { fontSize: 13, color: KFitColors.mutedText, marginBottom: 16 },
-  resetButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: KFitColors.accent,
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: KFitColors.text,
   },
-  resetText: { fontSize: 13, fontWeight: "600", color: KFitColors.accent },
-
-  // Footer
-  footerText: {
-    fontSize: 12,
+  emptyText: {
+    fontSize: 11,
     color: KFitColors.mutedText,
     textAlign: "center",
-    marginTop: 14,
+    lineHeight: 16,
+  },
+  resetButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
+    backgroundColor: KFitColors.accent + "10",
+    marginTop: 6,
+  },
+  resetText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.accent,
+  },
+
+  /* Footer */
+  footerText: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    textAlign: "center",
+    marginTop: 12,
+    fontFamily: "monospace",
+    opacity: 0.7,
   },
   footer: {
     alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: KFitColors.border,
   },
   footerBrand: {
-    fontSize: 11,
-    letterSpacing: 0.8,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
     color: KFitColors.mutedText,
+    opacity: 0.7,
   },
 });

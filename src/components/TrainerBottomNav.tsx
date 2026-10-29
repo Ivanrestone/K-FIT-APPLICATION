@@ -1,4 +1,5 @@
 import { KFitColors } from "@/constants/theme";
+import { useBookingsStore } from "@/lib/bookings-store";
 import { unseenCount, useChallengeStore } from "@/lib/challenges-store";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -27,20 +28,21 @@ type Tab = {
 /** All trainer screens. Every route must be a file in app/. */
 const ALL_TABS: Tab[] = [
   { label: "Home", icon: "trending-up", route: "/trainer-dashboard" },
+  { label: "Sessions", icon: "calendar", route: "/trainer-bookings" },
+  { label: "Roster", icon: "users", route: "/trainer-roster" },
   { label: "Trainers", icon: "user-check", route: "/trainer-team" },
   { label: "Ranks", icon: "award", route: "/trainer-ranks" },
   { label: "POS", icon: "shopping-cart", route: "/trainer-pos" },
-  { label: "Roster", icon: "users", route: "/trainer-roster" },
   { label: "Challenges", icon: "flag", route: "/trainer-challenges" },
 ];
 
 /** QR button opens a 2-option sheet. */
-const SCAN_ROUTE = "/admin-scanner"; // camera scanner
-const PASS_ROUTE = "/trainer-qr"; // trainer's own QR pass (add if missing)
+const SCAN_ROUTE = "/admin-scanner";
+const PASS_ROUTE = "/trainer-qr";
 
-// Dock: 2 left of QR, 1 right of QR, then More.
-const LEFT_ROUTES = ["/trainer-dashboard", "/trainer-roster"];
-const RIGHT_ROUTES = ["/trainer-challenges"];
+// Dock: [Home] [Sessions] (QR) [Roster] [More]
+const LEFT_ROUTES = ["/trainer-dashboard", "/trainer-bookings"];
+const RIGHT_ROUTES = ["/trainer-roster"];
 
 const pick = (routes: string[]) =>
   routes
@@ -138,10 +140,17 @@ export default function TrainerBottomNav({
   const store = useChallengeStore();
   const newChallenges = unseenCount(store, "trainer");
 
-  const badgeFor = (route: string) =>
-    route === "/trainer-challenges" ? newChallenges : 0;
+  const allBookings = useBookingsStore((s) => s.bookings);
+  const pendingBookings = allBookings.filter(
+    (b) => b.status === "pending",
+  ).length;
 
-  // Highlight ring when on either QR sub-screen.
+  const badgeFor = (route: string) => {
+    if (route === "/trainer-challenges") return newChallenges;
+    if (route === "/trainer-bookings") return pendingBookings;
+    return 0;
+  };
+
   const qrActive = activeRoute === SCAN_ROUTE || activeRoute === PASS_ROUTE;
   const moreIsActive = MORE_ITEMS.some((t) => t.route === activeRoute);
 
@@ -195,7 +204,6 @@ export default function TrainerBottomNav({
         style={[styles.wrapper, { bottom: Math.max(insets.bottom, 8) + 4 }]}
         pointerEvents="box-none"
       >
-        {/* Raised center QR button → opens scanner / pass sheet */}
         <View style={styles.qrWrap} pointerEvents="box-none">
           <Pressable
             onPress={openQrMenu}
@@ -262,7 +270,7 @@ export default function TrainerBottomNav({
             label="More"
             icon="more-horizontal"
             badge={MORE_ITEMS.reduce(
-              (sum, tab) => sum + (tab.badge ?? 0) + badgeFor(tab.route),
+              (sum, tab) => sum + (tab.badge ?? badgeFor(tab.route)),
               0,
             )}
             active={moreIsActive}
@@ -274,7 +282,7 @@ export default function TrainerBottomNav({
         </View>
       </View>
 
-      {/* ─────────── QR Options Sheet ─────────── */}
+      {/* QR Options Sheet */}
       <Modal
         visible={isQrMenuOpen}
         transparent
@@ -358,7 +366,7 @@ export default function TrainerBottomNav({
         </Pressable>
       </Modal>
 
-      {/* ─────────── More Sheet ─────────── */}
+      {/* More Sheet */}
       <Modal
         visible={isMoreOpen}
         transparent
@@ -381,7 +389,7 @@ export default function TrainerBottomNav({
 
             {MORE_ITEMS.map((tab) => {
               const active = tab.route === activeRoute;
-              const challengeBadge = badgeFor(tab.route);
+              const itemBadge = badgeFor(tab.route);
               return (
                 <Pressable
                   key={tab.route}
@@ -417,7 +425,7 @@ export default function TrainerBottomNav({
                   >
                     {tab.label}
                   </Text>
-                  {challengeBadge > 0 && (
+                  {itemBadge > 0 && (
                     <View
                       style={[
                         styles.badge,
@@ -430,7 +438,7 @@ export default function TrainerBottomNav({
                       ]}
                     >
                       <Text style={styles.badgeText}>
-                        {challengeBadge > 9 ? "9+" : challengeBadge}
+                        {itemBadge > 9 ? "9+" : itemBadge}
                       </Text>
                     </View>
                   )}
@@ -511,7 +519,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   badgeText: { color: "#000", fontSize: 8, fontWeight: "900" },
-
   qrWrap: {
     position: "absolute",
     top: 0,
@@ -579,7 +586,6 @@ const styles = StyleSheet.create({
     borderRightWidth: 2,
     borderBottomRightRadius: 3,
   },
-
   qrOptionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -607,7 +613,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-
   modalBackdrop: {
     flex: 1,
     justifyContent: "flex-end",

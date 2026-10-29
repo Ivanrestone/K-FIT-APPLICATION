@@ -5,19 +5,24 @@ import { useMemos } from "@/hooks/use-memos";
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleProp,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+/* ------------------------------------------------------------------ */
+/* Types                                                              */
+/* ------------------------------------------------------------------ */
 type Priority = "High" | "Medium" | "Low";
 type PriorityFilter = "All" | Priority;
 
@@ -30,7 +35,6 @@ interface Memo {
   author: string;
 }
 
-
 const PRIORITIES: Priority[] = ["High", "Medium", "Low"];
 const FILTERS: PriorityFilter[] = ["All", ...PRIORITIES];
 
@@ -41,15 +45,65 @@ const priorityColor = (p: Priority) =>
       ? KFitColors.warning
       : KFitColors.accent;
 
-const todayLabel = () =>
-  new Date().toLocaleDateString("en-US", {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  });
+const priorityIcon = (p: Priority): keyof typeof Ionicons.glyphMap =>
+  p === "High" ? "alert-circle" : p === "Medium" ? "time" : "checkmark-circle";
 
+/* ------------------------------------------------------------------ */
+/* Typed pressable — eliminates the style-callback TS error.         */
+/* ------------------------------------------------------------------ */
+type PressableBtnProps = {
+  children?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  pressedStyle?: StyleProp<ViewStyle>;
+  onPress?: () => void;
+  disabled?: boolean;
+  accessibilityRole?: "button" | "link" | "none";
+  accessibilityLabel?: string;
+  accessibilityState?: { selected?: boolean; disabled?: boolean };
+  hitSlop?: number;
+};
+
+function PressableBtn({
+  children,
+  style,
+  pressedStyle,
+  onPress,
+  disabled,
+  accessibilityRole,
+  accessibilityLabel,
+  accessibilityState,
+  hitSlop,
+}: PressableBtnProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={accessibilityState}
+      hitSlop={hitSlop}
+      style={({ pressed }) => [
+        style,
+        pressed && (pressedStyle ?? styles.pressed),
+      ]}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Screen                                                             */
+/* ------------------------------------------------------------------ */
 export default function MemoScreen() {
-  const { memos, loading, refetch, createMemo: dbCreateMemo, deleteMemo: dbDeleteMemo } = useMemos();
+  const {
+    memos,
+    loading,
+    refetch,
+    createMemo: dbCreateMemo,
+    deleteMemo: dbDeleteMemo,
+  } = useMemos();
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<PriorityFilter>("All");
 
@@ -85,6 +139,14 @@ export default function MemoScreen() {
       return matchesSearch && matchesFilter;
     });
   }, [memos, searchQuery, selectedFilter]);
+
+  const filterActive =
+    searchQuery.trim().length > 0 || selectedFilter !== "All";
+
+  const resetFilters = () => {
+    setSearchQuery("");
+    setSelectedFilter("All");
+  };
 
   const openCreate = () => {
     setNewTitle("");
@@ -144,27 +206,11 @@ export default function MemoScreen() {
     );
   };
 
-  const PriorityBadge = ({ priority }: { priority: Priority }) => {
-    const color = priorityColor(priority);
-    return (
-      <View
-        style={[
-          styles.badge,
-          { backgroundColor: color + "1F", borderColor: color + "55" },
-        ]}
-      >
-        <View style={[styles.badgeDot, { backgroundColor: color }]} />
-        <Text style={[styles.badgeText, { color }]}>{priority}</Text>
-      </View>
-    );
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.mainContainer}>
         <Sidebar activeRoute="/memo" />
 
-        {/* Header + scrollable content */}
         <View style={styles.main}>
           <AppHeader />
 
@@ -172,48 +218,52 @@ export default function MemoScreen() {
             style={styles.content}
             contentContainerStyle={styles.contentContainer}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            {/* Page title */}
-            <View style={styles.header}>
-              <View style={styles.headerLeft}>
+            {/* Hero header */}
+            <View style={styles.hero}>
+              <View style={styles.heroLeft}>
                 <Text style={styles.eyebrow}>ANNOUNCEMENTS</Text>
                 <Text style={styles.headerTitle}>Gym memos</Text>
                 <Text style={styles.headerSubtitle}>
                   Important announcements and notifications for members.
                 </Text>
               </View>
-              <Pressable
+              <PressableBtn
                 onPress={openCreate}
                 accessibilityRole="button"
                 accessibilityLabel="Create memo"
-                style={({ pressed }) => [
-                  styles.createButton,
-                  pressed && styles.pressed,
-                ]}
+                style={styles.createButton}
               >
                 <Ionicons name="add" size={18} color={KFitColors.onAccent} />
                 <Text style={styles.createButtonText}>Create memo</Text>
-              </Pressable>
+              </PressableBtn>
             </View>
 
             {/* Stats */}
             <View style={styles.statsGrid}>
-              <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Total memos</Text>
-                <Text style={styles.statNumber}>{counts.All}</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statLabel}>High priority</Text>
-                <Text style={[styles.statNumber, { color: KFitColors.error }]}>
-                  {counts.High}
-                </Text>
-              </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statLabel}>Latest</Text>
-                <Text style={styles.statDate} numberOfLines={1}>
-                  {memos[0]?.date ?? "—"}
-                </Text>
-              </View>
+              <StatCard
+                icon="document-text"
+                label="Total memos"
+                value={String(counts.All)}
+                hint="All priorities"
+                tone={KFitColors.accent}
+              />
+              <StatCard
+                icon="alert-circle"
+                label="High priority"
+                value={String(counts.High)}
+                hint="Needs attention"
+                tone={KFitColors.error}
+              />
+              <StatCard
+                icon="calendar"
+                label="Latest"
+                value={memos[0]?.date ?? "—"}
+                hint="Most recent post"
+                tone={KFitColors.text}
+                compactValue
+              />
             </View>
 
             {/* Search + filters */}
@@ -233,11 +283,13 @@ export default function MemoScreen() {
                   onChangeText={setSearchQuery}
                   autoCorrect={false}
                   accessibilityLabel="Search memos"
+                  returnKeyType="search"
                 />
                 {searchQuery.length > 0 && (
-                  <Pressable
+                  <PressableBtn
                     onPress={() => setSearchQuery("")}
                     hitSlop={10}
+                    accessibilityRole="button"
                     accessibilityLabel="Clear search"
                   >
                     <Ionicons
@@ -245,7 +297,7 @@ export default function MemoScreen() {
                       size={18}
                       color={KFitColors.mutedText}
                     />
-                  </Pressable>
+                  </PressableBtn>
                 )}
               </View>
 
@@ -256,15 +308,21 @@ export default function MemoScreen() {
               >
                 {FILTERS.map((f) => {
                   const active = selectedFilter === f;
+                  const tone =
+                    f === "All" ? KFitColors.accent : priorityColor(f);
                   return (
-                    <Pressable
+                    <PressableBtn
                       key={f}
                       onPress={() => setSelectedFilter(f)}
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
+                      accessibilityLabel={`Filter ${f}, ${counts[f]} memos`}
                       style={[
                         styles.filterTab,
-                        active && styles.filterTabActive,
+                        active && {
+                          backgroundColor: tone,
+                          borderColor: tone,
+                        },
                       ]}
                     >
                       <Text
@@ -275,85 +333,106 @@ export default function MemoScreen() {
                       >
                         {f === "All" ? "All priorities" : f}
                       </Text>
-                      <Text
+                      <View
                         style={[
                           styles.filterCount,
-                          active && styles.filterTabTextActive,
+                          active && styles.filterCountActive,
                         ]}
                       >
-                        {counts[f]}
-                      </Text>
-                    </Pressable>
+                        <Text
+                          style={[
+                            styles.filterCountText,
+                            active && styles.filterCountTextActive,
+                          ]}
+                        >
+                          {counts[f]}
+                        </Text>
+                      </View>
+                    </PressableBtn>
                   );
                 })}
               </ScrollView>
+
+              {filterActive && (
+                <PressableBtn
+                  onPress={resetFilters}
+                  style={styles.inlineReset}
+                  accessibilityRole="button"
+                  accessibilityLabel="Reset filters"
+                >
+                  <Ionicons
+                    name="refresh"
+                    size={12}
+                    color={KFitColors.mutedText}
+                  />
+                  <Text style={styles.inlineResetText}>Reset filters</Text>
+                </PressableBtn>
+              )}
             </View>
 
             {/* Memo list */}
             <View style={styles.memoList}>
               {filteredMemos.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons
-                    name="document-text-outline"
-                    size={34}
-                    color={KFitColors.mutedText}
-                  />
+                  <View style={styles.emptyIconWrap}>
+                    <Ionicons
+                      name="document-text-outline"
+                      size={26}
+                      color={KFitColors.accent}
+                    />
+                  </View>
                   <Text style={styles.emptyTitle}>No memos found</Text>
                   <Text style={styles.emptyText}>
                     Try a different search or create a new memo.
                   </Text>
-                  <Pressable
+                  <PressableBtn
                     style={styles.resetButton}
-                    onPress={() => {
-                      setSearchQuery("");
-                      setSelectedFilter("All");
-                    }}
+                    onPress={resetFilters}
+                    accessibilityRole="button"
+                    accessibilityLabel="Reset filters"
                   >
                     <Text style={styles.resetText}>Reset filters</Text>
-                  </Pressable>
+                  </PressableBtn>
                 </View>
               ) : (
-                filteredMemos.map((memo) => (
-                  <Pressable
-                    key={memo.id}
-                    onPress={() => setSelectedMemo(memo)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open memo ${memo.title}`}
-                    style={({ pressed }) => [
-                      styles.memoCard,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.memoAccent,
-                        { backgroundColor: priorityColor(memo.priority) },
-                      ]}
-                    />
-                    <View style={styles.memoBody}>
-                      <View style={styles.memoHeader}>
-                        <Text style={styles.memoTitle} numberOfLines={2}>
-                          {memo.title}
-                        </Text>
-                        <PriorityBadge priority={memo.priority} />
-                      </View>
-                      <Text style={styles.memoContent} numberOfLines={2}>
-                        {memo.content}
-                      </Text>
-                      <View style={styles.memoFooter}>
-                        <View style={styles.metaItem}>
-                          <Ionicons
-                            name="calendar-outline"
-                            size={12}
-                            color={KFitColors.mutedText}
-                          />
-                          <Text style={styles.metaText}>{memo.date}</Text>
+                filteredMemos.map((memo) => {
+                  const tone = priorityColor(memo.priority);
+                  return (
+                    <PressableBtn
+                      key={memo.id}
+                      onPress={() => setSelectedMemo(memo)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open memo ${memo.title}`}
+                      style={styles.memoCard}
+                    >
+                      <View
+                        style={[styles.memoAccent, { backgroundColor: tone }]}
+                      />
+                      <View style={styles.memoBody}>
+                        <View style={styles.memoHeader}>
+                          <Text style={styles.memoTitle} numberOfLines={2}>
+                            {memo.title}
+                          </Text>
+                          <PriorityBadge priority={memo.priority} />
                         </View>
-                        <Text style={styles.metaText}>By {memo.author}</Text>
+                        <Text style={styles.memoContent} numberOfLines={2}>
+                          {memo.content}
+                        </Text>
+                        <View style={styles.memoFooter}>
+                          <View style={styles.metaItem}>
+                            <Ionicons
+                              name="calendar-outline"
+                              size={12}
+                              color={KFitColors.mutedText}
+                            />
+                            <Text style={styles.metaText}>{memo.date}</Text>
+                          </View>
+                          <Text style={styles.metaText}>By {memo.author}</Text>
+                        </View>
                       </View>
-                    </View>
-                  </Pressable>
-                ))
+                    </PressableBtn>
+                  );
+                })
               )}
             </View>
 
@@ -383,14 +462,24 @@ export default function MemoScreen() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Create new memo</Text>
-              <Pressable
+              <View style={styles.inline}>
+                <View style={styles.modalHeaderIcon}>
+                  <Ionicons
+                    name="create-outline"
+                    size={16}
+                    color={KFitColors.accent}
+                  />
+                </View>
+                <Text style={styles.modalTitle}>Create new memo</Text>
+              </View>
+              <PressableBtn
                 onPress={() => setCreateOpen(false)}
                 hitSlop={10}
+                accessibilityRole="button"
                 accessibilityLabel="Close"
               >
                 <Ionicons name="close" size={20} color={KFitColors.mutedText} />
-              </Pressable>
+              </PressableBtn>
             </View>
 
             <Text style={styles.fieldLabel}>TITLE</Text>
@@ -403,6 +492,7 @@ export default function MemoScreen() {
               }}
               placeholder="Enter memo title"
               placeholderTextColor={KFitColors.mutedText}
+              accessibilityLabel="Memo title"
             />
 
             <Text style={styles.fieldLabel}>CONTENT</Text>
@@ -417,6 +507,7 @@ export default function MemoScreen() {
               placeholderTextColor={KFitColors.mutedText}
               multiline
               textAlignVertical="top"
+              accessibilityLabel="Memo content"
             />
 
             <Text style={styles.fieldLabel}>PRIORITY</Text>
@@ -425,10 +516,12 @@ export default function MemoScreen() {
                 const active = newPriority === p;
                 const color = priorityColor(p);
                 return (
-                  <Pressable
+                  <PressableBtn
                     key={p}
                     onPress={() => setNewPriority(p)}
+                    accessibilityRole="button"
                     accessibilityState={{ selected: active }}
+                    accessibilityLabel={`Priority ${p}`}
                     style={[
                       styles.priorityOption,
                       active && {
@@ -437,37 +530,56 @@ export default function MemoScreen() {
                       },
                     ]}
                   >
+                    <Ionicons
+                      name={priorityIcon(p)}
+                      size={14}
+                      color={active ? color : KFitColors.mutedText}
+                    />
                     <Text
                       style={[styles.priorityOptionText, active && { color }]}
                     >
                       {p}
                     </Text>
-                  </Pressable>
+                  </PressableBtn>
                 );
               })}
             </View>
 
             {formError !== "" && (
-              <Text style={styles.errorText}>{formError}</Text>
+              <View style={styles.errorRow}>
+                <Ionicons
+                  name="alert-circle"
+                  size={14}
+                  color={KFitColors.error}
+                />
+                <Text style={styles.errorText}>{formError}</Text>
+              </View>
             )}
 
             <View style={styles.modalButtons}>
-              <Pressable
+              <PressableBtn
                 style={styles.modalCancel}
                 onPress={() => setCreateOpen(false)}
                 disabled={isSubmitting}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable 
-                style={[styles.modalSave, isSubmitting && styles.modalSaveDisabled]} 
+              </PressableBtn>
+              <PressableBtn
+                style={[
+                  styles.modalSave,
+                  isSubmitting && styles.modalSaveDisabled,
+                ]}
                 onPress={createMemo}
                 disabled={isSubmitting}
+                accessibilityRole="button"
+                accessibilityLabel="Create memo"
               >
                 <Text style={styles.modalSaveText}>
                   {isSubmitting ? "Creating..." : "Create memo"}
                 </Text>
-              </Pressable>
+              </PressableBtn>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -486,9 +598,10 @@ export default function MemoScreen() {
               <>
                 <View style={styles.modalHeader}>
                   <PriorityBadge priority={selectedMemo.priority} />
-                  <Pressable
+                  <PressableBtn
                     onPress={() => setSelectedMemo(null)}
                     hitSlop={10}
+                    accessibilityRole="button"
                     accessibilityLabel="Close"
                   >
                     <Ionicons
@@ -496,7 +609,7 @@ export default function MemoScreen() {
                       size={20}
                       color={KFitColors.mutedText}
                     />
-                  </Pressable>
+                  </PressableBtn>
                 </View>
 
                 <Text style={styles.viewTitle}>{selectedMemo.title}</Text>
@@ -518,9 +631,11 @@ export default function MemoScreen() {
                 </View>
 
                 <View style={styles.modalButtons}>
-                  <Pressable
+                  <PressableBtn
                     style={styles.modalDelete}
                     onPress={() => deleteMemo(selectedMemo)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete memo"
                   >
                     <Ionicons
                       name="trash-outline"
@@ -528,13 +643,15 @@ export default function MemoScreen() {
                       color={KFitColors.error}
                     />
                     <Text style={styles.modalDeleteText}>Delete</Text>
-                  </Pressable>
-                  <Pressable
+                  </PressableBtn>
+                  <PressableBtn
                     style={styles.modalCancel}
                     onPress={() => setSelectedMemo(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
                   >
                     <Text style={styles.modalCancelText}>Close</Text>
-                  </Pressable>
+                  </PressableBtn>
                 </View>
               </>
             )}
@@ -545,6 +662,69 @@ export default function MemoScreen() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Small pieces                                                       */
+/* ------------------------------------------------------------------ */
+function StatCard({
+  icon,
+  label,
+  value,
+  hint,
+  tone,
+  compactValue,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  hint: string;
+  tone: string;
+  compactValue?: boolean;
+}) {
+  return (
+    <View style={styles.statCard}>
+      <View style={styles.statTop}>
+        <View
+          style={[
+            styles.statIconWrap,
+            { backgroundColor: tone + "14", borderColor: tone + "33" },
+          ]}
+        >
+          <Ionicons name={icon} size={13} color={tone} />
+        </View>
+        <Text style={styles.statLabel}>{label.toUpperCase()}</Text>
+      </View>
+      <Text
+        style={[
+          compactValue ? styles.statValueSm : styles.statValue,
+          { color: tone },
+        ]}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+      <Text style={styles.statHint}>{hint}</Text>
+    </View>
+  );
+}
+
+function PriorityBadge({ priority }: { priority: Priority }) {
+  const color = priorityColor(priority);
+  return (
+    <View
+      style={[
+        styles.badge,
+        { backgroundColor: color + "1F", borderColor: color + "55" },
+      ]}
+    >
+      <Ionicons name={priorityIcon(priority)} size={11} color={color} />
+      <Text style={[styles.badgeText, { color }]}>{priority}</Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Styles                                                             */
+/* ------------------------------------------------------------------ */
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: KFitColors.background },
   mainContainer: { flex: 1, flexDirection: "row" },
@@ -552,37 +732,40 @@ const styles = StyleSheet.create({
   content: { flex: 1, backgroundColor: KFitColors.background },
   contentContainer: { paddingBottom: 96 },
   pressed: { opacity: 0.75 },
+  inline: { flexDirection: "row", alignItems: "center", gap: 8 },
 
-  /* Page title */
-  header: {
+  /* Hero */
+  hero: {
     flexDirection: "row",
     flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 16,
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
   },
-  headerLeft: { flexShrink: 1, minWidth: 220 },
+  heroLeft: { flexShrink: 1, minWidth: 220, gap: 2 },
   eyebrow: {
     color: KFitColors.accent,
     fontSize: 10,
-    fontWeight: "800",
+    fontWeight: "900",
     letterSpacing: 1.5,
-    marginBottom: 4,
+    fontFamily: "monospace",
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
+    fontSize: 26,
+    fontWeight: "900",
     letterSpacing: -0.5,
     color: KFitColors.text,
-    marginBottom: 6,
+    marginTop: 2,
   },
   headerSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 19,
     color: KFitColors.mutedText,
+    marginTop: 2,
+    maxWidth: 520,
   },
   createButton: {
     flexDirection: "row",
@@ -600,8 +783,9 @@ const styles = StyleSheet.create({
   },
   createButtonText: {
     fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "900",
     color: KFitColors.onAccent,
+    letterSpacing: 0.2,
   },
 
   /* Stats */
@@ -610,28 +794,59 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 12,
     paddingHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   statCard: {
     flexGrow: 1,
-    flexBasis: 120,
+    flexBasis: 160,
     backgroundColor: KFitColors.surface,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 16,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    gap: 4,
   },
-  statLabel: { fontSize: 12, color: KFitColors.mutedText, marginBottom: 8 },
-  statNumber: { fontSize: 28, fontWeight: "800", color: KFitColors.accent },
-  statDate: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: KFitColors.text,
-    marginTop: 6,
+  statTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  statIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  statLabel: {
+    color: KFitColors.mutedText,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1,
+    fontFamily: "monospace",
+  },
+  statValue: {
+    fontSize: 26,
+    fontWeight: "900",
+    letterSpacing: -0.4,
+  },
+  statValueSm: {
+    fontSize: 16,
+    fontWeight: "900",
+    letterSpacing: -0.2,
+    fontFamily: "monospace",
+    marginTop: 2,
+  },
+  statHint: {
+    color: KFitColors.mutedText,
+    fontSize: 11,
+    fontFamily: "monospace",
   },
 
   /* Search + filters */
-  section: { paddingHorizontal: 20, marginBottom: 20 },
+  section: { paddingHorizontal: 20, marginBottom: 18, gap: 10 },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -641,16 +856,16 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.surface,
     paddingHorizontal: 12,
-    marginBottom: 12,
   },
   searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
     height: "100%",
-    fontSize: 14,
+    fontSize: 13,
     color: KFitColors.text,
+    paddingVertical: 0,
   },
-  filterContainer: { gap: 8 },
+  filterContainer: { gap: 8, paddingRight: 4 },
   filterTab: {
     flexDirection: "row",
     alignItems: "center",
@@ -662,13 +877,50 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.surface,
   },
-  filterTabActive: {
-    backgroundColor: KFitColors.accent,
-    borderColor: KFitColors.accent,
+  filterTabText: {
+    fontSize: 12,
+    color: KFitColors.text,
+    fontWeight: "700",
   },
-  filterTabText: { fontSize: 13, color: KFitColors.text, fontWeight: "600" },
-  filterTabTextActive: { color: KFitColors.onAccent },
-  filterCount: { fontSize: 12, color: KFitColors.mutedText, fontWeight: "600" },
+  filterTabTextActive: { color: KFitColors.onAccent, fontWeight: "900" },
+  filterCount: {
+    minWidth: 22,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+    alignItems: "center",
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+  },
+  filterCountActive: {
+    backgroundColor: KFitColors.onAccent + "22",
+    borderColor: KFitColors.onAccent + "44",
+  },
+  filterCountText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  filterCountTextActive: { color: KFitColors.onAccent },
+  inlineReset: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+  },
+  inlineResetText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: KFitColors.mutedText,
+  },
 
   /* Memo list */
   memoList: {
@@ -698,12 +950,13 @@ const styles = StyleSheet.create({
   memoTitle: {
     flex: 1,
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: "800",
     color: KFitColors.text,
+    letterSpacing: -0.1,
   },
   memoContent: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 18,
     color: KFitColors.mutedText,
   },
   memoFooter: {
@@ -715,33 +968,59 @@ const styles = StyleSheet.create({
     borderTopColor: KFitColors.border,
   },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  metaText: { fontSize: 11, color: KFitColors.mutedText },
+  metaText: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
 
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
   },
-  badgeDot: { width: 6, height: 6, borderRadius: 3 },
-  badgeText: { fontSize: 11, fontWeight: "800" },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
+  },
 
   /* Empty state */
   emptyState: {
     flexGrow: 1,
     alignItems: "center",
     paddingVertical: 40,
+    paddingHorizontal: 24,
     gap: 6,
     borderRadius: 16,
     borderWidth: 1,
     borderStyle: "dashed",
     borderColor: KFitColors.border,
   },
-  emptyTitle: { fontSize: 15, fontWeight: "700", color: KFitColors.text },
-  emptyText: { fontSize: 12, color: KFitColors.mutedText, marginBottom: 10 },
+  emptyIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
+    marginBottom: 4,
+  },
+  emptyTitle: { fontSize: 15, fontWeight: "800", color: KFitColors.text },
+  emptyText: {
+    fontSize: 12,
+    color: KFitColors.mutedText,
+    marginBottom: 10,
+    textAlign: "center",
+    lineHeight: 17,
+  },
   resetButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -749,15 +1028,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: KFitColors.accent,
   },
-  resetText: { fontSize: 13, fontWeight: "600", color: KFitColors.accent },
+  resetText: { fontSize: 13, fontWeight: "800", color: KFitColors.accent },
 
   /* Footer */
   footerText: {
-    fontSize: 12,
+    fontSize: 11,
     color: KFitColors.mutedText,
     textAlign: "center",
     marginTop: 18,
-    marginBottom: 24,
+    marginBottom: 20,
+    fontFamily: "monospace",
+    opacity: 0.7,
   },
   footer: {
     alignItems: "center",
@@ -767,9 +1048,11 @@ const styles = StyleSheet.create({
     borderTopColor: KFitColors.border,
   },
   footerBrand: {
-    fontSize: 11,
-    letterSpacing: 0.8,
+    fontSize: 10,
+    letterSpacing: 1.4,
     color: KFitColors.mutedText,
+    fontFamily: "monospace",
+    opacity: 0.7,
   },
 
   /* Modals */
@@ -778,7 +1061,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 20,
-    backgroundColor: "rgba(0,0,0,0.8)",
+    backgroundColor: "rgba(0,0,0,0.85)",
   },
   modalContent: {
     width: "100%",
@@ -795,15 +1078,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 14,
+    gap: 10,
   },
-  modalTitle: { fontSize: 18, fontWeight: "800", color: KFitColors.text },
+  modalHeaderIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: KFitColors.text,
+    letterSpacing: -0.2,
+  },
   fieldLabel: {
     fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
+    fontWeight: "900",
+    letterSpacing: 1.2,
     color: KFitColors.mutedText,
     marginTop: 10,
     marginBottom: 6,
+    fontFamily: "monospace",
   },
   modalInput: {
     height: 44,
@@ -812,14 +1112,17 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
     paddingHorizontal: 12,
-    fontSize: 14,
+    fontSize: 13,
     color: KFitColors.text,
   },
   textArea: { height: 110, paddingTop: 12 },
   priorityOptions: { flexDirection: "row", gap: 8 },
   priorityOption: {
     flex: 1,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
     paddingVertical: 11,
     borderRadius: 10,
     borderWidth: 1,
@@ -828,10 +1131,20 @@ const styles = StyleSheet.create({
   },
   priorityOptionText: {
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "800",
     color: KFitColors.mutedText,
   },
-  errorText: { fontSize: 12, color: KFitColors.error, marginTop: 12 },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 12,
+    color: KFitColors.error,
+    flexShrink: 1,
+  },
   modalButtons: { flexDirection: "row", gap: 10, marginTop: 20 },
   modalCancel: {
     flex: 1,
@@ -843,7 +1156,11 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
   },
-  modalCancelText: { fontSize: 14, fontWeight: "600", color: KFitColors.text },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
   modalSave: {
     flex: 1.4,
     alignItems: "center",
@@ -852,13 +1169,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: KFitColors.accent,
   },
-  modalSaveDisabled: {
-    opacity: 0.6,
-  },
+  modalSaveDisabled: { opacity: 0.6 },
   modalSaveText: {
     fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "900",
     color: KFitColors.onAccent,
+    letterSpacing: 0.2,
   },
   modalDelete: {
     flex: 1,
@@ -872,13 +1188,18 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.error + "66",
     backgroundColor: KFitColors.error + "14",
   },
-  modalDeleteText: { fontSize: 14, fontWeight: "700", color: KFitColors.error },
+  modalDeleteText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: KFitColors.error,
+  },
 
   viewTitle: {
     fontSize: 20,
-    fontWeight: "800",
+    fontWeight: "900",
     color: KFitColors.text,
     marginBottom: 12,
+    letterSpacing: -0.2,
   },
   viewScroll: { maxHeight: 220 },
   viewContent: { fontSize: 14, lineHeight: 22, color: KFitColors.text },

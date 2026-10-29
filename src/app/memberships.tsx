@@ -1,23 +1,26 @@
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
 import { useRegisterMember } from "@/hooks/use-register-member";
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useMemo, useState } from "react";
 import {
-    Alert,
-    ImageBackground,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
-    useWindowDimensions
+  Alert,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+type IconName = keyof typeof Ionicons.glyphMap;
 type Status = "Active" | "Expiring" | "Pending" | "Expired";
 
 interface Subscription {
@@ -29,12 +32,15 @@ interface Subscription {
   status: Status;
 }
 
-const STATUS_FILTERS: ("All statuses" | Status)[] = [
-  "All statuses",
-  "Active",
-  "Expiring",
-  "Pending",
-  "Expired",
+const STATUS_FILTERS: {
+  key: "All statuses" | Status;
+  icon: IconName;
+}[] = [
+  { key: "All statuses", icon: "apps" },
+  { key: "Active", icon: "checkmark-circle" },
+  { key: "Expiring", icon: "time" },
+  { key: "Pending", icon: "hourglass" },
+  { key: "Expired", icon: "close-circle" },
 ];
 
 const initialSubscriptions: Subscription[] = [
@@ -104,6 +110,15 @@ const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase();
 
+const statusColor = (status: Status) =>
+  status === "Active"
+    ? KFitColors.accent
+    : status === "Expiring"
+      ? KFitColors.warning
+      : status === "Expired"
+        ? KFitColors.error
+        : KFitColors.mutedText;
+
 export default function MembershipsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
@@ -116,7 +131,6 @@ export default function MembershipsScreen() {
     "All statuses",
   );
 
-  // Form modal (shared by Edit and Add)
   const [formMode, setFormMode] = useState<"edit" | "add" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
@@ -124,19 +138,6 @@ export default function MembershipsScreen() {
   const [formPassword, setFormPassword] = useState("");
   const [formAmount, setFormAmount] = useState("");
   const [formError, setFormError] = useState("");
-
-  const statusColor = (status: Status) => {
-    switch (status) {
-      case "Active":
-        return KFitColors.accent;
-      case "Expiring":
-        return KFitColors.warning;
-      case "Expired":
-        return KFitColors.error;
-      case "Pending":
-        return KFitColors.mutedText;
-    }
-  };
 
   const counts = useMemo(
     () => ({
@@ -147,11 +148,23 @@ export default function MembershipsScreen() {
     [subscriptions],
   );
 
+  const statusCounts = useMemo(() => {
+    const base: Record<"All statuses" | Status, number> = {
+      "All statuses": subscriptions.length,
+      Active: 0,
+      Expiring: 0,
+      Pending: 0,
+      Expired: 0,
+    };
+    subscriptions.forEach((s) => (base[s.status] += 1));
+    return base;
+  }, [subscriptions]);
+
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return subscriptions.filter((s) => {
       const matchesSearch =
-        !q ||
+        q.length === 0 ||
         s.memberName.toLowerCase().includes(q) ||
         s.subscriptionId.toLowerCase().includes(q);
       const matchesStatus =
@@ -160,8 +173,8 @@ export default function MembershipsScreen() {
     });
   }, [subscriptions, searchQuery, selectedStatus]);
 
-  // ---- Form actions ----
   const openAdd = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setFormMode("add");
     setEditingId(null);
     setFormName("");
@@ -172,6 +185,7 @@ export default function MembershipsScreen() {
   };
 
   const openEdit = (sub: Subscription) => {
+    void Haptics.selectionAsync();
     setFormMode("edit");
     setEditingId(sub.id);
     setFormName(sub.memberName);
@@ -211,6 +225,9 @@ export default function MembershipsScreen() {
       });
 
       if (result.success) {
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
         const num = Math.floor(1000 + Math.random() * 9000);
         setSubscriptions((prev) => [
           {
@@ -231,14 +248,17 @@ export default function MembershipsScreen() {
         closeForm();
         Alert.alert("Success", "Member registered successfully!");
       } else {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setFormError(result.error || "Registration failed");
-        Alert.alert("Registration Error", result.error || "Registration failed");
+        Alert.alert(
+          "Registration Error",
+          result.error || "Registration failed",
+        );
       }
     } else if (formMode === "edit" && editingId) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSubscriptions((prev) =>
-        prev.map((s) =>
-          s.id === editingId ? { ...s, amount } : s,
-        ),
+        prev.map((s) => (s.id === editingId ? { ...s, amount } : s)),
       );
       closeForm();
     }
@@ -247,47 +267,19 @@ export default function MembershipsScreen() {
   const renderStatus = (status: Status) => {
     const color = statusColor(status);
     return (
-      <View style={[styles.statusBadge, { borderColor: color }]}>
+      <View
+        style={[
+          styles.statusBadge,
+          { backgroundColor: color + "1A", borderColor: color + "44" },
+        ]}
+      >
         <View style={[styles.statusDot, { backgroundColor: color }]} />
-        <Text style={[styles.statusText, { color }]}>{status}</Text>
+        <Text style={[styles.statusText, { color }]}>
+          {status.toUpperCase()}
+        </Text>
       </View>
     );
   };
-
-  const renderChips = <T extends string>(
-    options: T[],
-    selected: T,
-    onSelect: (v: T) => void,
-  ) => (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.chipRow}
-      style={styles.chipScroll}
-    >
-      {options.map((opt) => {
-        const active = selected === opt;
-        return (
-          <Pressable
-            key={opt}
-            onPress={() => onSelect(opt)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            style={[styles.filterTab, active && styles.filterTabActive]}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                active && styles.filterTabTextActive,
-              ]}
-            >
-              {opt}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
-  );
 
   const identity = (s: Subscription) => (
     <View style={styles.identity}>
@@ -295,7 +287,9 @@ export default function MembershipsScreen() {
         <Text style={styles.avatarText}>{initials(s.memberName)}</Text>
       </View>
       <View style={styles.flex1}>
-        <Text style={styles.memberName}>{s.memberName}</Text>
+        <Text style={styles.memberName} numberOfLines={1}>
+          {s.memberName}
+        </Text>
         <Text style={styles.subscriptionId}>{s.subscriptionId}</Text>
       </View>
     </View>
@@ -308,6 +302,7 @@ export default function MembershipsScreen() {
       accessibilityLabel={`Edit ${s.memberName}'s subscription`}
       style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
     >
+      <Ionicons name="create-outline" size={12} color={KFitColors.accent} />
       <Text style={styles.editButtonText}>Edit</Text>
     </Pressable>
   );
@@ -321,14 +316,16 @@ export default function MembershipsScreen() {
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           {/* Header */}
-          <View style={[styles.header, !isWide && styles.headerStacked]}>
+          <View style={[styles.pageHeader, isWide && styles.pageHeaderWide]}>
             <View style={styles.headerLeft}>
+              <Text style={styles.eyebrow}>SUBSCRIPTIONS</Text>
               <Text style={styles.headerTitle}>Memberships</Text>
               <Text style={styles.headerSubtitle}>
                 Flexible plans. Lasting commitment. Manage what membership means
-                at FORM.
+                at KFIT.
               </Text>
             </View>
             <Pressable
@@ -346,26 +343,60 @@ export default function MembershipsScreen() {
                 style={styles.addButton}
                 imageStyle={styles.addButtonImage}
               >
-                <Text style={styles.addButtonText}>+ Add member</Text>
+                <Ionicons name="add" size={16} color={KFitColors.onAccent} />
+                <Text style={styles.addButtonText}>Add member</Text>
               </ImageBackground>
             </Pressable>
           </View>
 
           {/* Overview */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Overview</Text>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionEyebrow}>OVERVIEW</Text>
+              <Text style={styles.sectionCaption}>LIVE COUNTS</Text>
+            </View>
             <View style={styles.overviewGrid}>
               <View style={styles.overviewCard}>
-                <Text style={styles.overviewLabel}>Subscriptions loaded</Text>
+                <View style={styles.overviewTop}>
+                  <Text style={styles.overviewLabel}>Subscriptions</Text>
+                  <View style={styles.overviewIcon}>
+                    <Ionicons name="card" size={12} color={KFitColors.accent} />
+                  </View>
+                </View>
                 <Text style={styles.overviewNumber}>{counts.total}</Text>
+                <Text style={styles.overviewSub}>Loaded plans</Text>
               </View>
               <View style={styles.overviewCard}>
-                <Text style={styles.overviewLabel}>Renewals due</Text>
+                <View style={styles.overviewTop}>
+                  <Text style={styles.overviewLabel}>Renewals</Text>
+                  <View style={[styles.overviewIcon, styles.overviewIconWarn]}>
+                    <Ionicons
+                      name="time"
+                      size={12}
+                      color={KFitColors.warning}
+                    />
+                  </View>
+                </View>
                 <Text style={styles.overviewNumber}>{counts.renewals}</Text>
+                <Text
+                  style={[styles.overviewSub, { color: KFitColors.warning }]}
+                >
+                  Due this week
+                </Text>
               </View>
               <View style={styles.overviewCard}>
-                <Text style={styles.overviewLabel}>Pending</Text>
+                <View style={styles.overviewTop}>
+                  <Text style={styles.overviewLabel}>Pending</Text>
+                  <View style={styles.overviewIcon}>
+                    <Ionicons
+                      name="hourglass"
+                      size={12}
+                      color={KFitColors.accent}
+                    />
+                  </View>
+                </View>
                 <Text style={styles.overviewNumber}>{counts.pending}</Text>
+                <Text style={styles.overviewSub}>Awaiting activation</Text>
               </View>
             </View>
           </View>
@@ -374,74 +405,171 @@ export default function MembershipsScreen() {
           <View style={styles.section}>
             <View style={styles.revenueCard}>
               <View style={styles.flex1}>
-                <Text style={styles.revenueLabel}>1,284 active</Text>
-                <Text style={styles.revenueSublabel}>monthly revenue</Text>
+                <Text style={styles.revenueEyebrow}>MONTHLY REVENUE</Text>
+                <Text style={styles.revenueAmount}>$48,920</Text>
+                <Text style={styles.revenueSublabel}>
+                  1,284 active subscriptions
+                </Text>
               </View>
-              <Text style={styles.revenueAmount}>$48,920</Text>
+              <View style={styles.revenuePill}>
+                <Ionicons
+                  name="trending-up"
+                  size={12}
+                  color={KFitColors.onAccent}
+                />
+                <Text style={styles.revenuePillText}>+8%</Text>
+              </View>
             </View>
           </View>
 
           {/* Search + filters */}
           <View style={styles.section}>
             <View style={styles.searchContainer}>
-              <Text style={styles.searchIcon}>🔍</Text>
+              <Ionicons name="search" size={16} color={KFitColors.mutedText} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search member or subscription ID"
                 placeholderTextColor={KFitColors.mutedText}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
                 accessibilityLabel="Search subscriptions"
               />
               {searchQuery.length > 0 && (
                 <Pressable
                   onPress={() => setSearchQuery("")}
-                  hitSlop={8}
+                  hitSlop={10}
+                  accessibilityRole="button"
                   accessibilityLabel="Clear search"
                 >
-                  <Text style={styles.clearIcon}>✕</Text>
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={KFitColors.mutedText}
+                  />
                 </Pressable>
               )}
             </View>
-            {renderChips(STATUS_FILTERS, selectedStatus, setSelectedStatus)}
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+              style={styles.chipScroll}
+            >
+              {STATUS_FILTERS.map((f) => {
+                const active = selectedStatus === f.key;
+                const count = statusCounts[f.key];
+                return (
+                  <Pressable
+                    key={f.key}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                      setSelectedStatus(f.key);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`${f.key}, ${count} subscriptions`}
+                    style={({ pressed }) => [
+                      styles.filterTab,
+                      active && styles.filterTabActive,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons
+                      name={f.icon}
+                      size={12}
+                      color={
+                        active ? KFitColors.onAccent : KFitColors.mutedText
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.filterTabText,
+                        active && styles.filterTabTextActive,
+                      ]}
+                    >
+                      {f.key}
+                    </Text>
+                    <View
+                      style={[
+                        styles.filterCount,
+                        active && styles.filterCountActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.filterCountText,
+                          active && styles.filterCountTextActive,
+                        ]}
+                      >
+                        {count}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
 
           {/* List */}
           <View style={styles.section}>
             <View style={styles.tableCard}>
-              {isWide && (
+              {isWide && filtered.length > 0 && (
                 <View style={styles.listHeader}>
                   <Text style={[styles.headerText, styles.colMember]}>
-                    Member
+                    MEMBER
                   </Text>
                   <Text style={[styles.headerText, styles.colAmount]}>
-                    Amount
+                    AMOUNT
                   </Text>
                   <Text style={[styles.headerText, styles.colBilling]}>
-                    Next billing
+                    NEXT BILLING
                   </Text>
                   <Text style={[styles.headerText, styles.colStatus]}>
-                    Status
+                    STATUS
                   </Text>
                   <Text style={[styles.headerText, styles.colAction]}>
-                    Action
+                    ACTION
                   </Text>
                 </View>
               )}
 
               {filtered.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Text style={styles.emptyTitle}>No subscriptions found</Text>
+                  <View style={styles.emptyIconWrap}>
+                    <Ionicons
+                      name="card-outline"
+                      size={22}
+                      color={KFitColors.accent}
+                    />
+                  </View>
+                  <Text style={styles.emptyTitle}>
+                    {searchQuery ? "No matches" : "No subscriptions yet"}
+                  </Text>
                   <Text style={styles.emptyText}>
-                    Try a different search or clear the filters.
+                    {searchQuery
+                      ? "Try a different search or reset the filter."
+                      : "Add your first member to create a subscription."}
                   </Text>
                   <Pressable
-                    style={styles.resetButton}
+                    style={({ pressed }) => [
+                      styles.resetButton,
+                      pressed && styles.pressed,
+                    ]}
                     onPress={() => {
+                      void Haptics.selectionAsync();
                       setSearchQuery("");
                       setSelectedStatus("All statuses");
                     }}
                   >
+                    <Ionicons
+                      name="refresh"
+                      size={13}
+                      color={KFitColors.accent}
+                    />
                     <Text style={styles.resetText}>Reset filters</Text>
                   </Pressable>
                 </View>
@@ -479,13 +607,13 @@ export default function MembershipsScreen() {
                           </View>
                           <View style={styles.rowNarrowMeta}>
                             <View>
-                              <Text style={styles.metaLabel}>Amount</Text>
+                              <Text style={styles.metaLabel}>AMOUNT</Text>
                               <Text style={styles.amountText}>
                                 ${s.amount.toFixed(2)}
                               </Text>
                             </View>
                             <View>
-                              <Text style={styles.metaLabel}>Next billing</Text>
+                              <Text style={styles.metaLabel}>NEXT BILLING</Text>
                               <Text style={styles.billingText}>
                                 {s.nextBilling}
                               </Text>
@@ -503,15 +631,12 @@ export default function MembershipsScreen() {
             </View>
 
             <Text style={styles.footerText}>
-              Showing {filtered.length} of {subscriptions.length} loaded
-              subscriptions
+              Showing {filtered.length} of {subscriptions.length} subscriptions
             </Text>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerBrand}>
-              FORM ATHLETICS • ADMINISTRATOR WORKSPACE
-            </Text>
+            <Text style={styles.footerBrand}>KFIT · ADMIN WORKSPACE</Text>
           </View>
         </ScrollView>
       </View>
@@ -529,15 +654,25 @@ export default function MembershipsScreen() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {formMode === "add" ? "Register member" : "Edit subscription"}
-              </Text>
+              <View style={styles.modalTitleRow}>
+                <View style={styles.modalIcon}>
+                  <Ionicons
+                    name={formMode === "add" ? "person-add" : "create"}
+                    size={14}
+                    color={KFitColors.accent}
+                  />
+                </View>
+                <Text style={styles.modalTitle}>
+                  {formMode === "add" ? "Register member" : "Edit subscription"}
+                </Text>
+              </View>
               <Pressable
                 onPress={closeForm}
                 hitSlop={8}
+                accessibilityRole="button"
                 accessibilityLabel="Close"
               >
-                <Text style={styles.clearIcon}>✕</Text>
+                <Ionicons name="close" size={20} color={KFitColors.mutedText} />
               </Pressable>
             </View>
 
@@ -545,84 +680,93 @@ export default function MembershipsScreen() {
               <Text style={styles.modalSubtitle}>{formName}</Text>
             ) : (
               <>
-                <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>Full name</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    value={formName}
-                    onChangeText={setFormName}
-                    placeholder="e.g. Jordan Lee"
-                    placeholderTextColor={KFitColors.mutedText}
-                  />
-                </View>
+                <Text style={styles.fieldLabel}>FULL NAME</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={formName}
+                  onChangeText={setFormName}
+                  placeholder="e.g. Jordan Lee"
+                  placeholderTextColor={KFitColors.mutedText}
+                />
 
-                <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>Email</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    value={formEmail}
-                    onChangeText={setFormEmail}
-                    placeholder="name@email.com"
-                    placeholderTextColor={KFitColors.mutedText}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </View>
+                <Text style={styles.fieldLabel}>EMAIL</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={formEmail}
+                  onChangeText={setFormEmail}
+                  placeholder="name@email.com"
+                  placeholderTextColor={KFitColors.mutedText}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
 
-                <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>Password</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    value={formPassword}
-                    onChangeText={setFormPassword}
-                    placeholder="Enter password"
-                    placeholderTextColor={KFitColors.mutedText}
-                    secureTextEntry
-                  />
-                </View>
+                <Text style={styles.fieldLabel}>PASSWORD</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={formPassword}
+                  onChangeText={setFormPassword}
+                  placeholder="Enter a secure password"
+                  placeholderTextColor={KFitColors.mutedText}
+                  secureTextEntry
+                />
               </>
             )}
 
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Monthly amount ($)</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={formAmount}
-                onChangeText={(t) => {
-                  setFormAmount(t);
-                  setFormError("");
-                }}
-                keyboardType="decimal-pad"
-                placeholder="Enter amount"
-                placeholderTextColor={KFitColors.mutedText}
-              />
-            </View>
+            <Text style={styles.fieldLabel}>MONTHLY AMOUNT ($)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={formAmount}
+              onChangeText={(t) => {
+                setFormAmount(t);
+                setFormError("");
+              }}
+              keyboardType="decimal-pad"
+              placeholder="Enter amount"
+              placeholderTextColor={KFitColors.mutedText}
+            />
 
             {formError !== "" && (
               <Text style={styles.errorText}>{formError}</Text>
             )}
 
             <View style={styles.modalButtons}>
-              <Pressable style={styles.modalCancel} onPress={closeForm}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalCancel,
+                  pressed && styles.pressed,
+                ]}
+                onPress={closeForm}
+              >
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={styles.modalSaveWrapper}
+                style={({ pressed }) => [
+                  styles.modalSaveWrapper,
+                  pressed && styles.pressed,
+                ]}
                 onPress={saveForm}
                 disabled={registerLoading}
               >
                 <ImageBackground
                   source={require("../../assets/images/gold-texture.jpg")}
                   resizeMode="cover"
-                  style={[styles.modalSave, registerLoading && styles.modalSaveDisabled]}
+                  style={[
+                    styles.modalSave,
+                    registerLoading && styles.modalSaveDisabled,
+                  ]}
                   imageStyle={styles.modalSaveImage}
                 >
+                  <Ionicons
+                    name="checkmark"
+                    size={16}
+                    color={KFitColors.onAccent}
+                  />
                   <Text style={styles.modalSaveText}>
                     {registerLoading
-                      ? "Registering..."
+                      ? "Registering…"
                       : formMode === "add"
-                      ? "Save & issue pass"
-                      : "Save changes"}
+                        ? "Save & issue pass"
+                        : "Save changes"}
                   </Text>
                 </ImageBackground>
               </Pressable>
@@ -638,33 +782,42 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: KFitColors.background },
   mainContainer: { flex: 1, flexDirection: "row" },
   content: { flex: 1, backgroundColor: KFitColors.background },
-  contentContainer: { paddingBottom: 96 },
-  flex1: { flex: 1 },
-  pressed: { opacity: 0.8 },
+  contentContainer: { paddingBottom: 128 },
+  flex1: { flex: 1, minWidth: 0 },
+  pressed: { opacity: 0.75 },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 16,
+  /* Page header */
+  pageHeader: {
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 24,
+    paddingTop: 16,
+    paddingBottom: 16,
+    gap: 14,
   },
-  headerStacked: { flexDirection: "column", alignItems: "flex-start" },
-  headerLeft: { flexShrink: 1 },
+  pageHeaderWide: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+  headerLeft: { flexShrink: 1, gap: 2 },
+  eyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+  },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    letterSpacing: -0.5,
+    fontSize: 26,
+    fontWeight: "900",
     color: KFitColors.text,
-    marginBottom: 6,
+    marginTop: 2,
+    letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 19,
     color: KFitColors.mutedText,
+    marginTop: 2,
     maxWidth: 520,
   },
   addButtonWrapper: {
@@ -677,88 +830,179 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   addButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  addButtonImage: {
-    borderRadius: 10,
-  },
+  addButtonImage: { borderRadius: 10 },
   addButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     color: KFitColors.onAccent,
+    letterSpacing: 0.2,
   },
 
-  // Sections
-  section: { paddingHorizontal: 20, marginBottom: 24 },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: KFitColors.text,
-    marginBottom: 12,
+  /* Sections */
+  section: { paddingHorizontal: 20, marginBottom: 16 },
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  sectionEyebrow: {
+    color: KFitColors.accent,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+  },
+  sectionCaption: {
+    color: KFitColors.mutedText,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    fontFamily: "monospace",
   },
 
-  // Overview
-  overviewGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  /* Overview */
+  overviewGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   overviewCard: {
     flexGrow: 1,
     flexBasis: 140,
     backgroundColor: KFitColors.surface,
     borderRadius: 14,
-    padding: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    gap: 2,
   },
-  overviewLabel: { fontSize: 12, color: KFitColors.mutedText, marginBottom: 8 },
-  overviewNumber: { fontSize: 28, fontWeight: "800", color: KFitColors.accent },
+  overviewTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  overviewLabel: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: KFitColors.mutedText,
+    letterSpacing: 0.6,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
+  },
+  overviewIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
+  },
+  overviewIconWarn: {
+    backgroundColor: KFitColors.warning + "14",
+    borderColor: KFitColors.warning + "33",
+  },
+  overviewNumber: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: KFitColors.text,
+    fontFamily: "monospace",
+    letterSpacing: -0.4,
+  },
+  overviewSub: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
 
-  // Revenue
+  /* Revenue */
   revenueCard: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
     backgroundColor: KFitColors.accent,
-    borderRadius: 14,
-    padding: 20,
+    borderRadius: 16,
+    padding: 18,
   },
-  revenueLabel: {
-    fontSize: 14,
-    fontWeight: "600",
+  revenueEyebrow: {
     color: KFitColors.onAccent,
-    opacity: 0.75,
-  },
-  revenueSublabel: {
-    fontSize: 12,
-    color: KFitColors.onAccent,
-    opacity: 0.65,
-    marginTop: 2,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+    opacity: 0.8,
   },
   revenueAmount: {
-    fontSize: 32,
-    fontWeight: "800",
+    fontSize: 30,
+    fontWeight: "900",
     color: KFitColors.onAccent,
+    letterSpacing: -0.6,
+    fontFamily: "monospace",
+    marginTop: 2,
+  },
+  revenueSublabel: {
+    fontSize: 11,
+    color: KFitColors.onAccent,
+    opacity: 0.75,
+    marginTop: 2,
+    fontFamily: "monospace",
+  },
+  revenuePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: KFitColors.onAccent + "22",
+    borderWidth: 1,
+    borderColor: KFitColors.onAccent + "44",
+  },
+  revenuePillText: {
+    color: KFitColors.onAccent,
+    fontSize: 11,
+    fontWeight: "900",
+    fontFamily: "monospace",
   },
 
-  // Search + filters
+  /* Search */
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: KFitColors.surface,
+    gap: 8,
+    height: 42,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
     paddingHorizontal: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  searchIcon: { fontSize: 14, marginRight: 10 },
-  searchInput: { flex: 1, height: 46, fontSize: 14, color: KFitColors.text },
-  clearIcon: { fontSize: 14, color: KFitColors.mutedText, padding: 4 },
-  chipScroll: { marginBottom: 10 },
-  chipRow: { gap: 8 },
+  searchInput: {
+    flex: 1,
+    height: "100%",
+    fontSize: 12,
+    color: KFitColors.text,
+    paddingVertical: 0,
+  },
+
+  /* Chips */
+  chipScroll: { marginBottom: 4 },
+  chipRow: { gap: 6 },
   filterTab: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingLeft: 10,
+    paddingRight: 5,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: KFitColors.border,
@@ -768,10 +1012,35 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent,
     borderColor: KFitColors.accent,
   },
-  filterTabText: { fontSize: 13, color: KFitColors.text, fontWeight: "600" },
-  filterTabTextActive: { color: KFitColors.onAccent },
+  filterTabText: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontWeight: "700",
+  },
+  filterTabTextActive: { color: KFitColors.onAccent, fontWeight: "900" },
+  filterCount: {
+    minWidth: 20,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 999,
+    alignItems: "center",
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+  },
+  filterCountActive: {
+    backgroundColor: KFitColors.onAccent + "22",
+    borderColor: KFitColors.onAccent + "44",
+  },
+  filterCountText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  filterCountTextActive: { color: KFitColors.onAccent },
 
-  // Table
+  /* Table */
   tableCard: {
     backgroundColor: KFitColors.surface,
     borderRadius: 14,
@@ -781,27 +1050,31 @@ const styles = StyleSheet.create({
   },
   listHeader: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
   },
   headerText: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 9,
+    fontWeight: "900",
     color: KFitColors.mutedText,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
   },
   colMember: { flex: 2.4, paddingRight: 12 },
-  colPlan: { flex: 1.2, paddingRight: 12 },
   colAmount: { flex: 1.2, paddingRight: 12 },
   colBilling: { flex: 1.6, paddingRight: 12 },
   colStatus: { flex: 1.4, paddingRight: 12 },
   colAction: { flex: 1 },
 
-  row: { paddingHorizontal: 16, paddingVertical: 14 },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: KFitColors.border },
+  row: { paddingHorizontal: 14, paddingVertical: 12 },
+  rowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: KFitColors.border,
+  },
   rowWide: { flexDirection: "row", alignItems: "center" },
   rowNarrow: { gap: 12 },
   rowNarrowTop: {
@@ -812,94 +1085,167 @@ const styles = StyleSheet.create({
   },
   rowNarrowMeta: { flexDirection: "row", justifyContent: "space-between" },
   rowNarrowAction: { alignItems: "flex-start" },
-  metaLabel: { fontSize: 11, color: KFitColors.mutedText, marginBottom: 2 },
+  metaLabel: {
+    fontSize: 9,
+    color: KFitColors.mutedText,
+    marginBottom: 2,
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
+    fontWeight: "900",
+  },
 
   identity: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     flexShrink: 1,
   },
   avatar: {
     width: 38,
     height: 38,
-    borderRadius: 19,
-    backgroundColor: KFitColors.accent,
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { fontSize: 13, fontWeight: "800", color: KFitColors.onAccent },
-  memberName: { fontSize: 14, fontWeight: "700", color: KFitColors.text },
-  subscriptionId: { fontSize: 11, color: KFitColors.mutedText, marginTop: 2 },
-  planText: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
-  amountText: { fontSize: 13, fontWeight: "700", color: KFitColors.text },
-  billingText: { fontSize: 12, color: KFitColors.mutedText },
+  avatarText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+    letterSpacing: 0.3,
+  },
+  memberName: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.text,
+    letterSpacing: -0.2,
+  },
+  subscriptionId: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+    fontFamily: "monospace",
+  },
+  amountText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: KFitColors.text,
+    fontFamily: "monospace",
+  },
+  billingText: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
 
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
     alignSelf: "flex-start",
   },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 11, fontWeight: "700" },
+  statusDot: { width: 5, height: 5, borderRadius: 3 },
+  statusText: {
+    fontSize: 8,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
+  },
 
   editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     borderWidth: 1,
-    borderColor: KFitColors.accent,
-    paddingHorizontal: 14,
+    borderColor: KFitColors.accent + "55",
+    backgroundColor: KFitColors.accent + "10",
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
   },
-  editButtonText: { fontSize: 12, fontWeight: "700", color: KFitColors.accent },
+  editButtonText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: KFitColors.accent,
+  },
 
-  // Empty state
+  /* Empty state */
   emptyState: {
     alignItems: "center",
-    paddingVertical: 40,
-    paddingHorizontal: 20,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    gap: 8,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: KFitColors.text,
+  emptyIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
     marginBottom: 4,
   },
-  emptyText: { fontSize: 13, color: KFitColors.mutedText, marginBottom: 16 },
-  resetButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: KFitColors.accent,
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: KFitColors.text,
   },
-  resetText: { fontSize: 13, fontWeight: "600", color: KFitColors.accent },
-
-  // Footer
-  footerText: {
-    fontSize: 12,
+  emptyText: {
+    fontSize: 11,
     color: KFitColors.mutedText,
     textAlign: "center",
-    marginTop: 14,
+    lineHeight: 16,
+  },
+  resetButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
+    backgroundColor: KFitColors.accent + "10",
+    marginTop: 6,
+  },
+  resetText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.accent,
+  },
+
+  /* Footer */
+  footerText: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    textAlign: "center",
+    marginTop: 12,
+    fontFamily: "monospace",
+    opacity: 0.7,
   },
   footer: {
     alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: KFitColors.border,
   },
   footerBrand: {
-    fontSize: 11,
-    letterSpacing: 0.8,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
     color: KFitColors.mutedText,
+    opacity: 0.7,
   },
 
-  // Modal
+  /* Modal */
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.8)",
@@ -911,7 +1257,7 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 400,
     backgroundColor: KFitColors.surface,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: KFitColors.border,
     padding: 20,
@@ -922,84 +1268,96 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  modalTitle: { fontSize: 18, fontWeight: "800", color: KFitColors.text },
-  modalSubtitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: KFitColors.accent,
-    marginBottom: 16,
+  modalTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  field: { marginBottom: 14 },
+  modalIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: KFitColors.text,
+    letterSpacing: -0.2,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.accent,
+    marginBottom: 12,
+  },
   fieldLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.6,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
     textTransform: "uppercase",
     color: KFitColors.mutedText,
     marginBottom: 6,
+    marginTop: 10,
+    fontFamily: "monospace",
   },
   modalInput: {
-    height: 44,
+    height: 42,
     backgroundColor: KFitColors.background,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
     paddingHorizontal: 12,
-    fontSize: 14,
+    fontSize: 13,
     color: KFitColors.text,
   },
-  planPicker: { flexDirection: "row", gap: 8 },
-  planOption: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.background,
+  errorText: {
+    fontSize: 11,
+    color: KFitColors.error,
+    marginTop: 10,
+    fontWeight: "700",
   },
-  planOptionActive: {
-    backgroundColor: KFitColors.accent,
-    borderColor: KFitColors.accent,
-  },
-  planOptionName: { fontSize: 13, fontWeight: "700", color: KFitColors.text },
-  planOptionNameActive: { color: KFitColors.onAccent },
-  planOptionPrice: { fontSize: 11, color: KFitColors.mutedText, marginTop: 2 },
-  errorText: { fontSize: 12, color: KFitColors.error, marginBottom: 12 },
-  modalButtons: { flexDirection: "row", gap: 10, marginTop: 4 },
+  modalButtons: { flexDirection: "row", gap: 10, marginTop: 16 },
   modalCancel: {
     flex: 1,
     alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
   },
-  modalCancelText: { fontSize: 14, fontWeight: "600", color: KFitColors.text },
+  modalCancelText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
   modalSaveWrapper: {
-    flex: 1.4,
+    flex: 1.6,
     borderRadius: 10,
     overflow: "hidden",
     shadowColor: KFitColors.accent,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
     elevation: 3,
   },
   modalSave: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
     paddingVertical: 12,
   },
-  modalSaveDisabled: {
-    opacity: 0.6,
-  },
-  modalSaveImage: {
-    borderRadius: 10,
-  },
+  modalSaveDisabled: { opacity: 0.6 },
+  modalSaveImage: { borderRadius: 10 },
   modalSaveText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     color: KFitColors.onAccent,
   },

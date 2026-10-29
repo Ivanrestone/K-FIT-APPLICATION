@@ -1,6 +1,7 @@
 import { KFitColors } from "@/constants/theme";
 import { useLogout } from "@/hooks/use-logout";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -66,6 +67,9 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
+  /** NEW: logout confirmation state */
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+
   const isMobile = width < 768;
 
   const leftItems = LEFT_ROUTES.map((r) =>
@@ -82,7 +86,22 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
 
   const goTo = (route: string) => router.replace(route as any);
 
-  const handleLogout = () => {
+  /** NEW: ask before logging out */
+  const askLogout = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLogoutConfirmOpen(true);
+  };
+
+  /** NEW: user cancelled → close dialog only */
+  const cancelLogout = () => {
+    void Haptics.selectionAsync();
+    setLogoutConfirmOpen(false);
+  };
+
+  /** NEW: user confirmed → close any open sheet/dialog, then log out */
+  const confirmLogout = () => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setLogoutConfirmOpen(false);
     setIsMoreOpen(false);
     void logout();
   };
@@ -283,7 +302,9 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
                   styles.logoutItem,
                   pressed && styles.pressed,
                 ]}
-                onPress={handleLogout}
+                onPress={askLogout}
+                accessibilityRole="button"
+                accessibilityLabel="Log out"
               >
                 <View style={styles.moreIconBox}>
                   <Ionicons
@@ -297,6 +318,13 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
             </Pressable>
           </Pressable>
         </Modal>
+
+        {/* NEW: logout confirmation dialog (phone) */}
+        <LogoutConfirmModal
+          visible={logoutConfirmOpen}
+          onCancel={cancelLogout}
+          onConfirm={confirmLogout}
+        />
       </>
     );
   }
@@ -397,7 +425,8 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
 
       <TouchableOpacity
         style={isCollapsed ? styles.logoutButtonCollapsed : styles.logoutButton}
-        onPress={handleLogout}
+        onPress={askLogout}
+        accessibilityRole="button"
         accessibilityLabel="Logout"
       >
         {isCollapsed ? (
@@ -406,7 +435,78 @@ export default function Sidebar({ activeRoute }: SidebarProps) {
           <Text style={styles.logoutButtonText}>Logout</Text>
         )}
       </TouchableOpacity>
+
+      {/* NEW: logout confirmation dialog (tablet / wide) */}
+      <LogoutConfirmModal
+        visible={logoutConfirmOpen}
+        onCancel={cancelLogout}
+        onConfirm={confirmLogout}
+      />
     </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* NEW: shared logout confirmation modal — matches MemberHeader style  */
+/* ------------------------------------------------------------------ */
+function LogoutConfirmModal({
+  visible,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <Pressable style={styles.confirmBackdrop} onPress={onCancel}>
+        <Pressable
+          style={styles.confirmCard}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View style={styles.confirmIconWrap}>
+            <Ionicons
+              name="log-out-outline"
+              size={22}
+              color={KFitColors.error}
+            />
+          </View>
+
+          <Text style={styles.confirmTitle}>Log out?</Text>
+          <Text style={styles.confirmBody}>
+            You&apos;ll need to sign in again to access the admin workspace.
+          </Text>
+
+          <View style={styles.confirmActions}>
+            <TouchableOpacity
+              style={[styles.confirmBtn, styles.confirmCancel]}
+              onPress={onCancel}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel logout"
+            >
+              <Text style={styles.confirmCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmBtn, styles.confirmDanger]}
+              onPress={onConfirm}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Confirm logout"
+            >
+              <Ionicons name="log-out-outline" size={13} color="#fff" />
+              <Text style={styles.confirmDangerText}>Log out</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -796,5 +896,83 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.error,
     backgroundColor: KFitColors.background,
     alignItems: "center",
+  },
+
+  /* ---------------- NEW: logout confirmation dialog ---------------- */
+  confirmBackdrop: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.7)",
+  },
+  confirmCard: {
+    width: "100%",
+    maxWidth: 320,
+    gap: 12,
+    padding: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+    alignItems: "center",
+  },
+  confirmIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.error + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.error + "44",
+    marginBottom: 4,
+  },
+  confirmTitle: {
+    color: KFitColors.text,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+    textAlign: "center",
+  },
+  confirmBody: {
+    color: KFitColors.mutedText,
+    fontSize: 12,
+    textAlign: "center",
+    lineHeight: 18,
+    paddingHorizontal: 4,
+  },
+  confirmActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 6,
+    width: "100%",
+  },
+  confirmBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  confirmCancel: {
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+  },
+  confirmCancelText: {
+    color: KFitColors.mutedText,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  confirmDanger: {
+    backgroundColor: KFitColors.error,
+  },
+  confirmDangerText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "900",
   },
 });

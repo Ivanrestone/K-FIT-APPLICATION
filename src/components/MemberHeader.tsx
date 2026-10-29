@@ -334,7 +334,7 @@ function AccountPanel({
   isSigningOut,
   activeRoute,
   onNavigate,
-  onLogout,
+  onAskLogout,
   settingsLinks,
   supportLinks,
 }: {
@@ -345,7 +345,7 @@ function AccountPanel({
   isSigningOut: boolean;
   activeRoute?: string;
   onNavigate: (route: string) => void;
-  onLogout: () => void;
+  onAskLogout: () => void;
   settingsLinks: SubLink[];
   supportLinks: SubLink[];
 }) {
@@ -407,7 +407,6 @@ function AccountPanel({
 
       <View style={styles.divider} />
 
-      {/* Settings accordion */}
       <AccordionSection
         title="Settings"
         icon="settings"
@@ -421,7 +420,6 @@ function AccountPanel({
 
       <View style={styles.divider} />
 
-      {/* Help & Support accordion */}
       <AccordionSection
         title="Help & Support"
         icon="help-circle"
@@ -438,9 +436,10 @@ function AccountPanel({
       <TouchableOpacity
         style={styles.menuRow}
         disabled={isSigningOut}
-        onPress={onLogout}
+        onPress={onAskLogout}
         activeOpacity={0.8}
         accessibilityRole="button"
+        accessibilityLabel="Log out"
       >
         <View style={[styles.menuIcon, styles.menuIconDanger]}>
           <Feather name="log-out" size={15} color={C.error} />
@@ -472,6 +471,9 @@ export default function MemberHeader({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [panel, setPanel] = useState<PanelKind | null>(null);
+
+  /** NEW: logout confirmation dialog state */
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const { notices: challengeNotices, unread: challengeUnread } =
     useNotices("member");
@@ -523,9 +525,24 @@ export default function MemberHeader({
     router.replace(route as any);
   };
 
-  const handleLogout = () => {
+  /** NEW: open the logout confirmation dialog */
+  const askLogout = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLogoutConfirmOpen(true);
+  };
+
+  /** NEW: user confirmed → close dialog + panel, then sign out */
+  const confirmLogout = () => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setLogoutConfirmOpen(false);
     closePanel();
     onLogout();
+  };
+
+  /** NEW: user cancelled → close dialog only */
+  const cancelLogout = () => {
+    void Haptics.selectionAsync();
+    setLogoutConfirmOpen(false);
   };
 
   const settingsLinks: SubLink[] = [
@@ -690,11 +707,60 @@ export default function MemberHeader({
                 isSigningOut={isSigningOut}
                 activeRoute={activeRoute}
                 onNavigate={navigateTo}
-                onLogout={handleLogout}
+                onAskLogout={askLogout}
                 settingsLinks={settingsLinks}
                 supportLinks={supportLinks}
               />
             )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ───────────── Logout confirmation dialog ───────────── */}
+      <Modal
+        visible={logoutConfirmOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelLogout}
+      >
+        <Pressable style={styles.confirmBackdrop} onPress={cancelLogout}>
+          <Pressable
+            style={styles.confirmCard}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.confirmIconWrap}>
+              <Feather name="log-out" size={22} color={C.error} />
+            </View>
+
+            <Text style={styles.confirmTitle}>Log out?</Text>
+            <Text style={styles.confirmBody}>
+              You&apos;ll need to sign in again to access your member account.
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmCancel]}
+                onPress={cancelLogout}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel logout"
+              >
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmDanger]}
+                onPress={confirmLogout}
+                activeOpacity={0.85}
+                disabled={isSigningOut}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm logout"
+              >
+                <Feather name="log-out" size={13} color="#fff" />
+                <Text style={styles.confirmDangerText}>
+                  {isSigningOut ? "Signing out…" : "Log out"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -993,5 +1059,83 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     marginRight: 4,
+  },
+
+  /* Logout confirmation */
+  confirmBackdrop: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.7)",
+  },
+  confirmCard: {
+    width: "100%",
+    maxWidth: 320,
+    gap: 12,
+    padding: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    alignItems: "center",
+  },
+  confirmIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.error + "14",
+    borderWidth: 1,
+    borderColor: C.error + "44",
+    marginBottom: 4,
+  },
+  confirmTitle: {
+    color: C.text,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+    textAlign: "center",
+  },
+  confirmBody: {
+    color: C.muted,
+    fontSize: 12,
+    textAlign: "center",
+    lineHeight: 18,
+    paddingHorizontal: 4,
+  },
+  confirmActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 6,
+    width: "100%",
+  },
+  confirmBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  confirmCancel: {
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bg,
+  },
+  confirmCancelText: {
+    color: C.muted,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  confirmDanger: {
+    backgroundColor: C.error,
+  },
+  confirmDangerText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "900",
   },
 });

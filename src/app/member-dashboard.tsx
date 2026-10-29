@@ -4,7 +4,12 @@ import MemberHeader from "@/components/MemberHeader";
 import SubscriptionPaywall from "@/components/SubscriptionPaywall";
 import { MEMBER_ROUTES } from "@/constants/member-routes";
 import { KFitColors } from "@/constants/theme";
-import { useAttendanceHistory, formatAttendanceDate, formatAttendanceTime, attendanceDuration } from "@/hooks/use-attendance";
+import {
+  attendanceDuration,
+  formatAttendanceDate,
+  formatAttendanceTime,
+  useAttendanceHistory,
+} from "@/hooks/use-attendance";
 import { useLogout } from "@/hooks/use-logout";
 import {
   MEMBER_PLACEHOLDER_STATS,
@@ -25,9 +30,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-/* ------------------------------------------------------------------ */
-/* Palette (same KFit dark palette as the admin + trainer navs)        */
-/* ------------------------------------------------------------------ */
+/* ─────────── Palette ─────────── */
 const C = {
   bg: KFitColors.background,
   surface: KFitColors.surface,
@@ -40,14 +43,12 @@ const C = {
   error: KFitColors.error,
   amber: "#F59E0B",
   sky: "#38BDF8",
+  green: "#22C55E",
 };
 
-/* ------------------------------------------------------------------ */
-/* Data (swap for real API data later)                                 */
-/* Name + first name now come from the real profile (see the hook).    */
-/* ------------------------------------------------------------------ */
+/* ─────────── Data ─────────── */
 const MEMBER = {
-  ...MEMBER_PLACEHOLDER_STATS, // tier, streakDays, points (shared with header)
+  ...MEMBER_PLACEHOLDER_STATS,
   visitTarget: 20,
   caloriesThisWeek: 3420,
 };
@@ -57,27 +58,23 @@ const FLOOR = { occupancy: 156, capacity: 200 };
 const OVERVIEW: {
   label: string;
   icon: keyof typeof Feather.glyphMap;
-  route?: string; // tiles without a route are display-only for now
+  route?: string;
 }[] = [
   { label: "Progress & goals", icon: "target" },
   { label: "Personal profile", icon: "user", route: MEMBER_ROUTES.profile },
-  { label: "Attendance history", icon: "calendar", route: MEMBER_ROUTES.checkin },
+  {
+    label: "Attendance history",
+    icon: "calendar",
+    route: MEMBER_ROUTES.checkin,
+  },
   { label: "My workouts", icon: "activity", route: MEMBER_ROUTES.workout },
 ];
 
 const STATS = [
   { label: "Current weight", value: "75.8 kg", note: "4.2 kg from 80 kg" },
-  { label: "Body fat", value: "19.2%", note: "+20% since September" },
-  {
-    label: "Squat personal best",
-    value: "70 kg",
-    note: "+10 kg from your first",
-  },
-  {
-    label: "Training consistency",
-    value: "92%",
-    note: "54 workouts in October",
-  },
+  { label: "Body fat", value: "19.2%", note: "+20% since Sep" },
+  { label: "Squat PR", value: "70 kg", note: "+10 kg from first" },
+  { label: "Consistency", value: "92%", note: "54 workouts in Oct" },
 ];
 
 const STRENGTH = [
@@ -106,12 +103,10 @@ const DETAILS = [
   ["Phone", "+1 (917) 555-0142"],
   ["Date of birth", "June 12, 1996"],
   ["Height", "178 cm"],
-  ["Emergency contact", "Casey Lee (917) 555-0173"],
+  ["Emergency contact", "Casey Lee · (917) 555-0173"],
 ];
 
-/* ------------------------------------------------------------------ */
-/* Small building blocks                                               */
-/* ------------------------------------------------------------------ */
+/* ─────────── Building blocks ─────────── */
 function SectionTitle({
   title,
   action,
@@ -125,8 +120,13 @@ function SectionTitle({
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {action ? (
-        <TouchableOpacity onPress={onAction}>
+        <TouchableOpacity
+          onPress={onAction}
+          activeOpacity={0.7}
+          style={styles.sectionActionWrap}
+        >
           <Text style={styles.sectionAction}>{action}</Text>
+          <Feather name="arrow-right" size={12} color={C.accent} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -158,17 +158,26 @@ function ProgressBar({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Screen                                                              */
-/* ------------------------------------------------------------------ */
+/* ─────────── Screen ─────────── */
 export default function MemberDashboardScreen() {
   const router = useRouter();
   const { isSigningOut, logout } = useLogout();
   const { header, firstName } = useMemberHeaderData();
-  const { records: attendanceRecords, isLoading: attendanceLoading, error: attendanceError, refetch: refetchAttendance } = useAttendanceHistory();
-  const activeAttendance = attendanceRecords.find((record) => record.checkout_timestamp === null);
+  const {
+    records: attendanceRecords,
+    isLoading: attendanceLoading,
+    error: attendanceError,
+    refetch: refetchAttendance,
+  } = useAttendanceHistory();
+
+  const activeAttendance = attendanceRecords.find(
+    (record) => record.checkout_timestamp === null,
+  );
   const checkedIn = Boolean(activeAttendance);
-  const checkInTime = activeAttendance ? formatAttendanceTime(activeAttendance.scan_timestamp) : null;
+  const checkInTime = activeAttendance
+    ? formatAttendanceTime(activeAttendance.scan_timestamp)
+    : null;
+
   const [notifications, setNotifications] = useState<MemberLocalNotification[]>(
     [
       {
@@ -203,12 +212,35 @@ export default function MemberDashboardScreen() {
     year: "numeric",
   });
 
+  const attendanceTone = attendanceError
+    ? C.error
+    : attendanceLoading
+      ? C.muted
+      : checkedIn
+        ? C.accent
+        : C.muted;
+
+  const thisMonthVisits = attendanceRecords.filter((record) => {
+    const visitDate = new Date(record.scan_timestamp);
+    const currentDate = new Date();
+    return (
+      visitDate.toLocaleDateString("en-US", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "numeric",
+      }) ===
+      currentDate.toLocaleDateString("en-US", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "numeric",
+      })
+    );
+  }).length;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <View style={styles.mainContainer}>
-        {/* ---------------- Fixed member header ---------------- */}
         <MemberHeader
           {...header}
           checkedIn={checkedIn}
@@ -225,16 +257,19 @@ export default function MemberDashboardScreen() {
           showsVerticalScrollIndicator={false}
         >
           <SubscriptionPaywall requireAppAccess>
-            {/* Brand + date */}
+            {/* ── Brand block ──────────────────────── */}
             <View style={styles.brandBlock}>
-              <Text style={styles.brand}>FORM</Text>
-              <Text style={styles.brandSubtitle}>
-                FORM/Brooklyn • Performance club
-              </Text>
+              <View style={styles.brandRow}>
+                <Text style={styles.brand}>FORM</Text>
+                <View style={styles.brandBadge}>
+                  <Feather name="map-pin" size={10} color={C.accent} />
+                  <Text style={styles.brandBadgeText}>BROOKLYN</Text>
+                </View>
+              </View>
               <Text style={styles.date}>{today}</Text>
             </View>
 
-            {/* Greeting */}
+            {/* ── Greeting ─────────────────────────── */}
             <View style={styles.greetingBlock}>
               <Text style={styles.greeting}>Progress, not perfection.</Text>
               <Text style={styles.greetingSubtitle}>
@@ -243,7 +278,7 @@ export default function MemberDashboardScreen() {
               </Text>
               <TouchableOpacity
                 style={styles.logButtonWrapper}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
               >
                 <ImageBackground
                   source={require("../../assets/images/gold-texture.jpg")}
@@ -257,49 +292,61 @@ export default function MemberDashboardScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Attendance status */}
-            <Card style={styles.rowBetween}>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.eyebrow}>Attendance status</Text>
-                <View style={styles.nameRow}>
-                  <Feather
-                    name="check-circle"
-                    size={14}
-                    color={checkedIn && !attendanceLoading && !attendanceError ? C.accent : "#6B7280"}
-                  />
-                  <Text style={styles.cardHeading}>
+            {/* ── Attendance status ────────────────── */}
+            <Card style={styles.statusCard}>
+              <View
+                style={[
+                  styles.statusIconWrap,
+                  {
+                    borderColor: attendanceTone + "44",
+                    backgroundColor: attendanceTone + "14",
+                  },
+                ]}
+              >
+                <Feather
+                  name={checkedIn ? "check-circle" : "circle"}
+                  size={16}
+                  color={attendanceTone}
+                />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.eyebrow}>ATTENDANCE</Text>
+                <Text style={styles.cardHeading} numberOfLines={1}>
                   {attendanceLoading
                     ? "Checking status…"
                     : attendanceError
                       ? "Status unavailable"
                       : checkedIn
-                        ? `Checked in (${checkInTime})`
+                        ? `Checked in · ${checkInTime}`
                         : "Not checked in"}
-                  </Text>
-                </View>
-                <Text style={styles.cardNote}>
+                </Text>
+                <Text style={styles.cardNote} numberOfLines={2}>
                   {attendanceLoading
-                    ? "Checking your latest attendance…"
-                    : attendanceError ?? (checkedIn ? "Your session is active." : "Scan your secure QR pass at the kiosk.")}
+                    ? "Fetching your latest attendance…"
+                    : (attendanceError ??
+                      (checkedIn
+                        ? "Your session is active."
+                        : "Scan your secure QR pass at the kiosk."))}
                 </Text>
               </View>
               <TouchableOpacity
                 onPress={() => router.push(MEMBER_ROUTES.checkin as any)}
-                activeOpacity={0.8}
-                style={styles.checkBtn}
+                activeOpacity={0.85}
+                style={styles.smallBtn}
               >
-                <Text style={styles.checkBtnText}>View records</Text>
+                <Text style={styles.smallBtnText}>Records</Text>
+                <Feather name="chevron-right" size={12} color={C.onAccent} />
               </TouchableOpacity>
             </Card>
 
-            {/* Live floor meter */}
-            <Card style={{ gap: 10 }}>
+            {/* ── Live floor meter ─────────────────── */}
+            <Card style={{ gap: 12 }}>
               <View style={styles.rowBetween}>
                 <View>
-                  <Text style={styles.eyebrow}>Live floor meter</Text>
+                  <Text style={styles.eyebrow}>LIVE FLOOR</Text>
                   <View style={styles.nameRow}>
                     <Feather name="map-pin" size={13} color={C.accent} />
-                    <Text style={styles.cardHeading}>FORM/Brooklyn</Text>
+                    <Text style={styles.cardHeading}>FORM / Brooklyn</Text>
                   </View>
                 </View>
                 <View
@@ -307,7 +354,7 @@ export default function MemberDashboardScreen() {
                     styles.pill,
                     {
                       backgroundColor: (busy ? C.amber : C.accent) + "1A",
-                      borderColor: (busy ? C.amber : C.accent) + "4D",
+                      borderColor: (busy ? C.amber : C.accent) + "44",
                     },
                   ]}
                 >
@@ -317,7 +364,7 @@ export default function MemberDashboardScreen() {
                       { color: busy ? C.amber : C.accent },
                     ]}
                   >
-                    {busy ? "BUSY FLOOR" : "MODERATE"}
+                    {busy ? "BUSY" : "MODERATE"}
                   </Text>
                 </View>
               </View>
@@ -325,53 +372,38 @@ export default function MemberDashboardScreen() {
                 <View style={styles.rowBetween}>
                   <Text style={styles.cardNote}>Current occupancy</Text>
                   <Text style={styles.mono}>
-                    {FLOOR.occupancy + (checkedIn ? 1 : 0)} / {FLOOR.capacity}{" "}
-                    athletes
+                    {FLOOR.occupancy + (checkedIn ? 1 : 0)} / {FLOOR.capacity}
                   </Text>
                 </View>
                 <ProgressBar progress={occPct / 100} height={8} />
               </View>
             </Card>
 
-            {/* Quick metrics */}
-            <View style={styles.metricsRow}>
-              <Card style={styles.metric}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.metricLabel}>Calories burned</Text>
-                  <Feather name="zap" size={14} color={C.amber} />
-                </View>
-                <Text style={styles.metricValue}>
-                  {MEMBER.caloriesThisWeek.toLocaleString()}
-                </Text>
-                <Text
-                  style={[
-                    styles.cardNote,
-                    { color: C.accent, fontWeight: "700" },
-                  ]}
-                >
-                  This week&apos;s total
-                </Text>
-              </Card>
-              <Card style={styles.metric}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.metricLabel}>Gym check-ins</Text>
-                  <Feather name="check-circle" size={14} color={C.accent} />
-                </View>
-                <Text style={styles.metricValue}>
-                  {attendanceRecords.filter((record) => {
-                    const visitDate = new Date(record.scan_timestamp);
-                    const currentDate = new Date();
-                    return visitDate.toLocaleDateString("en-US", { timeZone: "Asia/Manila", year: "numeric", month: "numeric" }) ===
-                      currentDate.toLocaleDateString("en-US", { timeZone: "Asia/Manila", year: "numeric", month: "numeric" });
-                  }).length} visits
-                </Text>
-                <Text style={styles.cardNote}>
-                  Target: {MEMBER.visitTarget} / month
-                </Text>
-              </Card>
+            {/* ── Quick metrics ───────────────────── */}
+            <View style={styles.statCard}>
+              <StatInline
+                icon="zap"
+                label="Calories"
+                value={MEMBER.caloriesThisWeek.toLocaleString()}
+                tone={C.amber}
+              />
+              <View style={styles.statDivider} />
+              <StatInline
+                icon="check-circle"
+                label="Visits"
+                value={String(thisMonthVisits)}
+                tone={C.accent}
+              />
+              <View style={styles.statDivider} />
+              <StatInline
+                icon="award"
+                label="Points"
+                value={String(MEMBER.points)}
+                tone={C.sky}
+              />
             </View>
 
-            {/* Digital pass banner → the same screen as the raised QR button */}
+            {/* ── Digital pass banner ──────────────── */}
             <TouchableOpacity
               activeOpacity={0.85}
               style={styles.passBanner}
@@ -382,16 +414,16 @@ export default function MemberDashboardScreen() {
               <View style={styles.passIcon}>
                 <Feather name="maximize" size={20} color={C.onAccent} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={styles.flex}>
                 <Text style={styles.passTitle}>Scan access gate pass</Text>
                 <Text style={styles.cardNote}>
                   Tap to show your turnstile QR code
                 </Text>
               </View>
-              <Feather name="chevron-right" size={20} color={C.accent} />
+              <Feather name="chevron-right" size={18} color={C.accent} />
             </TouchableOpacity>
 
-            {/* Overview */}
+            {/* ── Overview grid ───────────────────── */}
             <View style={styles.section}>
               <SectionTitle title="Overview" />
               <View style={styles.overviewGrid}>
@@ -399,7 +431,7 @@ export default function MemberDashboardScreen() {
                   <TouchableOpacity
                     key={o.label}
                     style={styles.overviewTile}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                     disabled={!o.route}
                     onPress={() => {
                       if (!o.route) return;
@@ -410,19 +442,20 @@ export default function MemberDashboardScreen() {
                     accessibilityLabel={o.label}
                   >
                     <View style={styles.overviewIcon}>
-                      <Feather name={o.icon} size={16} color={C.accent} />
+                      <Feather name={o.icon} size={15} color={C.accent} />
                     </View>
-                    <Text style={styles.overviewLabel}>{o.label}</Text>
-                    <Feather name="chevron-right" size={16} color={C.muted} />
+                    <Text style={styles.overviewLabel} numberOfLines={1}>
+                      {o.label}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            {/* Progress & profile */}
+            {/* ── Progress & profile ──────────────── */}
             <View style={styles.section}>
               <SectionTitle title="Progress & profile" />
-              <Card style={{ paddingVertical: 4 }}>
+              <Card style={{ paddingVertical: 2 }}>
                 {STATS.map((s, i) => (
                   <View
                     key={s.label}
@@ -441,21 +474,25 @@ export default function MemberDashboardScreen() {
               </Card>
             </View>
 
-            {/* Strength progression */}
+            {/* ── Strength progression ────────────── */}
             <View style={styles.section}>
               <SectionTitle title="Strength progression" />
               <Card>
                 <View style={styles.rowBetween}>
-                  <Text style={styles.bigValue}>70 kg</Text>
+                  <View>
+                    <Text style={styles.eyebrow}>BARBELL SQUAT</Text>
+                    <Text style={styles.bigValue}>70 kg</Text>
+                  </View>
                   <View
                     style={[
                       styles.pill,
                       {
                         backgroundColor: C.accent + "1A",
-                        borderColor: C.accent + "4D",
+                        borderColor: C.accent + "44",
                       },
                     ]}
                   >
+                    <Feather name="trending-up" size={10} color={C.accent} />
                     <Text style={[styles.pillText, { color: C.accent }]}>
                       +10 kg
                     </Text>
@@ -466,6 +503,11 @@ export default function MemberDashboardScreen() {
                     const last = i === STRENGTH.length - 1;
                     return (
                       <View key={s.label} style={styles.chartCol}>
+                        <Text
+                          style={[styles.barValue, last && { color: C.accent }]}
+                        >
+                          {s.value}
+                        </Text>
                         <View
                           style={[
                             styles.barFill,
@@ -473,7 +515,7 @@ export default function MemberDashboardScreen() {
                               height: (s.value / maxStrength) * 100,
                               backgroundColor: last
                                 ? C.accent
-                                : C.accent + "55",
+                                : C.accent + "44",
                             },
                           ]}
                         />
@@ -486,27 +528,30 @@ export default function MemberDashboardScreen() {
                     );
                   })}
                 </View>
-                <Text style={styles.cardNote}>Barbell squat</Text>
               </Card>
             </View>
 
-            {/* Body weight */}
+            {/* ── Body weight ─────────────────────── */}
             <View style={styles.section}>
               <SectionTitle title="Body weight" />
-              <Card style={{ gap: 12 }}>
+              <Card style={{ gap: 14 }}>
                 <View style={styles.rowBetween}>
-                  <Text style={styles.bigValue}>75.8 kg</Text>
+                  <View>
+                    <Text style={styles.eyebrow}>CURRENT</Text>
+                    <Text style={styles.bigValue}>75.8 kg</Text>
+                  </View>
                   <View
                     style={[
                       styles.pill,
                       {
                         backgroundColor: C.sky + "1A",
-                        borderColor: C.sky + "4D",
+                        borderColor: C.sky + "44",
                       },
                     ]}
                   >
+                    <Feather name="trending-up" size={10} color={C.sky} />
                     <Text style={[styles.pillText, { color: C.sky }]}>
-                      +4.2 kg / 7 w
+                      +4.2 kg / 7w
                     </Text>
                   </View>
                 </View>
@@ -522,13 +567,13 @@ export default function MemberDashboardScreen() {
                   />
                 </View>
                 <View style={styles.rowBetween}>
-                  <Text style={styles.cardNote}>Sep 01 • 71.6 kg</Text>
-                  <Text style={styles.cardNote}>Oct 20 • 75.8 kg</Text>
+                  <Text style={styles.statNote}>Sep 01 · 71.6 kg</Text>
+                  <Text style={styles.statNote}>Oct 20 · 75.8 kg</Text>
                 </View>
               </Card>
             </View>
 
-            {/* Goals */}
+            {/* ── Goals ───────────────────────────── */}
             <View style={styles.section}>
               <SectionTitle title="Goals worth showing up for" />
               <View style={{ gap: 10 }}>
@@ -547,17 +592,20 @@ export default function MemberDashboardScreen() {
                     ) : null}
                   </Card>
                 ))}
-                <TouchableOpacity style={styles.editButton} activeOpacity={0.8}>
-                  <Feather name="edit-2" size={14} color={C.accent} />
+                <TouchableOpacity
+                  style={styles.editButton}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="edit-2" size={13} color={C.accent} />
                   <Text style={styles.editButtonText}>Edit goals</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Personal details */}
+            {/* ── Personal details ─────────────────── */}
             <View style={styles.section}>
               <SectionTitle title="Personal details" />
-              <Card style={{ paddingVertical: 4 }}>
+              <Card style={{ paddingVertical: 2 }}>
                 {DETAILS.map(([label, value], i) => (
                   <View
                     key={label}
@@ -567,19 +615,28 @@ export default function MemberDashboardScreen() {
                     ]}
                   >
                     <Text style={styles.statLabel}>{label}</Text>
-                    <Text style={styles.detailValue}>{value}</Text>
+                    <Text style={styles.detailValue} numberOfLines={1}>
+                      {value}
+                    </Text>
                   </View>
                 ))}
               </Card>
             </View>
 
-            {/* Recent attendance */}
+            {/* ── Recent attendance ────────────────── */}
             <View style={styles.section}>
-              <SectionTitle title="Recent attendance" action="View all" onAction={() => router.push(MEMBER_ROUTES.checkin as any)} />
+              <SectionTitle
+                title="Recent attendance"
+                action="View all"
+                onAction={() => router.push(MEMBER_ROUTES.checkin as any)}
+              />
               {attendanceLoading ? (
                 <Text style={styles.statNote}>Loading attendance…</Text>
               ) : attendanceError ? (
-                <TouchableOpacity onPress={() => void refetchAttendance()} accessibilityRole="button">
+                <TouchableOpacity
+                  onPress={() => void refetchAttendance()}
+                  accessibilityRole="button"
+                >
                   <Text style={styles.attValue}>{attendanceError} · Retry</Text>
                 </TouchableOpacity>
               ) : attendanceRecords.length === 0 ? (
@@ -589,18 +646,34 @@ export default function MemberDashboardScreen() {
                   {attendanceRecords.slice(0, 3).map((record) => (
                     <Card key={record.id} style={{ gap: 10 }}>
                       <View style={styles.rowBetween}>
-                        <Text style={styles.attDate}>{formatAttendanceDate(record.scan_timestamp)}</Text>
-                        <Text style={styles.statNote}>{attendanceDuration(record.scan_timestamp, record.checkout_timestamp)}</Text>
+                        <Text style={styles.attDate}>
+                          {formatAttendanceDate(record.scan_timestamp)}
+                        </Text>
+                        <View style={styles.durationChip}>
+                          <Feather name="clock" size={10} color={C.accent} />
+                          <Text style={styles.durationText}>
+                            {attendanceDuration(
+                              record.scan_timestamp,
+                              record.checkout_timestamp,
+                            )}
+                          </Text>
+                        </View>
                       </View>
                       <View style={styles.divider} />
                       <View style={styles.rowBetween}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.attLabel}>TIME IN</Text>
-                          <Text style={styles.attValue}>{formatAttendanceTime(record.scan_timestamp)}</Text>
+                          <Text style={styles.attValue}>
+                            {formatAttendanceTime(record.scan_timestamp)}
+                          </Text>
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.attLabel}>TIME OUT</Text>
-                          <Text style={styles.attValue}>{record.checkout_timestamp ? formatAttendanceTime(record.checkout_timestamp) : "In progress"}</Text>
+                          <Text style={styles.attValue}>
+                            {record.checkout_timestamp
+                              ? formatAttendanceTime(record.checkout_timestamp)
+                              : "In progress"}
+                          </Text>
                         </View>
                       </View>
                     </Card>
@@ -609,13 +682,10 @@ export default function MemberDashboardScreen() {
               )}
             </View>
 
-            {/* Footer */}
+            {/* ── Footer ───────────────────────────── */}
             <View style={styles.footer}>
               <Text style={styles.footerName}>{header.name}</Text>
-              <Text style={styles.statNote}>
-                Member workspace
-              </Text>
-              <Text style={styles.footerBrand}>
+              <Text style={styles.footerLabel}>
                 FORM ATHLETICS MEMBER WORKSPACE
               </Text>
             </View>
@@ -628,40 +698,86 @@ export default function MemberDashboardScreen() {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Styles                                                              */
-/* ------------------------------------------------------------------ */
+/* ─────────── Small components ─────────── */
+function StatInline({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  value: string;
+  tone: string;
+}) {
+  return (
+    <View style={styles.statInline}>
+      <View style={styles.statInlineHeader}>
+        <Feather name={icon} size={11} color={tone} />
+        <Text style={styles.statInlineLabel}>{label}</Text>
+      </View>
+      <Text style={[styles.statInlineValue, { color: tone }]}>{value}</Text>
+    </View>
+  );
+}
+
+/* ─────────── Styles ─────────── */
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: C.bg },
   mainContainer: { flex: 1, backgroundColor: C.bg },
   content: { flex: 1, backgroundColor: C.bg },
-  // extra bottom room so the raised QR dock never covers content
   contentInner: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 140,
-    gap: 14,
+    gap: 16,
   },
+  flex: { flex: 1, minWidth: 0 },
 
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
 
-  /* brand + greeting */
-  brandBlock: { gap: 2 },
-  brand: { color: C.text, fontSize: 30, fontWeight: "900", letterSpacing: 1 },
-  brandSubtitle: { color: C.muted, fontSize: 13 },
-  date: { color: C.muted, fontSize: 11, opacity: 0.7, marginTop: 4 },
+  /* Brand */
+  brandBlock: { gap: 4 },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  brand: {
+    color: C.text,
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
+  brandBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: C.accent + "14",
+    borderWidth: 1,
+    borderColor: C.accent + "44",
+  },
+  brandBadgeText: {
+    color: C.accent,
+    fontSize: 9,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.8,
+  },
+  date: { color: C.muted, fontSize: 11, opacity: 0.75, marginTop: 4 },
+
+  /* Greeting */
   greetingBlock: { gap: 6, marginVertical: 4 },
   greeting: {
     color: C.text,
     fontSize: 26,
     fontWeight: "900",
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
   greetingSubtitle: {
     color: C.muted,
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   logButtonWrapper: {
     borderRadius: 12,
@@ -681,9 +797,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   logButtonImage: { borderRadius: 12 },
-  logButtonText: { color: C.onAccent, fontSize: 14, fontWeight: "800" },
+  logButtonText: {
+    color: C.onAccent,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
 
-  /* generic card */
+  /* Card */
   card: {
     backgroundColor: C.surface,
     borderRadius: 16,
@@ -697,27 +818,35 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   eyebrow: {
-    color: C.accent,
+    color: C.muted,
     fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
   },
-  cardHeading: { color: C.text, fontSize: 13, fontWeight: "800" },
-  cardNote: { color: C.muted, fontSize: 11 },
+  cardHeading: { color: C.text, fontSize: 14, fontWeight: "800", marginTop: 2 },
+  cardNote: { color: C.muted, fontSize: 11, marginTop: 2 },
   mono: {
     color: C.text,
     fontSize: 11,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
+    fontWeight: "800",
+    fontFamily: "monospace",
   },
   pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  pillText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.4 },
+  pillText: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+    fontFamily: "monospace",
+  },
   track: {
     backgroundColor: C.bg,
     borderWidth: 1,
@@ -727,35 +856,76 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: C.border },
   rowDivider: { borderBottomWidth: 1, borderBottomColor: C.border },
 
-  /* check-in */
-  checkBtn: {
-    backgroundColor: C.accent,
+  /* Status card */
+  statusCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  statusIconWrap: {
+    width: 40,
+    height: 40,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
     borderWidth: 1,
-    borderColor: C.accent,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  checkBtnOut: { backgroundColor: C.bg, borderColor: C.error + "66" },
-  checkBtnText: { color: C.onAccent, fontSize: 12, fontWeight: "900" },
-
-  /* metrics */
-  metricsRow: { flexDirection: "row", gap: 10 },
-  metric: { flex: 1, gap: 6 },
-  metricLabel: {
-    color: C.muted,
-    fontSize: 10,
-    fontWeight: "800",
-    textTransform: "uppercase",
+  smallBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: C.accent,
   },
-  metricValue: {
-    color: C.text,
-    fontSize: 22,
+  smallBtnText: {
+    color: C.onAccent,
+    fontSize: 11,
     fontWeight: "900",
-    letterSpacing: -0.5,
   },
 
-  /* pass banner */
+  /* Stat card (inline metrics) */
+  statCard: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  statInline: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    gap: 4,
+  },
+  statInlineHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  statInlineLabel: {
+    color: C.muted,
+    fontSize: 9,
+    fontWeight: "800",
+    fontFamily: "monospace",
+    letterSpacing: 0.6,
+  },
+  statInlineValue: {
+    fontSize: 18,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: -0.4,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: C.border,
+    marginVertical: 10,
+  },
+
+  /* Pass banner */
   passBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -776,21 +946,39 @@ const styles = StyleSheet.create({
   },
   passTitle: { color: C.text, fontSize: 13, fontWeight: "800" },
 
-  /* sections */
-  section: { gap: 10, marginTop: 6 },
+  /* Sections */
+  section: { gap: 10, marginTop: 4 },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  sectionTitle: { color: C.text, fontSize: 17, fontWeight: "800" },
-  sectionAction: { color: C.accent, fontSize: 12, fontWeight: "700" },
-
-  overviewGrid: { gap: 8 },
-  overviewTile: {
+  sectionTitle: {
+    color: C.text,
+    fontSize: 17,
+    fontWeight: "900",
+    letterSpacing: -0.2,
+  },
+  sectionActionWrap: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 4,
+  },
+  sectionAction: { color: C.accent, fontSize: 12, fontWeight: "800" },
+
+  /* Overview grid */
+  overviewGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  overviewTile: {
+    width: "48%",
+    flexGrow: 1,
+    flexBasis: "46%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.border,
@@ -801,14 +989,20 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: C.accent + "1A",
+    backgroundColor: C.accent + "14",
     borderWidth: 1,
-    borderColor: C.accent + "4D",
+    borderColor: C.accent + "44",
     alignItems: "center",
     justifyContent: "center",
   },
-  overviewLabel: { flex: 1, color: C.text, fontSize: 14, fontWeight: "600" },
+  overviewLabel: {
+    flex: 1,
+    color: C.text,
+    fontSize: 12,
+    fontWeight: "700",
+  },
 
+  /* Progress rows */
   statRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -816,21 +1010,33 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   statLabel: { color: C.muted, fontSize: 13 },
-  statValue: { color: C.text, fontSize: 17, fontWeight: "800" },
-  statNote: { color: C.muted, fontSize: 11, opacity: 0.8 },
+  statValue: {
+    color: C.text,
+    fontSize: 17,
+    fontWeight: "900",
+    letterSpacing: -0.2,
+  },
+  statNote: {
+    color: C.muted,
+    fontSize: 10,
+    marginTop: 2,
+    fontFamily: "monospace",
+  },
 
+  /* Chart */
   bigValue: {
     color: C.text,
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
+    marginTop: 2,
   },
   chartBars: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
-    height: 130,
-    marginVertical: 14,
+    height: 140,
+    marginVertical: 12,
   },
   chartCol: {
     flex: 1,
@@ -838,9 +1044,22 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     gap: 6,
   },
+  barValue: {
+    color: C.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    fontFamily: "monospace",
+  },
   barFill: { width: 28, borderRadius: 6 },
-  barLabel: { color: C.muted, fontSize: 11, fontWeight: "600" },
+  barLabel: {
+    color: C.muted,
+    fontSize: 10,
+    fontWeight: "800",
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
+  },
 
+  /* Body weight */
   weightTrack: { height: 16, justifyContent: "center" },
   weightLine: { height: 2, backgroundColor: C.border, borderRadius: 1 },
   weightDot: {
@@ -856,8 +1075,19 @@ const styles = StyleSheet.create({
     borderColor: C.surface,
   },
 
-  goalValue: { color: C.text, fontSize: 18, fontWeight: "800" },
-  goalPct: { color: C.accent, fontSize: 12, fontWeight: "800" },
+  /* Goals */
+  goalValue: {
+    color: C.text,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+  },
+  goalPct: {
+    color: C.accent,
+    fontSize: 12,
+    fontWeight: "900",
+    fontFamily: "monospace",
+  },
   editButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -866,11 +1096,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: C.accent + "66",
-    backgroundColor: C.accent + "14",
+    borderColor: C.accent + "55",
+    backgroundColor: C.accent + "10",
   },
-  editButtonText: { color: C.accent, fontSize: 13, fontWeight: "800" },
+  editButtonText: { color: C.accent, fontSize: 13, fontWeight: "900" },
 
+  /* Details */
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -881,40 +1112,60 @@ const styles = StyleSheet.create({
   detailValue: {
     color: C.text,
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
     flexShrink: 1,
     textAlign: "right",
+    fontFamily: "monospace",
   },
 
-  attDate: { color: C.text, fontSize: 15, fontWeight: "800" },
+  /* Attendance */
+  attDate: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: -0.2,
+  },
   attLabel: {
     color: C.muted,
     fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 0.6,
-    marginBottom: 2,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
+    marginBottom: 3,
   },
-  attValue: { color: C.text, fontSize: 12, fontWeight: "600" },
+  attValue: {
+    color: C.text,
+    fontSize: 13,
+    fontWeight: "700",
+    fontFamily: "monospace",
+  },
   durationChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     backgroundColor: C.accent + "1A",
     borderWidth: 1,
-    borderColor: C.accent + "4D",
+    borderColor: C.accent + "44",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  durationText: { color: C.accent, fontSize: 11, fontWeight: "800" },
-
-  footer: { alignItems: "center", gap: 4, paddingVertical: 24 },
-  footerName: { color: C.text, fontSize: 18, fontWeight: "800" },
-  footerBrand: {
-    color: C.muted,
+  durationText: {
+    color: C.accent,
     fontSize: 10,
-    letterSpacing: 1,
-    marginTop: 6,
+    fontWeight: "900",
+    fontFamily: "monospace",
+  },
+
+  /* Footer */
+  footer: { alignItems: "center", gap: 4, paddingVertical: 24 },
+  footerName: { color: C.text, fontSize: 16, fontWeight: "800" },
+  footerLabel: {
+    color: C.muted,
+    fontSize: 9,
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+    marginTop: 4,
     opacity: 0.7,
   },
 });
