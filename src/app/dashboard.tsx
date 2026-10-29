@@ -1,5 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
+import { useMembers } from "@/hooks/use-members";
+import { useRevenue } from "@/hooks/use-revenue";
 import { Feather } from "@expo/vector-icons";
 import { setAudioModeAsync, useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
@@ -8,23 +10,23 @@ import * as Speech from "expo-speech";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert,
-  Animated,
-  AppState,
-  Easing,
-  Image,
-  ImageBackground,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
+    Alert,
+    Animated,
+    AppState,
+    Easing,
+    Image,
+    ImageBackground,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+    useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
@@ -316,6 +318,8 @@ type FacilityMetricsProps = {
   onCheckOut: () => void;
   onSetCapacity: (limit: number) => void;
   streamLog: TurnstileEvent[];
+  memberCount: number;
+  monthlyRevenue: number;
 };
 
 function FacilityMetrics({
@@ -336,6 +340,8 @@ function FacilityMetrics({
   onCheckOut,
   onSetCapacity,
   streamLog,
+  memberCount,
+  monthlyRevenue,
 }: FacilityMetricsProps) {
   // Re-render every second so "Updated Xs ago" stays accurate
   const [, setTick] = useState(0);
@@ -377,7 +383,7 @@ function FacilityMetrics({
             <Text style={styles.facilityChange}>+12%</Text>
           </View>
           <View style={styles.facilityValueGroup}>
-            <Text style={styles.facilityValue}>248</Text>
+            <Text style={styles.facilityValue}>{memberCount}</Text>
             <Text style={styles.facilityDescription}>Subscribed Roster</Text>
           </View>
         </View>
@@ -388,7 +394,7 @@ function FacilityMetrics({
             <Text style={styles.facilityChange}>+8%</Text>
           </View>
           <View style={styles.facilityValueGroup}>
-            <Text style={styles.facilityValue}>$12.5K</Text>
+            <Text style={styles.facilityValue}>${(monthlyRevenue / 1000).toFixed(1)}K</Text>
             <Text style={styles.facilityDescription}>MTD Collections</Text>
           </View>
         </View>
@@ -718,6 +724,8 @@ function useSoundEffects(enabled: boolean) {
 export default function DashboardScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const { members } = useMembers();
+  const { monthlyRevenue } = useRevenue();
 
   /* ---------------- Push alert state ---------------- */
   const [showBroadcast, setShowBroadcast] = useState(false);
@@ -1029,6 +1037,8 @@ export default function DashboardScreen() {
             onCheckOut={handleCheckOut}
             onSetCapacity={setCapacity}
             streamLog={streamLog}
+            memberCount={members.length}
+            monthlyRevenue={monthlyRevenue}
           />
 
           {/* Attention Needed */}
