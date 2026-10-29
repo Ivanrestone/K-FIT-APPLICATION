@@ -8,19 +8,19 @@ import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Image,
-  ImageBackground,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TextInputProps,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Image,
+    ImageBackground,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TextInputProps,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -409,24 +409,47 @@ function ConfiguredMemberProfileScreen() {
     [],
   );
 
+  const effectiveProfile = profile;
+
+  const nameParts = [
+    effectiveProfile?.firstName,
+    effectiveProfile?.lastName,
+  ].filter((n): n is string => Boolean(n?.trim()));
+  const fullName = nameParts.join(" ");
+  const initials =
+    nameParts
+      .map((n) => n.trim().charAt(0).toUpperCase())
+      .join("")
+      .slice(0, 2) || "KF";
+
+  const missingFirst = !effectiveProfile?.firstName?.trim();
+  const missingLast = !effectiveProfile?.lastName?.trim();
+  const missingEmail = !effectiveProfile?.email?.trim();
+  const hasMissingProfileFields = missingFirst || missingLast || missingEmail;
+
+  const completion = useMemo(() => {
+    const fields = [
+      effectiveProfile?.firstName ?? "",
+      effectiveProfile?.lastName ?? "",
+      effectiveProfile?.email ?? "",
+      extras.phone,
+      extras.dateOfBirth,
+      extras.height,
+      extras.emergencyName,
+      extras.emergencyPhone,
+      extras.addressLine1,
+      socials.instagram || socials.twitter || socials.linkedin,
+    ];
+    const filled = fields.filter((f) => f?.trim?.().length).length;
+    return Math.round((filled / fields.length) * 100);
+  }, [effectiveProfile, extras, socials]);
+
   if (isLoading) {
     return <ProfileStatusScreen message="Loading your profile…" isLoading />;
   }
   if (error) {
     return <ProfileStatusScreen message={error} onRetry={() => void load()} />;
   }
-
-  const effectiveProfile =
-    profile ??
-    (!isSignedIn
-      ? {
-          id: "demo_member",
-          role: "member" as const,
-          email: "member@gmail.com",
-          firstName: "Demo",
-          lastName: "Member",
-        }
-      : null);
 
   if (!effectiveProfile) {
     return (
@@ -441,39 +464,6 @@ function ConfiguredMemberProfileScreen() {
       />
     );
   }
-
-  const nameParts = [
-    effectiveProfile.firstName,
-    effectiveProfile.lastName,
-  ].filter((n): n is string => Boolean(n?.trim()));
-  const fullName = nameParts.join(" ");
-  const initials =
-    nameParts
-      .map((n) => n.trim().charAt(0).toUpperCase())
-      .join("")
-      .slice(0, 2) || "KF";
-
-  const missingFirst = !effectiveProfile.firstName?.trim();
-  const missingLast = !effectiveProfile.lastName?.trim();
-  const missingEmail = !effectiveProfile.email?.trim();
-  const hasMissingProfileFields = missingFirst || missingLast || missingEmail;
-
-  const completion = useMemo(() => {
-    const fields = [
-      effectiveProfile.firstName ?? "",
-      effectiveProfile.lastName ?? "",
-      effectiveProfile.email ?? "",
-      extras.phone,
-      extras.dateOfBirth,
-      extras.height,
-      extras.emergencyName,
-      extras.emergencyPhone,
-      extras.addressLine1,
-      socials.instagram || socials.twitter || socials.linkedin,
-    ];
-    const filled = fields.filter((f) => f?.trim?.().length).length;
-    return Math.round((filled / fields.length) * 100);
-  }, [effectiveProfile, extras, socials]);
 
   /* ---------- Missing-fields save ---------- */
   const beginEdit = () => {

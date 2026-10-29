@@ -1,6 +1,6 @@
+import { createMemberSupabaseClient } from "@/utils/supabase";
 import { useAuth } from "@clerk/expo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createMemberSupabaseClient } from "@/utils/supabase";
 
 export type MemberRole = "member" | "coach" | "admin";
 export type CoachRequestStatus = "pending" | "approved" | "rejected";
@@ -272,14 +272,14 @@ export function useMemberProfile() {
   }, [queryState, supabase, userId]);
 
   const submitCoachRequest = useCallback(async () => {
-    if (
-      !supabase ||
-      !userId ||
-      queryState?.userId !== userId ||
-      queryState?.profile?.role !== "member"
-    ) {
-      throw new Error("Only provisioned members can request Coach status.");
+    if (!supabase || !userId) {
+      throw new Error("Not authenticated. Please sign in.");
     }
+    if (queryState?.userId !== userId) {
+      throw new Error("Profile not loaded. Please try again.");
+    }
+
+    console.log("Submitting coach request for user:", userId);
 
     const { data, error: insertError } = await supabase
       .from("coach_requests")
@@ -287,12 +287,15 @@ export function useMemberProfile() {
       .select("id, status, created_at")
       .single();
 
+    console.log("Insert result:", { data, error: insertError });
+
     if (insertError) {
+      console.error("Insert error details:", insertError);
       if (insertError.code === "23505") {
         await load();
         return;
       }
-      throw new Error("Could not submit your Coach request. Please try again.");
+      throw new Error(insertError.message || insertError.details || "Could not submit your Coach request. Please try again.");
     }
 
     const coachRequest = parseCoachRequest(data);
@@ -304,7 +307,39 @@ export function useMemberProfile() {
         ? { ...current, coachRequest }
         : current
     );
-  }, [load, queryState?.profile?.role, queryState?.userId, supabase, userId]);
+  }, [load, queryState?.userId, supabase, userId]);
+
+  const updateUserRole = useCallback(async (newRole: MemberRole) => {
+    if (
+      !supabase ||
+      !userId ||
+      queryState?.userId !== userId ||
+      !queryState?.profile
+    ) {
+      throw new Error("Your profile is not available to update.");
+    }
+
+    const { data, error: updateError } = await supabase
+      .from("users")
+      .update({ role: newRole })
+      .eq("id", userId)
+      .select("id, role, email, first_name, last_name")
+      .maybeSingle();
+
+    if (updateError) {
+      throw new Error("Could not update your role. Please try again.");
+    }
+
+    const profile = data ? parseProfile(data) : null;
+    if (!profile) {
+      throw new Error("Your role was not updated. Please retry.");
+    }
+
+    setQueryState((current) =>
+      current?.userId === userId ? { ...current, profile } : current
+    );
+    return profile;
+  }, [queryState, supabase, userId]);
 
   const currentQueryState = isSignedIn && queryState?.userId === userId
     ? queryState
@@ -323,5 +358,6 @@ export function useMemberProfile() {
     profile: currentQueryState?.profile ?? null,
     saveMissingProfileFields,
     submitCoachRequest,
+    updateUserRole,
   };
 }
