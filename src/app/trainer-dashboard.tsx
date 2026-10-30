@@ -225,6 +225,35 @@ const clockLabel = () =>
     minute: "2-digit",
   });
 
+/* ─────────────── Shift clock model ─────────────── */
+type ClockMode = "work" | "break" | "off";
+
+type ShiftClockState = {
+  workMs: number; // net paid time banked so far
+  breakMs: number; // unpaid break time banked so far
+  since: number; // when the current segment started
+  mode: ClockMode;
+};
+
+const modeFor = (d: DutyStatus): ClockMode =>
+  d === "On Break" ? "break" : d === "Off Duty" ? "off" : "work";
+
+/** Bank the elapsed time of the current segment into the right bucket. */
+function settle(c: ShiftClockState, now: number): ShiftClockState {
+  const delta = Math.max(0, now - c.since);
+  if (c.mode === "work") return { ...c, workMs: c.workMs + delta, since: now };
+  if (c.mode === "break")
+    return { ...c, breakMs: c.breakMs + delta, since: now };
+  return { ...c, since: now };
+}
+
+const clockTone = (mode: ClockMode) =>
+  mode === "work"
+    ? KFitColors.accent
+    : mode === "break"
+      ? WARNING
+      : KFitColors.error;
+
 /* ─────────────── Pulse dot ─────────────── */
 function PulseDot({
   active = true,
@@ -338,19 +367,23 @@ function FlashValue({
 }
 
 /* ─────────────── Shift clock ─────────────── */
-function ShiftClock({ active, start }: { active: boolean; start: number }) {
+function ShiftClock({ clock }: { clock: ShiftClockState }) {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    if (!active) return;
+    if (clock.mode !== "work") return; // frozen on break / off
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [active]);
+  }, [clock.mode]);
+
+  const worked =
+    clock.workMs + (clock.mode === "work" ? Math.max(0, now - clock.since) : 0);
+  const tone = clockTone(clock.mode);
 
   return (
-    <Text style={[styles.shiftValue, !active && { color: KFitColors.error }]}>
-      {active ? formatElapsed(now - start) : "CLOCKED OUT"}
+    <Text style={[styles.shiftValue, { color: tone }]}>
+      {formatElapsed(clock.mode === "off" ? 0 : worked)}
     </Text>
   );
 }
@@ -462,12 +495,17 @@ export default function TrainerDashboardScreen() {
   const [team, setTeam] = useState<Trainer[]>(INITIAL_TEAM);
   const [sessions, setSessions] = useState<ClientSession[]>(INITIAL_SESSIONS);
 
-  const [shiftActive, setShiftActive] = useState(true);
-  const [shiftStart, setShiftStart] = useState(
-    Date.now() - (4 * 60 + 12) * 60000,
-  );
+  const [clock, setClock] = useState<ShiftClockState>({
+    workMs: (4 * 60 + 12) * 60000, // demo: already 4h12m in
+    breakMs: 0,
+    since: Date.now(),
+    mode: "work",
+  });
 
-  /** NEW: confirm dialog state for ending a shift */
+  // Derived, so picking "Off Duty" from the selector also clocks you out
+  const shiftActive = duty !== "Off Duty";
+
+  /** Confirm dialog state for ending a shift */
   const [endShiftConfirm, setEndShiftConfirm] = useState(false);
 
   const [occupancy, setOccupancy] = useState(START_OCCUPANCY);
@@ -578,14 +616,34 @@ export default function TrainerDashboardScreen() {
   }, []);
 
   const changeDuty = (next: DutyStatus) => {
+    if (next === duty) return;
     void Haptics.selectionAsync();
+
+    const prevMode = modeFor(duty);
+    const nextMode = modeFor(next);
+
+    setClock((prev) => {
+      const banked = settle(prev, Date.now());
+      // Off Duty = clocked out: reset everything
+      if (nextMode === "off") {
+        return { workMs: 0, breakMs: 0, since: Date.now(), mode: "off" };
+      }
+      return { ...banked, mode: nextMode };
+    });
+
     setDuty(next);
     setTeam((prev) =>
       prev.map((t) => (t.id === "TR-101" ? { ...t, status: next } : t)),
     );
+
+    if (nextMode === "break" && prevMode === "work") {
+      showToast("On break. Shift timer paused.");
+    } else if (nextMode === "work" && prevMode === "break") {
+      showToast("Back on duty. Shift timer running.");
+    }
   };
 
-  /** NEW: ask before ending shift, then confirm */
+  /** Ask before ending shift, then confirm */
   const askEndShift = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setEndShiftConfirm(true);
@@ -599,16 +657,17 @@ export default function TrainerDashboardScreen() {
   const confirmEndShift = () => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setEndShiftConfirm(false);
-    setShiftActive(false);
-    changeDuty("Off Duty");
+    changeDuty("Off Duty"); // resets the clock
     showToast("Shift ended. Clocked out successfully.");
   };
 
   const startShift = () => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShiftStart(Date.now());
-    setShiftActive(true);
-    changeDuty("On Floor");
+    setClock({ workMs: 0, breakMs: 0, since: Date.now(), mode: "work" });
+    setDuty("On Floor");
+    setTeam((prev) =>
+      prev.map((t) => (t.id === "TR-101" ? { ...t, status: "On Floor" } : t)),
+    );
     showToast("Shift started. You are back on the floor.");
   };
 
@@ -734,10 +793,21 @@ export default function TrainerDashboardScreen() {
             </View>
             <View style={styles.shiftBox}>
               <View style={styles.shiftLabelRow}>
-                <PulseDot active={shiftActive} size={5} />
-                <Text style={styles.shiftLabel}>SHIFT</Text>
+                <PulseDot
+                  active={clock.mode === "work"}
+                  color={clockTone(clock.mode)}
+                  size={5}
+                />
+                <Text
+                  style={[
+                    styles.shiftLabel,
+                    clock.mode === "break" && { color: WARNING },
+                  ]}
+                >
+                  {clock.mode === "break" ? "ON BREAK" : "SHIFT"}
+                </Text>
               </View>
-              <ShiftClock active={shiftActive} start={shiftStart} />
+              <ShiftClock clock={clock} />
             </View>
           </View>
 
@@ -785,13 +855,21 @@ export default function TrainerDashboardScreen() {
               <Text
                 style={[
                   styles.currentStatusState,
-                  { color: shiftActive ? KFitColors.accent : KFitColors.error },
+                  { color: clockTone(clock.mode) },
                 ]}
               >
-                {shiftActive ? "CLOCKED IN" : "CLOCKED OUT"}
+                {clock.mode === "work"
+                  ? "CLOCKED IN"
+                  : clock.mode === "break"
+                    ? "ON BREAK"
+                    : "CLOCKED OUT"}
               </Text>
               <Text style={styles.currentStatusHint}>
-                {shiftActive ? "Floor Station A" : "Tap Start Shift"}
+                {clock.mode === "work"
+                  ? "Timer running"
+                  : clock.mode === "break"
+                    ? "Timer paused"
+                    : "Tap Start Shift"}
               </Text>
             </View>
           </View>
@@ -846,9 +924,11 @@ export default function TrainerDashboardScreen() {
             <View style={styles.flex}>
               <Text style={styles.timesheetTitle}>Shift Timesheet</Text>
               <Text style={styles.timesheetSub} numberOfLines={1}>
-                {shiftActive
-                  ? "Clocked IN • Floor Station A"
-                  : "Clocked OUT • Tap Start Shift to begin"}
+                {clock.mode === "work"
+                  ? "Clocked IN • Timer running"
+                  : clock.mode === "break"
+                    ? "On break • Timer paused"
+                    : "Clocked OUT • Tap Start Shift to begin"}
               </Text>
             </View>
           </View>
@@ -1287,7 +1367,7 @@ export default function TrainerDashboardScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* NEW: End Shift confirmation dialog */}
+      {/* End Shift confirmation dialog */}
       <Modal
         visible={endShiftConfirm}
         transparent
@@ -2191,7 +2271,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-  /* NEW: End shift confirmation dialog */
+  /* End shift confirmation dialog */
   confirmBackdrop: {
     flex: 1,
     alignItems: "center",

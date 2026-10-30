@@ -14,6 +14,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -45,8 +46,6 @@ const QUICK_LINKS: { label: string; icon: IconName; route: string }[] = [
   { label: "Payments", icon: "cash", route: "/payments" },
   { label: "Scanner", icon: "qr-code", route: "/admin-scanner" },
 ];
-
-const PLANS = ["Essential", "Performance", "Elite"];
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
@@ -86,12 +85,12 @@ export default function MembersScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [refreshing, setRefreshing] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newPlan, setNewPlan] = useState<string>("Performance");
 
   const stats = useMemo(() => {
     const total = members.length;
@@ -126,27 +125,40 @@ export default function MembersScreen() {
           ? stats.pending
           : stats.expired;
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.resolve(refetch());
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const saveMember = async () => {
+    const email = newEmail.trim();
+
     if (!newName.trim()) {
-      Alert.alert("Name required", "Please enter the member's full name.");
+      Alert.alert("Name required", "Enter the member's full name.");
       return;
     }
-    if (!newEmail.trim()) {
-      Alert.alert("Email required", "Please enter the member's email.");
-      return;
-    }
-    if (!newPassword.trim()) {
+
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
       Alert.alert(
-        "Password required",
-        "Please enter a password for the member.",
+        "Invalid email",
+        "Enter a valid email, for example name@email.com.",
       );
+      return;
+    }
+
+    if (newPassword.trim().length < 8) {
+      Alert.alert("Password too short", "Use at least 8 characters.");
       return;
     }
 
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     const result = await registerMember({
-      email: newEmail.trim(),
+      email,
       password: newPassword.trim(),
       fullName: newName.trim(),
     });
@@ -156,9 +168,8 @@ export default function MembersScreen() {
       setNewName("");
       setNewEmail("");
       setNewPassword("");
-      setNewPlan("Performance");
       setModalOpen(false);
-      Alert.alert("Success", "Member registered successfully!");
+      Alert.alert("Member registered", "The account has been created.");
       refetch();
     } else {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -179,6 +190,15 @@ export default function MembersScreen() {
             contentContainerStyle={styles.contentContainer}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor={KFitColors.accent}
+                colors={[KFitColors.accent]}
+                progressBackgroundColor={KFitColors.surface}
+              />
+            }
           >
             {/* Page title + actions */}
             <View style={[styles.pageHeader, isWide && styles.pageHeaderWide]}>
@@ -191,25 +211,6 @@ export default function MembersScreen() {
               </View>
 
               <View style={styles.actionButtons}>
-                <Pressable
-                  onPress={() =>
-                    Alert.alert("Import", "Member import is coming soon.")
-                  }
-                  style={({ pressed }) => [
-                    styles.importButton,
-                    pressed && styles.pressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Import members"
-                >
-                  <Ionicons
-                    name="download-outline"
-                    size={15}
-                    color={KFitColors.text}
-                  />
-                  <Text style={styles.importButtonText}>Import</Text>
-                </Pressable>
-
                 <Pressable
                   onPress={() => setModalOpen(true)}
                   style={({ pressed }) => [
@@ -425,7 +426,7 @@ export default function MembersScreen() {
             </ScrollView>
 
             {/* Table header (wide) */}
-            {isWide && filteredMembers.length > 0 && (
+            {isWide && !membersLoading && filteredMembers.length > 0 && (
               <View style={styles.listHeader}>
                 <Text style={[styles.headerText2, { flex: 2.2 }]}>MEMBER</Text>
                 <Text style={[styles.headerText2, { flex: 1.2 }]}>
@@ -439,7 +440,9 @@ export default function MembersScreen() {
 
             {/* Members */}
             <View style={styles.memberList}>
-              {filteredMembers.length === 0 ? (
+              {membersLoading ? (
+                <Text style={styles.emptySub}>Loading members…</Text>
+              ) : filteredMembers.length === 0 ? (
                 <View style={styles.emptyState}>
                   <View style={styles.emptyIconWrap}>
                     <Ionicons
@@ -662,34 +665,6 @@ export default function MembersScreen() {
                 style={styles.input}
               />
 
-              <Text style={styles.label}>MEMBERSHIP PLAN</Text>
-              <View style={styles.planRow}>
-                {PLANS.map((plan) => {
-                  const active = plan === newPlan;
-                  return (
-                    <Pressable
-                      key={plan}
-                      onPress={() => {
-                        void Haptics.selectionAsync();
-                        setNewPlan(plan);
-                      }}
-                      style={[styles.planOption, active && styles.planOptionOn]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: active }}
-                    >
-                      <Text
-                        style={[
-                          styles.planOptionText,
-                          active && styles.planOptionTextOn,
-                        ]}
-                      >
-                        {plan}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
               <Pressable
                 onPress={saveMember}
                 disabled={registerLoading}
@@ -782,23 +757,6 @@ const styles = StyleSheet.create({
   },
 
   actionButtons: { flexDirection: "row", gap: 10 },
-  importButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    minHeight: 42,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.surface,
-  },
-  importButtonText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: KFitColors.text,
-  },
   addButtonWrapper: {
     borderRadius: 10,
     overflow: "hidden",
@@ -1215,26 +1173,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 6,
   },
-  planRow: { flexDirection: "row", gap: 6, marginTop: 6 },
-  planOption: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.background,
-  },
-  planOptionOn: {
-    borderColor: KFitColors.accent,
-    backgroundColor: KFitColors.accent + "1A",
-  },
-  planOptionText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: KFitColors.mutedText,
-  },
-  planOptionTextOn: { color: KFitColors.accent },
   saveButtonDisabled: { opacity: 0.55 },
   saveButtonWrapper: {
     marginTop: 16,

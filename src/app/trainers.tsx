@@ -6,6 +6,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -157,6 +158,19 @@ export default function TrainersScreen() {
     });
   }, [searchQuery, selectedFilter]);
 
+  const summary = useMemo(() => {
+    const clients = mockTrainers.reduce((s, t) => s + t.clients, 0);
+    const capacity = mockTrainers.reduce((s, t) => s + t.capacity, 0);
+    return {
+      total: mockTrainers.length,
+      available: mockTrainers.filter((t) => t.status === "Available").length,
+      inSession: mockTrainers.filter((t) => t.status === "In session").length,
+      clients,
+      openSpots: capacity - clients,
+      avgLoad: (clients / mockTrainers.length).toFixed(1),
+    };
+  }, []);
+
   const openProfile = (id: string) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({ pathname: "/trainers/[id]", params: { id } } as any);
@@ -170,26 +184,26 @@ export default function TrainersScreen() {
   }[] = [
     {
       label: "Total trainers",
-      value: "12",
+      value: `${summary.total}`,
       icon: "people",
       tone: KFitColors.accent,
     },
     {
-      label: "Available today",
-      value: "8",
+      label: "Available now",
+      value: `${summary.available}`,
       icon: "checkmark-circle",
       tone: "#22C55E",
     },
     {
       label: "Assigned clients",
-      value: "186",
+      value: `${summary.clients}`,
       icon: "person",
       tone: "#3B82F6",
     },
     {
-      label: "Sessions this week",
-      value: "94",
-      icon: "calendar",
+      label: "Open client spots",
+      value: `${summary.openSpots}`,
+      icon: "add-circle",
       tone: "#F59E0B",
     },
   ];
@@ -221,6 +235,10 @@ export default function TrainersScreen() {
               <Pressable
                 onPress={() => {
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  Alert.alert(
+                    "Not available yet",
+                    "Adding trainers isn't connected to the database yet.",
+                  );
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Add trainer"
@@ -277,14 +295,14 @@ export default function TrainersScreen() {
                       />
                     </View>
                   </View>
-                  <Text style={styles.capacityNumber}>12</Text>
+                  <Text style={styles.capacityNumber}>{summary.total}</Text>
                   <Text style={styles.capacitySublabel}>
-                    10 full-time · 2 part-time
+                    {summary.inSession} in session now
                   </Text>
                   <View style={styles.capacityBadge}>
                     <View style={styles.capacityDot} />
                     <Text style={styles.capacityBadgeText}>
-                      4 in session now
+                      {summary.available} available
                     </Text>
                   </View>
                 </View>
@@ -300,7 +318,7 @@ export default function TrainersScreen() {
                       />
                     </View>
                   </View>
-                  <Text style={styles.capacityNumber}>15.5</Text>
+                  <Text style={styles.capacityNumber}>{summary.avgLoad}</Text>
                   <Text style={styles.capacitySublabel}>
                     clients per trainer
                   </Text>
@@ -308,7 +326,7 @@ export default function TrainersScreen() {
 
                 <View style={styles.capacityCard}>
                   <View style={styles.capacityHead}>
-                    <Text style={styles.capacityLabel}>Open time</Text>
+                    <Text style={styles.capacityLabel}>Open spots</Text>
                     <View style={styles.capacityIcon}>
                       <Ionicons
                         name="time"
@@ -317,10 +335,8 @@ export default function TrainersScreen() {
                       />
                     </View>
                   </View>
-                  <Text style={styles.capacityNumber}>28</Text>
-                  <Text style={styles.capacitySublabel}>
-                    coaching hours available
-                  </Text>
+                  <Text style={styles.capacityNumber}>{summary.openSpots}</Text>
+                  <Text style={styles.capacitySublabel}>open client spots</Text>
                 </View>
               </View>
             </View>
@@ -618,7 +634,7 @@ export default function TrainersScreen() {
 
               <Text style={styles.footerText}>
                 Showing {filteredTrainers.length} of {mockTrainers.length}{" "}
-                loaded · 12 total
+                trainers
               </Text>
             </View>
 

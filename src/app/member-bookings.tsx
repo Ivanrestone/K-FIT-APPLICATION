@@ -5,29 +5,29 @@ import { KFitColors } from "@/constants/theme";
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
 import {
-    Booking,
-    statusTone,
-    to12h,
-    toRelativeDay,
-    useBookingsStore,
+  Booking,
+  statusTone,
+  to12h,
+  toRelativeDay,
+  useBookingsStore,
 } from "@/lib/bookings-store";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-    Modal,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-    SafeAreaView,
-    useSafeAreaInsets,
+  SafeAreaView,
+  useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
 type Filter = "upcoming" | "pending" | "history" | "all";

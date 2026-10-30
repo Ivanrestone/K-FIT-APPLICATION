@@ -2,33 +2,33 @@ import TrainerBottomNav from "@/components/TrainerBottomNav";
 import TrainerHeader from "@/components/TrainerHeader";
 import { KFitColors } from "@/constants/theme";
 import {
-    Booking,
-    pickPending,
-    statusTone,
-    to12h,
-    toRelativeDay,
-    useBookingsStore,
+  Booking,
+  pickPending,
+  statusTone,
+  to12h,
+  toRelativeDay,
+  useBookingsStore,
 } from "@/lib/bookings-store";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-    SafeAreaView,
-    useSafeAreaInsets,
+  SafeAreaView,
+  useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
 type Filter = "requests" | "confirmed" | "history" | "all";

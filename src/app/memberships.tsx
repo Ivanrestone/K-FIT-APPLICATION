@@ -1,6 +1,8 @@
 import Sidebar from "@/components/Sidebar";
+import { formatMoney } from "@/constants/gym";
 import { KFitColors } from "@/constants/theme";
 import { useRegisterMember } from "@/hooks/use-register-member";
+import { useRevenue } from "@/hooks/use-revenue";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useMemo, useState } from "react";
@@ -119,10 +121,26 @@ const statusColor = (status: Status) =>
         ? KFitColors.error
         : KFitColors.mutedText;
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const validateEmail = (email: string): string | null => {
+  const trimmed = email.trim();
+  if (!trimmed) return "Enter the member's email.";
+  if (!EMAIL_RE.test(trimmed)) return "Enter a valid email address.";
+  return null;
+};
+
+const validatePassword = (password: string): string | null => {
+  if (!password) return "Enter a password for the member.";
+  if (password.length < 8) return "Password must be at least 8 characters.";
+  return null;
+};
+
 export default function MembershipsScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= WIDE_BREAKPOINT;
   const { registerMember, loading: registerLoading } = useRegisterMember();
+  const { monthlyRevenue } = useRevenue();
 
   const [subscriptions, setSubscriptions] =
     useState<Subscription[]>(initialSubscriptions);
@@ -209,18 +227,20 @@ export default function MembershipsScreen() {
         setFormError("Enter the member's full name.");
         return;
       }
-      if (!formEmail.trim()) {
-        setFormError("Enter the member's email.");
+      const emailError = validateEmail(formEmail);
+      if (emailError) {
+        setFormError(emailError);
         return;
       }
-      if (!formPassword.trim()) {
-        setFormError("Enter a password for the member.");
+      const passwordError = validatePassword(formPassword);
+      if (passwordError) {
+        setFormError(passwordError);
         return;
       }
 
       const result = await registerMember({
         email: formEmail.trim(),
-        password: formPassword.trim(),
+        password: formPassword,
         fullName: formName.trim(),
       });
 
@@ -381,7 +401,7 @@ export default function MembershipsScreen() {
                 <Text
                   style={[styles.overviewSub, { color: KFitColors.warning }]}
                 >
-                  Due this week
+                  Expiring soon
                 </Text>
               </View>
               <View style={styles.overviewCard}>
@@ -406,18 +426,12 @@ export default function MembershipsScreen() {
             <View style={styles.revenueCard}>
               <View style={styles.flex1}>
                 <Text style={styles.revenueEyebrow}>MONTHLY REVENUE</Text>
-                <Text style={styles.revenueAmount}>$48,920</Text>
-                <Text style={styles.revenueSublabel}>
-                  1,284 active subscriptions
+                <Text style={styles.revenueAmount}>
+                  {formatMoney(monthlyRevenue)}
                 </Text>
-              </View>
-              <View style={styles.revenuePill}>
-                <Ionicons
-                  name="trending-up"
-                  size={12}
-                  color={KFitColors.onAccent}
-                />
-                <Text style={styles.revenuePillText}>+8%</Text>
+                <Text style={styles.revenueSublabel}>
+                  {statusCounts.Active} active subscriptions
+                </Text>
               </View>
             </View>
           </View>
