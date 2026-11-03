@@ -1,4 +1,5 @@
 import { useMemberProfile } from "@/hooks/use-member-profile";
+import { useUser } from "@clerk/expo";
 
 /**
  * Placeholder stats shown in the header AND on the dashboard so they always match.
@@ -18,9 +19,10 @@ export const MEMBER_PLACEHOLDER_STATS = {
  */
 export function useMemberHeaderData() {
   const { profile } = useMemberProfile();
+  const { user } = useUser();
 
-  const firstName = profile?.firstName?.trim() ?? "";
-  const lastName = profile?.lastName?.trim() ?? "";
+  const firstName = profile?.firstName?.trim() || user?.firstName?.trim() || "";
+  const lastName = profile?.lastName?.trim() || user?.lastName?.trim() || "";
   const name = [firstName, lastName].filter(Boolean).join(" ") || "Member";
 
   return {

@@ -1,5 +1,6 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
 import { KFitColors } from "@/constants/theme";
+import SubscriptionPaywall from "@/components/SubscriptionPaywall";
 import { useAttendance } from "@/hooks/use-attendance";
 import { createQrPayload, currentTotpCounter, generateTotp, generateTotpSecret, TOTP_PERIOD_SECONDS } from "@/utils/totp";
 import { useLogout } from "@/hooks/use-logout";
@@ -342,8 +343,9 @@ export default function MemberQRScreen() {
   const progress = Math.max(0, Math.min(secondsLeft / PASS_LIFETIME, 1));
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      <View style={styles.mainContainer}>
+    <SubscriptionPaywall requireAppAccess>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        <View style={styles.mainContainer}>
         <ScrollView
           style={styles.content}
           contentContainerStyle={{ paddingBottom: NAV_CLEARANCE }}
@@ -531,9 +533,10 @@ export default function MemberQRScreen() {
           </View>
         </ScrollView>
 
-        <MemberBottomNav activeRoute="/member-qr" />
-      </View>
-    </SafeAreaView>
+          <MemberBottomNav activeRoute="/member-qr" />
+        </View>
+      </SafeAreaView>
+    </SubscriptionPaywall>
   );
 }
 

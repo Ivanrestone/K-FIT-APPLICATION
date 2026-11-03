@@ -1,7 +1,7 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
 import { KFitColors, Spacing } from "@/constants/theme";
 import { useMemberProfile } from "@/hooks/use-member-profile";
-import { useAuth } from "@clerk/expo";
+import { useAuth, useUser } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -368,6 +368,7 @@ function ProfileStatusScreen({
 function ConfiguredMemberProfileScreen() {
   const router = useRouter();
   const { isSignedIn } = useAuth();
+  const { user } = useUser();
   const {
     coachRequest,
     error,
@@ -428,10 +429,14 @@ function ConfiguredMemberProfileScreen() {
   );
 
   const effectiveProfile = profile;
+  const clerkFirstName = user?.firstName?.trim() || null;
+  const clerkLastName = user?.lastName?.trim() || null;
+  const clerkEmail = user?.primaryEmailAddress?.emailAddress?.trim() || null;
+  const clerkImageUrl = user?.imageUrl || null;
 
   const nameParts = [
-    effectiveProfile?.firstName,
-    effectiveProfile?.lastName,
+    effectiveProfile?.firstName?.trim() || clerkFirstName,
+    effectiveProfile?.lastName?.trim() || clerkLastName,
   ].filter((n): n is string => Boolean(n?.trim()));
   const fullName = nameParts.join(" ");
   const initials =
@@ -789,8 +794,12 @@ function ConfiguredMemberProfileScreen() {
               style={styles.avatarWrap}
             >
               <View style={styles.avatarRing}>
-                {avatarUri ? (
-                  <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                {avatarUri || clerkImageUrl ? (
+                  <Image
+                    source={{ uri: avatarUri ?? clerkImageUrl ?? undefined }}
+                    style={styles.avatar}
+                    accessibilityLabel={`${fullName || "Member"} profile photo`}
+                  />
                 ) : (
                   <ImageBackground
                     source={require("../../assets/images/gold-texture.jpg")}
@@ -933,7 +942,7 @@ function ConfiguredMemberProfileScreen() {
               />
               <EditableRow
                 label="Email"
-                value={effectiveProfile.email}
+                value={effectiveProfile.email ?? clerkEmail}
                 editing={isEditing && missingEmail}
                 draft={emailDraft}
                 onChangeDraft={setEmailDraft}
