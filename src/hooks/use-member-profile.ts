@@ -1,5 +1,5 @@
 import { createMemberSupabaseClient } from "@/utils/supabase";
-import { useAuth } from "@clerk/expo";
+import { useAuth, useUser } from "@clerk/expo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type MemberRole = "member" | "coach" | "admin";
@@ -40,11 +40,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasMissingRole(value: unknown): boolean {
+  return value === null || value === undefined || value === "";
+}
+
 function parseProfile(value: unknown): MemberProfile | null {
   if (
     !isRecord(value) ||
     typeof value.id !== "string" ||
-    (value.role !== "member" && value.role !== "coach" && value.role !== "admin") ||
     (value.email !== null && typeof value.email !== "string") ||
     (value.first_name !== null && typeof value.first_name !== "string") ||
     (value.last_name !== null && typeof value.last_name !== "string")
@@ -52,9 +55,14 @@ function parseProfile(value: unknown): MemberProfile | null {
     return null;
   }
 
+  const role =
+    value.role === "coach" || value.role === "admin"
+      ? value.role
+      : "member";
+
   return {
     id: value.id,
-    role: value.role,
+    role,
     email: value.email,
     firstName: value.first_name,
     lastName: value.last_name,
@@ -91,10 +99,49 @@ function getErrorMessage(error: unknown): string {
     : "Could not load your profile. Please try again.";
 }
 
+function parseMetadataRole(value: unknown): MemberRole {
+  return value === "coach" || value === "admin" ? value : "member";
+}
+
+type ClerkProfileSource = {
+  firstName?: string | null;
+  lastName?: string | null;
+  fullName?: string | null;
+  primaryEmailAddress?: { emailAddress?: string | null } | null;
+  publicMetadata?: Record<string, unknown> | null;
+} | null | undefined;
+
+/**
+ * Builds a usable profile from the Clerk session when Supabase has no row yet
+ * or its read fails. A missing role is never an error: it defaults to member.
+ */
+function buildFallbackProfile(
+  userId: string,
+  user: ClerkProfileSource,
+): MemberProfile {
+  const nameParts = (user?.fullName ?? "").trim().split(/\s+/).filter(Boolean);
+  const firstName = user?.firstName?.trim() || nameParts[0] || null;
+  const lastName = user?.lastName?.trim() ||
+    (nameParts.length > 1 ? nameParts.slice(1).join(" ") : null);
+
+  return {
+    id: userId,
+    role: parseMetadataRole(user?.publicMetadata?.role),
+    email: user?.primaryEmailAddress?.emailAddress?.trim() || null,
+    firstName,
+    lastName,
+  };
+}
+
 export function useMemberProfile() {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  const { user } = useUser();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const clientResult = useMemo(() => {
     try {
@@ -153,25 +200,88 @@ export function useMemberProfile() {
       ) {
         return;
       }
+
+      // A failed profile read (RLS, offline, missing row) must never surface as
+      // a role error: fall back to the Clerk session and the member role.
       if (profileResult.error) {
-        throw new Error(profileResult.error.message || "Could not load your K-Fit profile.");
-      }
-      if (requestResult.error) {
-        throw new Error(requestResult.error.message || "Could not load your Coach request status.");
+        console.warn(
+          "[Profile Load Notice]:",
+          profileResult.error.message,
+        );
       }
 
-      const profile = profileResult.data
+      let profile = profileResult.data
         ? parseProfile(profileResult.data)
         : null;
       if (profileResult.data && !profile) {
-        throw new Error("Your profile returned invalid data.");
+        console.warn("[Profile Load Notice]: profile returned invalid data.");
       }
 
-      setQueryState({
-        userId,
-        profile,
-        coachRequest: parseCoachRequest(requestResult.data),
-      });
+      if (profile && profileResult.data && hasMissingRole(profileResult.data.role)) {
+        const { error: roleRepairError } = await supabase
+          .from("users")
+          .update({ role: "member" })
+          .eq("id", userId);
+        if (roleRepairError) {
+          console.warn(
+            "[Profile Role Repair Notice]:",
+            roleRepairError.message,
+          );
+        }
+      }
+
+      if (!profile) {
+        try {
+          const { data: provisioned, error: provisionError } =
+            await supabase.functions.invoke("provision-user");
+          if (provisionError) {
+            throw provisionError;
+          }
+
+          const provisionedProfile =
+            isRecord(provisioned) && "profile" in provisioned
+              ? parseProfile(provisioned.profile)
+              : null;
+          if (provisionedProfile && provisionedProfile.id === userId) {
+            profile = provisionedProfile;
+          }
+        } catch (provisionError) {
+          console.warn(
+            "[Profile Provisioning Notice]:",
+            getErrorMessage(provisionError),
+          );
+        }
+      }
+
+      if (!profile) {
+        profile = buildFallbackProfile(userId, userRef.current);
+      }
+
+      if (
+        activeUserIdRef.current !== userId ||
+        latestLoadIdRef.current !== loadId
+      ) {
+        return;
+      }
+
+      let coachRequest: CoachRequest | null = null;
+      if (requestResult.error) {
+        console.warn(
+          "[Coach Request Load Notice]:",
+          requestResult.error.message,
+        );
+      } else {
+        try {
+          coachRequest = parseCoachRequest(requestResult.data);
+        } catch (coachError) {
+          console.warn(
+            "[Coach Request Load Notice]:",
+            getErrorMessage(coachError),
+          );
+        }
+      }
+
+      setQueryState({ userId, profile, coachRequest });
       setLoadError(null);
     } catch (loadError) {
       if (

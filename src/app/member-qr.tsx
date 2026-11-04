@@ -6,6 +6,7 @@ import { createQrPayload, currentTotpCounter, generateTotp, generateTotpSecret, 
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
 import { Feather } from "@expo/vector-icons";
+import { useAuth } from "@clerk/expo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
@@ -104,6 +105,7 @@ export default function MemberQRScreen() {
   const { isSigningOut, logout } = useLogout();
   const { profile, isLoading: profileLoading, error: profileError } = useMemberProfile();
   const { provision } = useAttendance();
+  const { getToken } = useAuth();
 
   const [secret, setSecret] = useState<string | null>(null);
   const [token, setToken] = useState("");
@@ -259,6 +261,15 @@ export default function MemberQRScreen() {
             if (!isCurrent()) return;
           }
 
+          // Explicitly request the Clerk JWT template the Supabase Edge
+          // Functions validate so the check-in/QR pass requests never reach
+          // the server with the default (RS256) session token, which the
+          // attendance verifier rejects as an invalid algorithm.
+          const token =
+            (await getToken({ template: "supabase" })) ?? (await getToken());
+          if (!token) throw new Error("Could not load a valid session token.");
+          setToken(token);
+
           const generated = await generateRef.current(stored, memberId, generation);
           if (!isCurrent()) return;
           if (!generated) throw new Error("Could not generate your secure QR pass.");
@@ -267,6 +278,8 @@ export default function MemberQRScreen() {
 
           // The local pass is usable immediately; server provisioning is a
           // bounded background sync and cannot gate or invalidate its display.
+          // The token was already fetched with the Supabase template above so
+          // the provision call carries a verifier-compatible session token.
           syncProvisioningRef.current(stored, memberId, generation);
         } catch (error) {
           console.error("[TOTP Provisioning Error]:", error);
@@ -286,7 +299,7 @@ export default function MemberQRScreen() {
       cancelled = true;
       if (passGenerationRef.current === generation) passGenerationRef.current += 1;
     };
-  }, [memberId, retryCount]);
+  }, [memberId, retryCount, getToken]);
 
   // Countdown based on the real clock, so it stays accurate after the app
   // has been in the background.
@@ -343,7 +356,11 @@ export default function MemberQRScreen() {
   const progress = Math.max(0, Math.min(secondsLeft / PASS_LIFETIME, 1));
 
   return (
-    <SubscriptionPaywall requireAppAccess>
+    <SubscriptionPaywall
+      requireAppAccess
+      appAccessTitle="Subscription Required to Generate QR"
+      appAccessMessage="An active App subscription is required to generate and refresh your QR check-in pass. Subscribe or renew below, then generate your pass again."
+    >
       <SafeAreaView style={styles.safeArea} edges={["top"]}>
         <View style={styles.mainContainer}>
         <ScrollView

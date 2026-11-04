@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/expo";
+import { useAuth, useUser } from "@clerk/expo";
 import {
   FunctionsFetchError,
   FunctionsHttpError,
@@ -6,6 +6,10 @@ import {
 } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
+import {
+  useSubscriptionAccess,
+  type SubscriptionAccessData,
+} from "@/hooks/use-subscription-access";
 import { createMemberSupabaseClient } from "@/utils/supabase";
 
 export type AttendanceRecord = {
@@ -23,15 +27,58 @@ export type AttendanceScanResult = {
   member?: { id: string; name: string };
   timestamp?: string;
 };
+export type AttendanceRole = "member" | "staff" | "admin";
 
 const PROVISION_REQUEST_TIMEOUT_MS = 9_000;
+const ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE =
+  "An active App subscription is required to load attendance history.";
+
+// Mirrors the paywall rule: a subscription is only usable while active and
+// unexpired. The attendance Edge Function rejects unpaid accounts with 401, so
+// requests are skipped instead of being allowed to fail.
+function hasActiveAppSubscription(
+  data: SubscriptionAccessData | null,
+): boolean {
+  const subscription = data?.appSubscription;
+  if (!subscription?.active || !subscription.expiresAt) return false;
+  const expiry = Date.parse(subscription.expiresAt);
+  return Number.isFinite(expiry) && expiry > Date.now();
+}
+
+function getAttendanceRole(value: unknown): AttendanceRole {
+  if (value === "admin") return "admin";
+  if (value === "staff" || value === "coach" || value === "trainer") {
+    return "staff";
+  }
+  return "member";
+}
 
 export function useAttendance() {
   const { getToken, isSignedIn } = useAuth();
+  const { user } = useUser();
+  const role = getAttendanceRole(
+    (user?.publicMetadata as Record<string, unknown> | undefined)?.role,
+  );
+
+  // Always request the Clerk JWT template Supabase validates. If the template
+  // is not configured yet, fall back to the default session token.
+  const getSupabaseToken = useCallback(async () => {
+    try {
+      const templateToken = await getToken({ template: "supabase" });
+      if (templateToken) return templateToken;
+    } catch (error) {
+      console.warn(
+        "[Attendance Token Notice]:",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    return getToken();
+  }, [getToken]);
+
   const supabase = useMemo(() => {
     if (!isSignedIn) return null;
     try {
-      return createMemberSupabaseClient(() => getToken({ template: "supabase" }));
+      return createMemberSupabaseClient(getSupabaseToken);
     } catch (error) {
       console.error("[Attendance Client Initialization Error]", {
         message: error instanceof Error ? error.message : String(error),
@@ -40,7 +87,7 @@ export function useAttendance() {
       });
       return null;
     }
-  }, [getToken, isSignedIn]);
+  }, [getSupabaseToken, isSignedIn]);
 
   const invoke = useCallback(async <T,>(
     body: Record<string, unknown>,
@@ -141,38 +188,75 @@ export function useAttendance() {
     invoke<{ records: AttendanceRecord[] }>({ action: "history", ...(memberId ? { memberId } : {}) }), [invoke]);
   const staffHistory = useCallback(() =>
     invoke<{ records: StaffAttendanceRecord[] }>({ action: "staff_history" }), [invoke]);
-  return { provision, scan, history, staffHistory };
+  return { provision, scan, history, staffHistory, role };
 }
 
 export function useStaffAttendanceHistory() {
   const { staffHistory } = useAttendance();
+  const access = useSubscriptionAccess();
   const [records, setRecords] = useState<StaffAttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
-  const refetch = useCallback(async () => {
+  // Wait for the subscription check so an unpaid account never fires the
+  // request that would come back as a 401. If the subscription status cannot be
+  // loaded, the request still runs and fails with its own message.
+  const subscriptionPending = !access.isLoaded ||
+    (access.isSignedIn && access.isLoading);
+  // Admins are not billed through the member plans, so only member and coach
+  // accounts are gated on an active App subscription.
+  const subscriptionBlocked = access.isSignedIn && access.data !== null &&
+    (access.data.role === "member" || access.data.role === "coach") &&
+    !hasActiveAppSubscription(access.data);
+
+  const refetch = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     const currentRequest = ++requestId.current;
-    setIsLoading(true);
-    setError(null);
+    if (subscriptionPending) {
+      if (!silent) setIsLoading(true);
+      return;
+    }
+    if (!access.isSignedIn || subscriptionBlocked) {
+      if (currentRequest === requestId.current) setIsLoading(false);
+      if (!silent) {
+        setError(
+          access.isSignedIn
+            ? ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE
+            : "Sign in to view attendance history.",
+        );
+      }
+      return;
+    }
+    if (!silent) setIsLoading(true);
     try {
       const result = await staffHistory();
       if (!Array.isArray(result.records)) throw new Error("Attendance history returned invalid data.");
-      if (currentRequest === requestId.current) setRecords(result.records);
-    } catch (cause) {
       if (currentRequest === requestId.current) {
-        setRecords([]);
-        setError(cause instanceof Error ? cause.message : "Could not load attendance history.");
+        setRecords(result.records);
+        setError(null);
       }
+    } catch (cause) {
+      if (currentRequest !== requestId.current) return;
+      if (silent) {
+        // Background refreshes keep the last known records and never turn into
+        // a screen-wide error state.
+        console.warn(
+          "[Attendance Background Refresh Notice]:",
+          cause instanceof Error ? cause.message : String(cause),
+        );
+        return;
+      }
+      setError(cause instanceof Error ? cause.message : "Could not load attendance history.");
     } finally {
       if (currentRequest === requestId.current) setIsLoading(false);
     }
-  }, [staffHistory]);
+  }, [access.isSignedIn, staffHistory, subscriptionBlocked, subscriptionPending]);
 
   useEffect(() => {
     let active = true;
     void Promise.resolve().then(async () => {
-      if (active) await refetch();
+      if (active) await refetch({ silent: true });
     });
     return () => {
       active = false;
@@ -185,34 +269,66 @@ export function useStaffAttendanceHistory() {
 
 export function useAttendanceHistory(memberId?: string) {
   const { history } = useAttendance();
+  const access = useSubscriptionAccess();
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
-  const refetch = useCallback(async () => {
+  const subscriptionPending = !access.isLoaded ||
+    (access.isSignedIn && access.isLoading);
+  const subscriptionBlocked = access.isSignedIn && access.data !== null &&
+    (access.data.role === "member" || access.data.role === "coach") &&
+    !hasActiveAppSubscription(access.data);
+
+  const refetch = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     const currentRequest = ++requestId.current;
-    setIsLoading(true);
-    setError(null);
+    if (subscriptionPending) {
+      if (!silent) setIsLoading(true);
+      return;
+    }
+    if (!access.isSignedIn || subscriptionBlocked) {
+      if (currentRequest === requestId.current) setIsLoading(false);
+      if (!silent) {
+        setError(
+          access.isSignedIn
+            ? ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE
+            : "Sign in to view attendance history.",
+        );
+      }
+      return;
+    }
+    if (!silent) setIsLoading(true);
     try {
       const result = await history(memberId);
       if (!Array.isArray(result.records)) throw new Error("Attendance history returned invalid data.");
-      if (currentRequest === requestId.current) setRecords(result.records);
-    } catch (cause) {
       if (currentRequest === requestId.current) {
-        setRecords([]);
-        setError(cause instanceof Error ? cause.message : "Could not load attendance history.");
+        setRecords(result.records);
+        setError(null);
       }
+    } catch (cause) {
+      if (currentRequest !== requestId.current) return;
+      if (silent) {
+        // Background refreshes keep the last known records and never turn into
+        // a screen-wide error state.
+        console.warn(
+          "[Attendance Background Refresh Notice]:",
+          cause instanceof Error ? cause.message : String(cause),
+        );
+        return;
+      }
+      setError(cause instanceof Error ? cause.message : "Could not load attendance history.");
     } finally {
       if (currentRequest === requestId.current) setIsLoading(false);
     }
-  }, [history, memberId]);
+  }, [access.isSignedIn, history, memberId, subscriptionBlocked, subscriptionPending]);
 
   useEffect(() => {
     let active = true;
     void Promise.resolve().then(async () => {
       if (!active) return;
-      await refetch();
+      await refetch({ silent: true });
     });
     return () => {
       active = false;

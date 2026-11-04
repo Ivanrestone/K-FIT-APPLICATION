@@ -13,7 +13,7 @@ type ClerkJwk = JsonWebKey & {
   use?: string;
 };
 type JwkSet = { keys?: ClerkJwk[] };
-type ClerkJwtAlgorithm = "RS256" | "EdDSA";
+type ClerkJwtAlgorithm = "RS256" | "ES256" | "EdDSA";
 let jwksCache: { fetchedAt: number; keys: ClerkJwk[] } | null = null;
 
 function base64UrlBytes(value: string): Uint8Array {
@@ -41,7 +41,10 @@ export async function verifyClerkSession(request: Request): Promise<{ userId: st
   try {
     const header = decodeJson<{ alg?: unknown; kid?: unknown }>(segments[0]);
     const claims = decodeJson<JwtClaims>(segments[1]);
-    if ((header.alg !== "RS256" && header.alg !== "EdDSA") || typeof header.kid !== "string") {
+    if (
+      (header.alg !== "RS256" && header.alg !== "ES256" && header.alg !== "EdDSA") ||
+      typeof header.kid !== "string"
+    ) {
       return { userId: "", error: "Session token algorithm is invalid." };
     }
     const algorithm = header.alg as ClerkJwtAlgorithm;
@@ -74,6 +77,7 @@ export async function verifyClerkSession(request: Request): Promise<{ userId: st
 function isCompatibleSigningKey(jwk: ClerkJwk, algorithm: ClerkJwtAlgorithm): boolean {
   if ((jwk.use && jwk.use !== "sig") || (jwk.alg && jwk.alg !== algorithm)) return false;
   if (algorithm === "RS256") return jwk.kty === "RSA";
+  if (algorithm === "ES256") return jwk.kty === "EC" && jwk.crv === "P-256";
   return jwk.kty === "OKP" && jwk.crv === "Ed25519";
 }
 
@@ -84,7 +88,9 @@ async function verifySignature(
 ): Promise<boolean> {
   const importAlgorithm = algorithm === "RS256"
     ? { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }
-    : { name: "Ed25519" };
+    : algorithm === "ES256"
+      ? { name: "ECDSA", namedCurve: "P-256" }
+      : { name: "Ed25519" };
   const key = await crypto.subtle.importKey("jwk", jwk, importAlgorithm, false, ["verify"]);
   const signature = base64UrlBytes(segments[2]);
   const signatureBuffer = new ArrayBuffer(signature.length);
@@ -92,8 +98,18 @@ async function verifySignature(
   const message = new TextEncoder().encode(`${segments[0]}.${segments[1]}`);
   const messageBuffer = new ArrayBuffer(message.length);
   new Uint8Array(messageBuffer).set(message);
-  const verifyAlgorithm = algorithm === "RS256" ? "RSASSA-PKCS1-v1_5" : "Ed25519";
-  return crypto.subtle.verify(verifyAlgorithm, key, signatureBuffer, messageBuffer);
+  if (algorithm === "RS256") {
+    return crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, signatureBuffer, messageBuffer);
+  }
+  if (algorithm === "ES256") {
+    return crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      key,
+      signatureBuffer,
+      messageBuffer,
+    );
+  }
+  return crypto.subtle.verify("Ed25519", key, signatureBuffer, messageBuffer);
 }
 
 async function loadJwks(url: string): Promise<ClerkJwk[]> {

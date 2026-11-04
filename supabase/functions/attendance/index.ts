@@ -73,10 +73,15 @@ async function handle(request: Request): Promise<Response> {
   const { data: caller, error: callerError } = await admin.from("users")
     .select("id, role").eq("id", auth.userId).maybeSingle();
   if (callerError) return json({ error: "Could not verify account permissions." }, 503);
-  if (!caller || !["member", "coach", "admin"].includes(caller.role)) {
+  if (!caller) {
     return json({ error: "Account is not provisioned for attendance." }, 403);
   }
-  const role = caller.role as Role;
+  const role: Role =
+    caller.role === "admin"
+      ? "admin"
+      : caller.role === "coach"
+        ? "coach"
+        : "member";
 
   if (body.action === "provision") {
     if (role !== "member") return json({ error: "Only members can provision a pass." }, 403);

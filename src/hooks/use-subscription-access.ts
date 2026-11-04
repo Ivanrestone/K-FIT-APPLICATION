@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/expo";
+import { useAuth, useUser } from "@clerk/expo";
 import { createMemberSupabaseClient } from "@/utils/supabase";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,11 +18,13 @@ export type SubscriptionPeriod = {
   expiresAt: string | null;
   cancelledAt: string | null;
 };
+export type SubscriptionStatus = "active" | "inactive";
 
 export type SubscriptionAccessData = {
   userId: string;
-  role: SubscriptionRole | null;
+  role: SubscriptionRole;
   isProvisioned: boolean;
+  subscriptionStatus: SubscriptionStatus;
   plans: PricingPlan[];
   appSubscription: SubscriptionPeriod | null;
   gymSubscription: SubscriptionPeriod | null;
@@ -39,10 +41,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseRole(value: unknown): SubscriptionRole | null {
+  if (value === "trainer") {
+    return "coach";
+  }
   return value === "member" || value === "coach" || value === "admin"
     ? value
     : null;
 }
+
+function hasMissingRole(value: unknown): boolean {
+  return value === null || value === undefined || value === "";
+}
+
+const INACTIVE_SUBSCRIPTION: SubscriptionPeriod = {
+  active: false,
+  expiresAt: null,
+  cancelledAt: null,
+};
 
 function parseAmount(value: unknown): number | null {
   const amount = typeof value === "string" ? Number(value) : value;
@@ -111,8 +126,15 @@ function getErrorMessage(error: unknown): string {
 
 export function useSubscriptionAccess() {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  const { user } = useUser();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
+  const metadataRoleRef = useRef<unknown>(undefined);
+  useEffect(() => {
+    metadataRoleRef.current = (
+      user?.publicMetadata as Record<string, unknown> | undefined
+    )?.role;
+  }, [user]);
   const supabaseConfigured = Boolean(
     process.env.EXPO_PUBLIC_SUPABASE_URL &&
       process.env.EXPO_PUBLIC_SUPABASE_KEY,
@@ -160,7 +182,11 @@ export function useSubscriptionAccess() {
     const loadId = ++latestLoadIdRef.current;
     try {
       const [profileResult, plansResult] = await Promise.all([
-        supabase.from("users").select("role").maybeSingle(),
+        supabase
+          .from("users")
+          .select("role")
+          .eq("id", userId)
+          .maybeSingle(),
         supabase
           .from("pricing_plans")
           .select(
@@ -169,19 +195,39 @@ export function useSubscriptionAccess() {
           .eq("is_active", true),
       ]);
 
+      // A role read failure or an empty role is not fatal. Subscriptions keep
+      // working with the Clerk role, defaulting to member when nothing is set.
       if (profileResult.error) {
-        throw new Error("Could not load your account role.");
+        console.warn(
+          "[Subscription Role Load Notice]:",
+          profileResult.error.message,
+        );
       }
       if (plansResult.error) {
         throw new Error("Could not load current subscription prices.");
       }
 
-      const role = profileResult.data
+      const role: SubscriptionRole = (profileResult.data
         ? parseRole(profileResult.data.role)
-        : null;
-      const isProvisioned = profileResult.data !== null && role !== null;
-      if (profileResult.data && !role) {
-        throw new Error("Your account role is not configured for subscriptions.");
+        : null) ??
+        parseRole(metadataRoleRef.current) ??
+        "member";
+      const isProvisioned = profileResult.data !== null;
+
+      if (
+        profileResult.data &&
+        hasMissingRole(profileResult.data.role)
+      ) {
+        const { error: roleRepairError } = await supabase
+          .from("users")
+          .update({ role: "member" })
+          .eq("id", userId);
+        if (roleRepairError) {
+          console.warn(
+            "[Subscription Role Repair Notice]:",
+            roleRepairError.message,
+          );
+        }
       }
 
       const parsedPlans = (plansResult.data ?? []).map((plan: unknown) =>
@@ -201,25 +247,27 @@ export function useSubscriptionAccess() {
         const appResult = await supabase
           .from("subscriptions_app")
           .select("active, expires_at, cancelled_at")
+          .eq("user_id", userId)
           .maybeSingle();
         if (appResult.error) {
           throw new Error("Could not load App subscription status.");
         }
         appSubscription = appResult.data
           ? parseSubscription(appResult.data)
-          : null;
+          : { ...INACTIVE_SUBSCRIPTION };
 
         if (role === "member") {
           const gymResult = await supabase
             .from("subscriptions_gym")
             .select("active, expires_at, cancelled_at")
+            .eq("user_id", userId)
             .maybeSingle();
           if (gymResult.error) {
             throw new Error("Could not load Gym subscription status.");
           }
           gymSubscription = gymResult.data
             ? parseSubscription(gymResult.data)
-            : null;
+            : { ...INACTIVE_SUBSCRIPTION };
         }
       }
 
@@ -227,6 +275,7 @@ export function useSubscriptionAccess() {
         userId,
         role,
         isProvisioned,
+        subscriptionStatus: appSubscription?.active ? "active" : "inactive",
         plans,
         appSubscription,
         gymSubscription,

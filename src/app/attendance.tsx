@@ -101,7 +101,7 @@ export default function AttendanceScreen() {
   const capacityPct = Math.min(100, Math.round((inClub / CAPACITY) * 100));
 
   useEffect(() => {
-    const timer = setInterval(() => void refetch(), 30_000);
+    const timer = setInterval(() => void refetch({ silent: true }), 30_000);
     return () => clearInterval(timer);
   }, [refetch]);
 

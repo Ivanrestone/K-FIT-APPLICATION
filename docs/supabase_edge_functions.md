@@ -33,10 +33,16 @@ npx supabase functions list --project-ref fbkqieclbrypiyufzhnv
 ```
 
 ### View Live Logs for an Edge Function
-To view real-time execution logs and error messages from the remote function:
-```bash
-npx supabase functions logs provision-user --project-ref fbkqieclbrypiyufzhnv
+Supabase CLI 3.x removed the `supabase functions logs` command, so function logs are only available in the Dashboard. Open the function, then pick a tab:
+
 ```
+https://supabase.com/dashboard/project/fbkqieclbrypiyufzhnv/functions/attendance/logs
+```
+
+- **Invocations** — request/response data, status codes, and execution duration.
+- **Logs** — `console.log` / `console.warn` / `console.error` output, uncaught exceptions with stack traces, and boot/shutdown events.
+
+While developing locally, `npx supabase functions serve` prints the same messages to your terminal.
 
 ---
 
