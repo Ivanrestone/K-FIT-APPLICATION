@@ -1,5 +1,5 @@
 import { createAdminClient } from "../_shared/server-client.ts";
-import { verifyClerkSession } from "../_shared/attendance-auth.ts";
+import { verifyClerkToken } from "../_shared/attendance-auth.ts";
 import { counterIsCurrent, decodeBase32, parseAttendanceQr, verifyTotp } from "../_shared/attendance-totp.ts";
 
 const corsHeaders = {
@@ -59,7 +59,7 @@ async function encryptSecret(secret: string): Promise<string> {
 async function handle(request: Request): Promise<Response> {
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
-  const auth = await verifyClerkSession(request);
+  const auth = await verifyClerkToken(request);
   if (!auth.userId) return json({ error: auth.error ?? "Authentication failed." }, 401);
   let body: unknown;
   try { body = await request.json(); } catch { return json({ error: "Request body must be valid JSON." }, 400); }

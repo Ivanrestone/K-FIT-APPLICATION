@@ -26,6 +26,10 @@ function decodeJson<T>(value: string): T {
   return JSON.parse(new TextDecoder().decode(base64UrlBytes(value))) as T;
 }
 
+export async function verifyClerkToken(request: Request): Promise<{ userId: string; error?: string }> {
+  return verifyClerkSession(request);
+}
+
 export async function verifyClerkSession(request: Request): Promise<{ userId: string; error?: string }> {
   const match = /^Bearer\s+([A-Za-z0-9._-]+)$/i.exec(request.headers.get("authorization") ?? "");
   if (!match) return { userId: "", error: "A signed-in session is required." };

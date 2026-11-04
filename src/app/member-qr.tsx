@@ -2,6 +2,7 @@ import MemberBottomNav from "@/components/MemberBottomNav";
 import { KFitColors } from "@/constants/theme";
 import SubscriptionPaywall from "@/components/SubscriptionPaywall";
 import { useAttendance } from "@/hooks/use-attendance";
+import { useSubscriptionAccess } from "@/hooks/use-subscription-access";
 import { createQrPayload, currentTotpCounter, generateTotp, generateTotpSecret, TOTP_PERIOD_SECONDS } from "@/utils/totp";
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
@@ -106,6 +107,7 @@ export default function MemberQRScreen() {
   const { profile, isLoading: profileLoading, error: profileError } = useMemberProfile();
   const { provision } = useAttendance();
   const { getToken } = useAuth();
+  const subscription = useSubscriptionAccess();
 
   const [secret, setSecret] = useState<string | null>(null);
   const [token, setToken] = useState("");
@@ -225,7 +227,12 @@ export default function MemberQRScreen() {
   useEffect(() => {
     generateRef.current = generate;
     syncProvisioningRef.current = syncProvisioning;
-  }, [generate, syncProvisioning]);
+  }, [generate, syncProvisioning]);  // Early subscription guard: skip the TOTP Edge Function request entirely when
+  // the App subscription is not active, so the function never receives a token
+  // and cannot return a 401 (invalid algorithm) or 403 (staff access). The user
+  // still sees a local banner instead of a crash or red LogBox toast.
+  const subscriptionActive =
+    subscription.data?.subscriptionStatus === "active";
 
   // Load or create a device secret, persist it before server provisioning so a
   // retry after a network failure reuses the same secret.
@@ -245,6 +252,23 @@ export default function MemberQRScreen() {
       setIsSyncingProvisioning(false);
       setSecondsLeft(PASS_LIFETIME);
       if (!memberId) {
+        setIsProvisioning(false);
+        return;
+      }
+
+      // The TOTP pass is only usable with an active App subscription. When the
+      // subscription is inactive or the check is still loading we cut the request
+      // here instead of firing the Edge Function with a stale token and getting
+      // a 401/403 red LogBox error toast.
+      if (!subscriptionActive) {
+        setToken("");
+        setPassError(
+          subscription.data?.subscriptionStatus === "inactive"
+            ? "Active subscription required to access gate pass"
+            : subscription.data === null
+              ? "Subscription status is unavailable. Check your connection and retry."
+              : "Active subscription required to access gate pass")
+        ;
         setIsProvisioning(false);
         return;
       }
@@ -294,12 +318,12 @@ export default function MemberQRScreen() {
         }
       })();
     });
-
+    
     return () => {
       cancelled = true;
       if (passGenerationRef.current === generation) passGenerationRef.current += 1;
     };
-  }, [memberId, retryCount, getToken]);
+  }, [memberId, retryCount, getToken, subscriptionActive, subscription.data]);
 
   // Countdown based on the real clock, so it stays accurate after the app
   // has been in the background.
@@ -402,6 +426,14 @@ export default function MemberQRScreen() {
 
           {/* QR card */}
           <View style={styles.qrCard}>
+            {!!passError && subscription.data?.subscriptionStatus !== "active" ? (
+              <View style={styles.banner}>
+                <Feather name="alert-circle" size={18} color={KFitColors.error} />
+                <Text style={styles.bannerText}>
+                  Active subscription required to access gate pass
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.qrFrame}>
               {hidden ? (
                 <TouchableOpacity
@@ -766,6 +798,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: KFitColors.text,
+  },
+
+  /* Banner */
+  banner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 12,
+    backgroundColor: KFitColors.error + "1A",
+    borderWidth: 1,
+    borderColor: KFitColors.error + "40",
+    borderRadius: 12,
+  },
+  bannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.error,
   },
 
   /* Sections & cards */
