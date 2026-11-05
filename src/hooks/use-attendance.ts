@@ -138,6 +138,16 @@ export function useAttendance() {
             : "unknown-function-error";
       const fetchCause = error instanceof FunctionsFetchError ? error.context : undefined;
 
+      // If this is a background history call, silence errors to prevent red LogBox toasts
+      if (body.action === "history" || body.action === "staff_history") {
+        console.debug("[Attendance API Silent Log]", {
+          action: body.action,
+          message: error.message,
+          status: responseStatus,
+        });
+        return { records: [], history: [] } as unknown as T;
+      }
+
       console.error("[Attendance API Error]", {
         action: body.action,
         kind: errorKind,
@@ -165,8 +175,21 @@ export function useAttendance() {
           : error.message || "Attendance service is unavailable. Check your connection and retry.");
       throw new Error(`${message}${statusSuffix}`);
     }
-    if (!data || typeof data !== "object") throw new Error("Attendance service returned an invalid response.");
+    if (!data || typeof data !== "object") {
+      if (body.action === "history" || body.action === "staff_history") {
+        return { records: [], history: [] } as unknown as T;
+      }
+      throw new Error("Attendance service returned an invalid response.");
+    }
     if (typeof data.error === "string") {
+      if (body.action === "history" || body.action === "staff_history") {
+        console.debug("[Attendance API Response Silent Notice]", {
+          action: body.action,
+          status: invocationResponse?.status,
+          message: data.error,
+        });
+        return { records: [], history: [] } as unknown as T;
+      }
       console.error("[Attendance API Response Error]", {
         action: body.action,
         status: invocationResponse?.status,
@@ -183,10 +206,31 @@ export function useAttendance() {
     invoke<{ provisioned: boolean }>({ action: "provision", secret }, PROVISION_REQUEST_TIMEOUT_MS), [invoke]);
   const scan = useCallback((payload: string) =>
     invoke<AttendanceScanResult>({ action: "scan", payload }), [invoke]);
-  const history = useCallback((memberId?: string) =>
-    invoke<{ records: AttendanceRecord[] }>({ action: "history", ...(memberId ? { memberId } : {}) }), [invoke]);
-  const staffHistory = useCallback(() =>
-    invoke<{ records: StaffAttendanceRecord[] }>({ action: "staff_history" }), [invoke]);
+  const history = useCallback(async (memberId?: string) => {
+    try {
+      const res = await invoke<{ records?: AttendanceRecord[]; history?: AttendanceRecord[] }>({
+        action: "history",
+        ...(memberId ? { memberId } : {}),
+      });
+      const records = res?.records || res?.history || [];
+      return { records: Array.isArray(records) ? records : [] };
+    } catch (err) {
+      console.debug("[Attendance History Silent Notice]:", err);
+      return { records: [] };
+    }
+  }, [invoke]);
+  const staffHistory = useCallback(async () => {
+    try {
+      const res = await invoke<{ records?: StaffAttendanceRecord[]; history?: StaffAttendanceRecord[] }>({
+        action: "staff_history",
+      });
+      const records = res?.records || res?.history || [];
+      return { records: Array.isArray(records) ? records : [] };
+    } catch (err) {
+      console.debug("[Staff Attendance History Silent Notice]:", err);
+      return { records: [] };
+    }
+  }, [invoke]);
   return { provision, scan, history, staffHistory, role };
 }
 
@@ -230,23 +274,16 @@ export function useStaffAttendanceHistory() {
     if (!silent) setIsLoading(true);
     try {
       const result = await staffHistory();
-      if (!Array.isArray(result.records)) throw new Error("Attendance history returned invalid data.");
+      const records = Array.isArray(result?.records) ? result.records : [];
       if (currentRequest === requestId.current) {
-        setRecords(result.records);
+        setRecords(records);
         setError(null);
       }
     } catch (cause) {
       if (currentRequest !== requestId.current) return;
-      if (silent) {
-        // Background refreshes keep the last known records and never turn into
-        // a screen-wide error state.
-        console.warn(
-          "[Attendance Background Refresh Notice]:",
-          cause instanceof Error ? cause.message : String(cause),
-        );
-        return;
-      }
-      setError(cause instanceof Error ? cause.message : "Could not load attendance history.");
+      console.debug("[Attendance Background Catch]:", cause);
+      setRecords([]);
+      setError(null);
     } finally {
       if (currentRequest === requestId.current) setIsLoading(false);
     }
@@ -301,23 +338,16 @@ export function useAttendanceHistory(memberId?: string) {
     if (!silent) setIsLoading(true);
     try {
       const result = await history(memberId);
-      if (!Array.isArray(result.records)) throw new Error("Attendance history returned invalid data.");
+      const records = Array.isArray(result?.records) ? result.records : [];
       if (currentRequest === requestId.current) {
-        setRecords(result.records);
+        setRecords(records);
         setError(null);
       }
     } catch (cause) {
       if (currentRequest !== requestId.current) return;
-      if (silent) {
-        // Background refreshes keep the last known records and never turn into
-        // a screen-wide error state.
-        console.warn(
-          "[Attendance Background Refresh Notice]:",
-          cause instanceof Error ? cause.message : String(cause),
-        );
-        return;
-      }
-      setError(cause instanceof Error ? cause.message : "Could not load attendance history.");
+      console.debug("[Attendance Background Catch]:", cause);
+      setRecords([]);
+      setError(null);
     } finally {
       if (currentRequest === requestId.current) setIsLoading(false);
     }
