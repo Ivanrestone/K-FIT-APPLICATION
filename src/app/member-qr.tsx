@@ -2,7 +2,7 @@ import MemberBottomNav from "@/components/MemberBottomNav";
 import { KFitColors } from "@/constants/theme";
 import SubscriptionPaywall from "@/components/SubscriptionPaywall";
 import { useAttendance } from "@/hooks/use-attendance";
-import { useSubscriptionAccess } from "@/hooks/use-subscription-access";
+import { hasActiveSubscription, useSubscriptionAccess } from "@/hooks/use-subscription-access";
 import { createQrPayload, currentTotpCounter, generateTotp, generateTotpSecret, TOTP_PERIOD_SECONDS } from "@/utils/totp";
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
@@ -224,15 +224,20 @@ export default function MemberQRScreen() {
   // a provider changes callback identity during a render.
   const generateRef = useRef(generate);
   const syncProvisioningRef = useRef(syncProvisioning);
+  const getTokenRef = useRef(getToken);
   useEffect(() => {
     generateRef.current = generate;
     syncProvisioningRef.current = syncProvisioning;
-  }, [generate, syncProvisioning]);  // Early subscription guard: skip the TOTP Edge Function request entirely when
-  // the App subscription is not active, so the function never receives a token
+    getTokenRef.current = getToken;
+  }, [generate, getToken, syncProvisioning]);
+
+  // Early subscription guard: skip the TOTP Edge Function request entirely when
+  // the subscription is not active, so the function never receives a token
   // and cannot return a 401 (invalid algorithm) or 403 (staff access). The user
   // still sees a local banner instead of a crash or red LogBox toast.
   const subscriptionActive =
-    subscription.data?.subscriptionStatus === "active";
+    subscription.data?.subscriptionStatus === "active" ||
+    hasActiveSubscription(subscription.data);
 
   // Load or create a device secret, persist it before server provisioning so a
   // retry after a network failure reuses the same secret.
@@ -256,7 +261,7 @@ export default function MemberQRScreen() {
         return;
       }
 
-      // The TOTP pass is only usable with an active App subscription. When the
+      // The TOTP pass is only usable with an active subscription. When the
       // subscription is inactive or the check is still loading we cut the request
       // here instead of firing the Edge Function with a stale token and getting
       // a 401/403 red LogBox error toast.
@@ -290,7 +295,8 @@ export default function MemberQRScreen() {
           // the server with the default (RS256) session token, which the
           // attendance verifier rejects as an invalid algorithm.
           const token =
-            (await getToken({ template: "supabase" })) ?? (await getToken());
+            (await getTokenRef.current({ template: "supabase" })) ??
+            (await getTokenRef.current());
           if (!token) throw new Error("Could not load a valid session token.");
           setToken(token);
 
@@ -323,7 +329,7 @@ export default function MemberQRScreen() {
       cancelled = true;
       if (passGenerationRef.current === generation) passGenerationRef.current += 1;
     };
-  }, [memberId, retryCount, getToken, subscriptionActive, subscription.data]);
+  }, [memberId, retryCount, subscriptionActive]);
 
   // Countdown based on the real clock, so it stays accurate after the app
   // has been in the background.
@@ -426,7 +432,7 @@ export default function MemberQRScreen() {
 
           {/* QR card */}
           <View style={styles.qrCard}>
-            {!!passError && subscription.data?.subscriptionStatus !== "active" ? (
+            {!!passError && !subscriptionActive ? (
               <View style={styles.banner}>
                 <Feather name="alert-circle" size={18} color={KFitColors.error} />
                 <Text style={styles.bannerText}>

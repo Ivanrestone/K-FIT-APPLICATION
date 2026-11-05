@@ -41,7 +41,7 @@ const ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE =
 function hasActiveAppSubscription(
   data: SubscriptionAccessData | null,
 ): boolean {
-  return hasActiveSubscription(data?.appSubscription);
+  return hasActiveSubscription(data);
 }
 
 function getAttendanceRole(value: unknown): AttendanceRole {

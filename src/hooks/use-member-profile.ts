@@ -141,15 +141,22 @@ export function useMemberProfile() {
     userRef.current = user;
   }, [user]);
 
+  const getTokenRef = useRef(getToken);
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  const getAuthToken = useCallback(async () => {
+    if (!isSignedIn) return null;
+    return getTokenRef.current();
+  }, [isSignedIn]);
+
   const clientResult = useMemo(() => {
-    const getTokenRef = getToken;
     return {
-      client: createMemberSupabaseClient(() =>
-        isSignedIn ? getTokenRef() : Promise.resolve(null)
-      ),
+      client: createMemberSupabaseClient(getAuthToken),
       error: null,
     };
-  }, [isSignedIn, getToken]);
+  }, [getAuthToken]);
   const supabase = clientResult.client;
   const [queryState, setQueryState] = useState<ProfileQueryState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -312,20 +319,6 @@ export function useMemberProfile() {
 
   // Load the profile, requests, and coach request state once the supabase
   // client is ready, then refresh on subsequent mounts.
-  useEffect(() => {
-    if (!isLoaded || !isSignedIn || !userId || !supabase) {
-      return;
-    }
-    void load();
-  }, [isLoaded, isSignedIn, load, supabase, userId]);
-
-  useEffect(() => {
-    if (!isLoaded || !isSignedIn || !userId || !supabase) {
-      return;
-    }
-    void load();
-  }, [isLoaded, isSignedIn, load, supabase, userId]);
-
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !userId || !supabase) {
       return;

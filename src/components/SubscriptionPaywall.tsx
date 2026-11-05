@@ -304,9 +304,9 @@ function AuthenticatedSubscriptionPaywall({
 
   const data = access.data;
   // A future `expires_at` unlocks the app even when the `active` flag is stale;
-  // the dashboard children mount immediately instead of the paywall.
-  const hasAppAccess = hasActiveSubscription(data.appSubscription);
-  if (requireAppAccess && hasAppAccess) {
+  // having an active App or Gym subscription unlocks the protected screens.
+  const hasAccess = hasActiveSubscription(data);
+  if (requireAppAccess && hasAccess) {
     return <>{children}</>;
   }
 
