@@ -1,6 +1,7 @@
 import { useAuth, useUser } from "@clerk/expo";
 import { createMemberSupabaseClient } from "@/utils/supabase";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 
 export type SubscriptionPlanType = "app" | "gym";
 export type SubscriptionRole = "member" | "coach" | "admin";
@@ -19,6 +20,27 @@ export type SubscriptionPeriod = {
   cancelledAt: string | null;
 };
 export type SubscriptionStatus = "active" | "inactive";
+
+/**
+ * A plan grants access while it is flagged active or while its paid period has
+ * not lapsed yet. A future `expires_at` always wins, including plans that were
+ * cancelled but run to the end of the paid period.
+ */
+export function hasActiveSubscription(
+  subscription: SubscriptionPeriod | null | undefined,
+): boolean {
+  if (!subscription) {
+    return false;
+  }
+  if (subscription.active) {
+    return true;
+  }
+  if (!subscription.expiresAt) {
+    return false;
+  }
+  const expiry = Date.parse(subscription.expiresAt);
+  return Number.isFinite(expiry) && expiry > Date.now();
+}
 
 export type SubscriptionAccessData = {
   userId: string;
@@ -52,12 +74,6 @@ function parseRole(value: unknown): SubscriptionRole | null {
 function hasMissingRole(value: unknown): boolean {
   return value === null || value === undefined || value === "";
 }
-
-const INACTIVE_SUBSCRIPTION: SubscriptionPeriod = {
-  active: false,
-  expiresAt: null,
-  cancelledAt: null,
-};
 
 function parseAmount(value: unknown): number | null {
   const amount = typeof value === "string" ? Number(value) : value;
@@ -94,27 +110,23 @@ function parsePlan(value: unknown): PricingPlan | null {
   };
 }
 
+function parseDate(value: unknown): string | null {
+  return typeof value === "string" && Number.isFinite(Date.parse(value))
+    ? value
+    : null;
+}
+
+// Never discard a subscription row because one column is shaped unexpectedly:
+// dropping it turns a paid plan into "Not active".
 function parseSubscription(value: unknown): SubscriptionPeriod | null {
-  if (!isRecord(value) || typeof value.active !== "boolean") {
+  if (!isRecord(value)) {
     return null;
   }
 
-  const expiresAt = value.expires_at;
-  const cancelledAt = value.cancelled_at;
-  if (
-    (expiresAt !== null && typeof expiresAt !== "string") ||
-    (cancelledAt !== null && typeof cancelledAt !== "string") ||
-    (typeof expiresAt === "string" && !Number.isFinite(Date.parse(expiresAt))) ||
-    (typeof cancelledAt === "string" &&
-      !Number.isFinite(Date.parse(cancelledAt)))
-  ) {
-    throw new Error("Subscription status returned invalid dates.");
-  }
-
   return {
-    active: value.active,
-    expiresAt: typeof expiresAt === "string" ? expiresAt : null,
-    cancelledAt: typeof cancelledAt === "string" ? cancelledAt : null,
+    active: value.active === true || value.active === "true",
+    expiresAt: parseDate(value.expires_at),
+    cancelledAt: parseDate(value.cancelled_at),
   };
 }
 
@@ -127,8 +139,23 @@ function getErrorMessage(error: unknown): string {
 export function useSubscriptionAccess() {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
   const { user } = useUser();
-  const getTokenRef = useRef(getToken);
-  getTokenRef.current = getToken;
+  // Supabase RLS reads `auth.jwt() ->> 'sub'`, which only exists on the Clerk
+  // JWT template named `supabase`; the default Clerk session token is rejected
+  // (401/406) and makes a paid plan look inactive.
+  const getSupabaseToken = useCallback(async () => {
+    try {
+      const templateToken = await getToken({ template: "supabase" });
+      if (templateToken) {
+        return templateToken;
+      }
+    } catch (error) {
+      console.warn(
+        "[Subscription Token Notice]:",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    return getToken();
+  }, [getToken]);
   const metadataRoleRef = useRef<unknown>(undefined);
   useEffect(() => {
     metadataRoleRef.current = (
@@ -147,7 +174,7 @@ export function useSubscriptionAccess() {
       try {
         return {
           client: createMemberSupabaseClient(() =>
-            isSignedIn ? getTokenRef.current() : Promise.resolve(null)
+            isSignedIn ? getSupabaseToken() : Promise.resolve(null)
           ),
           error: null,
         };
@@ -158,7 +185,7 @@ export function useSubscriptionAccess() {
         };
       }
     },
-    [isSignedIn, supabaseConfigured],
+    [getSupabaseToken, isSignedIn, supabaseConfigured],
   );
   const supabase = clientResult.client;
   const [queryState, setQueryState] = useState<QueryState | null>(null);
@@ -203,16 +230,21 @@ export function useSubscriptionAccess() {
           profileResult.error.message,
         );
       }
+      // Price availability must not hide an already-paid subscription; only the
+      // checkout buttons depend on it.
       if (plansResult.error) {
-        throw new Error("Could not load current subscription prices.");
+        console.warn(
+          "[Subscription Plans Load Notice]:",
+          plansResult.error.message,
+        );
       }
 
-      const role: SubscriptionRole = (profileResult.data
+      let role: SubscriptionRole = (profileResult.data
         ? parseRole(profileResult.data.role)
         : null) ??
         parseRole(metadataRoleRef.current) ??
         "member";
-      const isProvisioned = profileResult.data !== null;
+      let isProvisioned = profileResult.data !== null;
 
       if (
         profileResult.data &&
@@ -240,42 +272,116 @@ export function useSubscriptionAccess() {
         (plan): plan is PricingPlan => plan !== null,
       );
 
-      let appSubscription: SubscriptionPeriod | null = null;
-      let gymSubscription: SubscriptionPeriod | null = null;
-
-      if (isProvisioned && (role === "member" || role === "coach")) {
-        const appResult = await supabase
-          .from("subscriptions_app")
-          .select("active, expires_at, cancelled_at")
-          .eq("user_id", userId)
-          .maybeSingle();
-        if (appResult.error) {
-          throw new Error("Could not load App subscription status.");
+      // Server-side snapshot used when the anon RLS path cannot read the rows
+      // (expired/missing Clerk JWT, or a token without the `sub` claim).
+      const loadServerSnapshot = async () => {
+        try {
+          const { data: snapshot, error: snapshotError } = await supabase
+            .functions.invoke("subscription-status", { body: {} });
+          if (snapshotError) {
+            console.warn(
+              "[Subscription Fallback Notice]:",
+              snapshotError.message,
+            );
+            return null;
+          }
+          if (!isRecord(snapshot)) {
+            return null;
+          }
+          return {
+            role: parseRole(snapshot.role),
+            isProvisioned: snapshot.isProvisioned === true,
+            app: parseSubscription(snapshot.app),
+            gym: parseSubscription(snapshot.gym),
+          };
+        } catch (fallbackError) {
+          console.warn(
+            "[Subscription Fallback Notice]:",
+            getErrorMessage(fallbackError),
+          );
+          return null;
         }
-        appSubscription = appResult.data
-          ? parseSubscription(appResult.data)
-          : { ...INACTIVE_SUBSCRIPTION };
+      };
 
-        if (role === "member") {
-          const gymResult = await supabase
-            .from("subscriptions_gym")
+      let appRaw: unknown = null;
+      let gymRaw: unknown = null;
+      let subscriptionError: string | null = null;
+
+      if (role === "member" || role === "coach") {
+        const [appResult, gymResult] = await Promise.all([
+          supabase
+            .from("subscriptions_app")
             .select("active, expires_at, cancelled_at")
             .eq("user_id", userId)
-            .maybeSingle();
-          if (gymResult.error) {
-            throw new Error("Could not load Gym subscription status.");
+            .maybeSingle(),
+          role === "member"
+            ? supabase
+              .from("subscriptions_gym")
+              .select("active, expires_at, cancelled_at")
+              .eq("user_id", userId)
+              .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+
+        appRaw = appResult.data;
+        gymRaw = gymResult.data;
+        subscriptionError = appResult.error?.message ??
+          gymResult.error?.message ??
+          null;
+        if (subscriptionError) {
+          console.warn("[Subscription Load Notice]:", subscriptionError);
+        }
+
+        // RLS failures and empty results both fall through to the Edge
+        // Function, which verifies the Clerk session and reads with the
+        // service role instead of trusting a client-side "no rows".
+        if (appResult.error || gymResult.error || (!appRaw && !gymRaw)) {
+          const snapshot = await loadServerSnapshot();
+          if (snapshot) {
+            appRaw = appRaw ?? snapshot.app;
+            gymRaw = gymRaw ?? snapshot.gym;
+            isProvisioned = isProvisioned || snapshot.isProvisioned;
+            if (!profileResult.data && snapshot.role) {
+              role = snapshot.role;
+            }
+          } else if (subscriptionError && !appRaw && !gymRaw) {
+            // Both the RLS read and the server fallback failed: report it
+            // instead of rendering a false "Not active".
+            throw new Error("Could not load subscription status.");
           }
-          gymSubscription = gymResult.data
-            ? parseSubscription(gymResult.data)
-            : { ...INACTIVE_SUBSCRIPTION };
         }
       }
+
+      const appSubscription = parseSubscription(appRaw);
+      const gymSubscription = role === "member"
+        ? parseSubscription(gymRaw)
+        : null;
+
+      console.log(
+        "[Subscription Debug] Clerk User ID:",
+        userId,
+        "App Sub:",
+        appSubscription,
+        "Gym Sub:",
+        gymSubscription,
+        "Error:",
+        subscriptionError,
+      );
+      console.log("[Subscription Debug] Evaluation:", {
+        role,
+        isProvisioned,
+        appActive: hasActiveSubscription(appSubscription),
+        appRaw,
+        gymRaw,
+      });
 
       const data: SubscriptionAccessData = {
         userId,
         role,
         isProvisioned,
-        subscriptionStatus: appSubscription?.active ? "active" : "inactive",
+        subscriptionStatus: hasActiveSubscription(appSubscription)
+          ? "active"
+          : "inactive",
         plans,
         appSubscription,
         gymSubscription,
@@ -296,6 +402,16 @@ export function useSubscriptionAccess() {
         return;
       }
       const message = getErrorMessage(error);
+      console.warn(
+        "[Subscription Debug] Clerk User ID:",
+        userId,
+        "App Sub:",
+        null,
+        "Gym Sub:",
+        null,
+        "Error:",
+        message,
+      );
       setLoadError({ userId, message });
       setQueryState((current) =>
         current?.data.userId === userId
@@ -354,6 +470,25 @@ export function useSubscriptionAccess() {
     );
     void load();
   }, [isSignedIn, load, supabase, userId]);
+
+  // PayMongo confirms payment in the system browser while the app is
+  // backgrounded, so re-read the Supabase subscription rows when the member
+  // returns to the app instead of waiting for a manual refresh.
+  useEffect(() => {
+    if (!isSignedIn || !userId) {
+      return;
+    }
+    let previousState = AppState.currentState;
+    const listener = AppState.addEventListener("change", (nextState) => {
+      const returnedToForeground = nextState === "active" &&
+        previousState !== "active";
+      previousState = nextState;
+      if (returnedToForeground) {
+        void load();
+      }
+    });
+    return () => listener.remove();
+  }, [isSignedIn, load, userId]);
 
   const currentQueryState = isSignedIn && queryState &&
       queryState.data.userId === userId

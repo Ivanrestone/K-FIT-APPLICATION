@@ -158,6 +158,11 @@ export type WebhookPaidSession = {
   paidAt: string;
 };
 
+const PAID_EVENT_TYPES = new Set([
+  "checkout_session.payment.paid",
+  "payment.paid",
+]);
+
 export function parseWebhookPaidSession(value: unknown): WebhookPaidSession | null {
   if (!isRecord(value) || !isRecord(value.data)) {
     return null;
@@ -166,26 +171,40 @@ export function parseWebhookPaidSession(value: unknown): WebhookPaidSession | nu
   const data = value.data;
   let eventType: string | null = null;
   let sessionObj: Record<string, unknown> | null = null;
+  let eventAttributes: Record<string, unknown> | null = null;
 
   if (isRecord(data.attributes) && typeof data.attributes.type === "string") {
     eventType = data.attributes.type;
+    eventAttributes = data.attributes;
     if (isRecord(data.attributes.data)) {
       sessionObj = data.attributes.data;
     }
   } else if (typeof data.type === "string") {
     eventType = data.type;
+    eventAttributes = isRecord(data.attributes) ? data.attributes : null;
     if (isRecord(data.data)) {
       sessionObj = data.data;
     }
   }
 
-  if (eventType !== "checkout_session.payment.paid" || !sessionObj) {
+  // `payment.paid` delivers the payment resource itself; `checkout_session.payment.paid`
+  // delivers the checkout session. Both expose their K-Fit metadata under
+  // data.attributes.data.attributes.metadata.
+  if (!eventType || !PAID_EVENT_TYPES.has(eventType) || !sessionObj) {
     return null;
   }
 
   const sessionId = typeof sessionObj.id === "string" ? sessionObj.id : "";
   const sessionAttributes = isRecord(sessionObj.attributes) ? sessionObj.attributes : {};
-  const metadata = isRecord(sessionAttributes.metadata) ? sessionAttributes.metadata : {};
+  const metadata = isRecord(sessionAttributes.metadata)
+    ? sessionAttributes.metadata
+    : isRecord(sessionAttributes.checkout_session) &&
+        isRecord(sessionAttributes.checkout_session.attributes) &&
+        isRecord(sessionAttributes.checkout_session.attributes.metadata)
+      ? sessionAttributes.checkout_session.attributes.metadata
+      : isRecord(eventAttributes) && isRecord(eventAttributes.metadata)
+        ? eventAttributes.metadata
+        : {};
 
   const rawUserId = metadata.user_id ?? metadata.kfit_user_id;
   const userId = typeof rawUserId === "string" ? rawUserId.trim() : null;
@@ -221,6 +240,14 @@ export function parseWebhookPaidSession(value: unknown): WebhookPaidSession | nu
       }
       paidAt = parsePaidAt(firstPayment.attributes.paid_at);
     }
+  }
+  // `payment.paid` carries amount and paid_at directly on the payment resource.
+  if (amountCentavos === null &&
+    typeof sessionAttributes.amount === "number" &&
+    Number.isSafeInteger(sessionAttributes.amount) &&
+    sessionAttributes.amount > 0
+  ) {
+    amountCentavos = sessionAttributes.amount;
   }
   if (!paidAt) {
     paidAt = parsePaidAt(sessionAttributes.paid_at) ?? new Date().toISOString();

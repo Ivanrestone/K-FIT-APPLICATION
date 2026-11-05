@@ -72,8 +72,11 @@ async function handleWebhook(request: Request): Promise<Response> {
         ? payload.data.attributes.type
         : payload.data.type;
 
-      if (eventType === "checkout_session.payment.paid") {
-        console.warn("Received paid checkout session without K-Fit metadata (likely a dashboard test event). Acknowledged.");
+      if (eventType === "checkout_session.payment.paid" || eventType === "payment.paid") {
+        console.warn(
+          "Received paid event without K-Fit metadata (likely a dashboard test event). Acknowledged.",
+          { eventType },
+        );
         return jsonResponse({
           received: true,
           ignored: true,

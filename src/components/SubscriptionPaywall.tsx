@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/expo";
 import { Button, Host } from "@expo/ui";
-import { useSubscriptionAccess, type PricingPlan, type SubscriptionPeriod, type SubscriptionPlanType } from "@/hooks/use-subscription-access";
+import { hasActiveSubscription, useSubscriptionAccess, type PricingPlan, type SubscriptionPeriod, type SubscriptionPlanType } from "@/hooks/use-subscription-access";
 import { KFitColors, Spacing } from "@/constants/theme";
 import { Linking } from "react-native";
 import { useCallback, useState, type ReactNode } from "react";
@@ -303,7 +303,9 @@ function AuthenticatedSubscriptionPaywall({
   }
 
   const data = access.data;
-  const hasAppAccess = hasCurrentAccess(data.appSubscription);
+  // A future `expires_at` unlocks the app even when the `active` flag is stale;
+  // the dashboard children mount immediately instead of the paywall.
+  const hasAppAccess = hasActiveSubscription(data.appSubscription);
   if (requireAppAccess && hasAppAccess) {
     return <>{children}</>;
   }
@@ -415,7 +417,7 @@ function PlanCard({
   const expiry = subscription?.expiresAt
     ? Date.parse(subscription.expiresAt)
     : Number.NaN;
-  const hasAccess = hasCurrentAccess(subscription);
+  const hasAccess = hasActiveSubscription(subscription);
   const isCancelled = hasAccess && subscription?.cancelledAt !== null;
   const isInvalid = subscription?.active === true && !Number.isFinite(expiry);
   const canCheckout = Boolean(
@@ -531,14 +533,6 @@ function PlanCard({
   );
 }
 
-function hasCurrentAccess(subscription: SubscriptionPeriod | null): boolean {
-  if (!subscription?.active || !subscription.expiresAt) {
-    return false;
-  }
-  const expiry = Date.parse(subscription.expiresAt);
-  return Number.isFinite(expiry) && expiry > Date.now();
-}
-
 function getStatusLabel(
   subscription: SubscriptionPeriod | null,
   isInvalid: boolean,
@@ -549,7 +543,7 @@ function getStatusLabel(
   if (isInvalid) {
     return "Check status";
   }
-  if (hasCurrentAccess(subscription)) {
+  if (hasActiveSubscription(subscription)) {
     return subscription.cancelledAt ? "Canceled" : "Active";
   }
   if (subscription.expiresAt && Date.parse(subscription.expiresAt) <= Date.now()) {

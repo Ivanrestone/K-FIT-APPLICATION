@@ -426,5 +426,8 @@ verify_jwt = false
 [functions.attendance]
 verify_jwt = false
 
+[functions.subscription-status]
+verify_jwt = false
+
 [functions.paymongo-webhook]
 verify_jwt = false

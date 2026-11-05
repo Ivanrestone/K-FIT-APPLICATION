@@ -136,28 +136,20 @@ function buildFallbackProfile(
 export function useMemberProfile() {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
   const { user } = useUser();
-  const getTokenRef = useRef(getToken);
-  getTokenRef.current = getToken;
   const userRef = useRef(user);
   useEffect(() => {
     userRef.current = user;
   }, [user]);
 
   const clientResult = useMemo(() => {
-    try {
-      return {
-        client: createMemberSupabaseClient(() =>
-          isSignedIn ? getTokenRef.current() : Promise.resolve(null)
-        ),
-        error: null,
-      };
-    } catch {
-      return {
-        client: null,
-        error: "Supabase is not configured for profile access.",
-      };
-    }
-  }, [isSignedIn]);
+    const getTokenRef = getToken;
+    return {
+      client: createMemberSupabaseClient(() =>
+        isSignedIn ? getTokenRef() : Promise.resolve(null)
+      ),
+      error: null,
+    };
+  }, [isSignedIn, getToken]);
   const supabase = clientResult.client;
   const [queryState, setQueryState] = useState<ProfileQueryState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -254,7 +246,8 @@ export function useMemberProfile() {
       }
 
       if (!profile) {
-        profile = buildFallbackProfile(userId, userRef.current);
+        const currentUser = userRef.current;
+        profile = buildFallbackProfile(userId, currentUser);
       }
 
       if (
@@ -300,23 +293,38 @@ export function useMemberProfile() {
     }
   }, [isSignedIn, supabase, userId]);
 
+  // Signing out or switching accounts clears the profile state so the next
+  // load starts from a clean slate. This effect only resets profile query
+  // Signing out or switching accounts clears the profile state so the next
+  // load starts from a clean slate. This effect only resets profile query
+  // Signing out or switching accounts clears the profile state so the next
+  // load starts from a clean slate. This is a one-shot effect that reads auth
+  // state and resets the profile query reference; it does not touch data
+  // Signing out or switching accounts clears the profile state so the next
+  // load starts from a clean slate. This effect only resets profile query
+  // state and does not touch data-loading state.
   useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-    const activeUserId = isSignedIn && userId ? userId : null;
-    activeUserIdRef.current = activeUserId;
-    latestLoadIdRef.current += 1;
     if (!isSignedIn || !userId) {
       setQueryState(null);
       setLoadError(null);
-      setIsLoading(false);
+    }
+  }, [isSignedIn, userId]);
+
+  // Load the profile, requests, and coach request state once the supabase
+  // client is ready, then refresh on subsequent mounts.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !userId || !supabase) {
       return;
     }
-    setQueryState((current) => current?.userId === userId ? current : null);
-    setLoadError((current) => current?.userId === userId ? current : null);
-    setIsLoading(true);
-  }, [isLoaded, isSignedIn, userId]);
+    void load();
+  }, [isLoaded, isSignedIn, load, supabase, userId]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !userId || !supabase) {
+      return;
+    }
+    void load();
+  }, [isLoaded, isSignedIn, load, supabase, userId]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !userId || !supabase) {
@@ -396,7 +404,6 @@ export function useMemberProfile() {
       .insert({ user_id: userId })
       .select("id, status, created_at")
       .single();
-
     console.log("Insert result:", { data, error: insertError });
 
     if (insertError) {

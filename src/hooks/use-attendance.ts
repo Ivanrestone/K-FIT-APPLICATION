@@ -7,6 +7,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
 import {
+  hasActiveSubscription,
   useSubscriptionAccess,
   type SubscriptionAccessData,
 } from "@/hooks/use-subscription-access";
@@ -33,16 +34,14 @@ const PROVISION_REQUEST_TIMEOUT_MS = 9_000;
 const ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE =
   "An active App subscription is required to load attendance history.";
 
-// Mirrors the paywall rule: a subscription is only usable while active and
-// unexpired. The attendance Edge Function rejects unpaid accounts with 401, so
-// requests are skipped instead of being allowed to fail.
+// Mirrors the paywall rule: access stays available while the plan is flagged
+// active or its paid period has not lapsed. The attendance Edge Function
+// rejects unpaid accounts with 401, so requests are skipped instead of being
+// allowed to fail.
 function hasActiveAppSubscription(
   data: SubscriptionAccessData | null,
 ): boolean {
-  const subscription = data?.appSubscription;
-  if (!subscription?.active || !subscription.expiresAt) return false;
-  const expiry = Date.parse(subscription.expiresAt);
-  return Number.isFinite(expiry) && expiry > Date.now();
+  return hasActiveSubscription(data?.appSubscription);
 }
 
 function getAttendanceRole(value: unknown): AttendanceRole {

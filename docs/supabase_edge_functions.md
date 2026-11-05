@@ -8,7 +8,9 @@ This guide covers how to deploy and manage Supabase Edge Functions, configure ba
 
 ## 1. Deploying Edge Functions
 
-Whenever you modify any function code under `supabase/functions/` (such as `provision-user`, `cancel-subscription`, `create-checkout-session`, or `paymongo-webhook`), you must deploy it to the live Supabase project.
+Whenever you modify any function code under `supabase/functions/` (such as `provision-user`, `cancel-subscription`, `create-checkout-session`, `paymongo-webhook`, `attendance`, or `subscription-status`), you must deploy it to the live Supabase project.
+
+`subscription-status` is the service-role fallback the app calls when the anon Supabase client cannot read `subscriptions_app` / `subscriptions_gym` through RLS. It verifies the Clerk session itself, so it needs the same `CLERK_ISSUER` / `CLERK_JWKS_URL` secrets as `attendance`.
 
 ### Deploy a Specific Function
 ```bash
