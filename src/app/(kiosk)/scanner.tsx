@@ -7,13 +7,18 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useAttendance, type AttendanceScanResult } from '@/hooks/use-attendance';
+import { triggerDoorUnlock } from '@/utils/door-lock';
 
 const SCAN_COOLDOWN_MS = 3000;
 
 export default function ScannerScreen() {
+  const attendance = useAttendance();
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
+  const isScanningRef = useRef(false);
   const [statusMessage, setStatusMessage] = useState('Ready to scan');
+  const [scanResult, setScanResult] = useState<AttendanceScanResult | { outcome: 'error'; error: string; member?: { id: string; name: string } } | null>(null);
   const resetScanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -27,19 +32,36 @@ export default function ScannerScreen() {
       if (resetScanTimer.current) {
         clearTimeout(resetScanTimer.current);
       }
+      isScanningRef.current = false;
     };
   }, []);
 
-  const handleBarcodeScanned = () => {
-    if (isScanning) {
-      return;
-    }
-
+  const handleBarcodeScanned = async ({ data }: { data: string }) => {
+    if (isScanningRef.current) return;
+    isScanningRef.current = true;
     setIsScanning(true);
-    setStatusMessage('Check-in logged');
+    setStatusMessage('Verifying pass…');
+    try {
+      const result = await attendance.scan(data);
+      setScanResult(result);
+      if (result.outcome === 'check_in' || result.outcome === 'check_out') {
+        // Trigger the Pi door lock asynchronously; never block the UI on it.
+        void triggerDoorUnlock();
+        const label = result.outcome === 'check_in' ? 'Checked in' : 'Checked out';
+        setStatusMessage(`${label}: ${result.member?.name ?? 'Member'}`);
+      } else {
+        setStatusMessage(result.error ?? 'Pass rejected');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Attendance service unavailable.';
+      setScanResult({ outcome: 'error', error: message });
+      setStatusMessage(message);
+    }
     resetScanTimer.current = setTimeout(() => {
+      isScanningRef.current = false;
       setIsScanning(false);
       setStatusMessage('Ready to scan');
+      setScanResult(null);
       resetScanTimer.current = null;
     }, SCAN_COOLDOWN_MS);
   };
@@ -97,9 +119,28 @@ export default function ScannerScreen() {
           <View style={[styles.corner, styles.bottomRight]} />
         </View>
 
-        <View style={[styles.status, isScanning && styles.statusSuccess]}>
+        <View style={[
+          styles.status,
+          !scanResult && isScanning && styles.statusPending,
+          scanResult && (scanResult.outcome === 'check_in' || scanResult.outcome === 'check_out') && styles.statusSuccess,
+        ]}>
           <Text style={styles.statusText}>{statusMessage}</Text>
         </View>
+
+        {scanResult && (
+          <View style={styles.resultCard}>
+            <Text style={styles.resultTitle}>Scan Result</Text>
+            {scanResult.member && <Text style={styles.resultMember}>{scanResult.member.name}</Text>}
+            <Text style={[
+              styles.resultStatus,
+              (scanResult.outcome === 'check_in' || scanResult.outcome === 'check_out') && styles.statusSuccessText,
+              scanResult.outcome === 'expired' && styles.statusExpiredText,
+              !['check_in', 'check_out', 'expired'].includes(scanResult.outcome) && styles.statusInvalidText,
+            ]}>
+              {scanResult.error ?? (scanResult.outcome === 'check_in' ? 'Check-in recorded' : scanResult.outcome === 'check_out' ? 'Check-out recorded' : 'Pass rejected')}
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -177,6 +218,9 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
   },
+  statusPending: {
+    backgroundColor: '#374151',
+  },
   statusSuccess: {
     backgroundColor: '#16803C',
   },
@@ -184,6 +228,37 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+  },
+  resultCard: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+    padding: 16,
+    minWidth: 200,
+    alignItems: 'center',
+  },
+  resultTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  resultMember: {
+    color: '#F4C542',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  resultStatus: {
+    color: '#FFFFFF',
+    fontSize: 13,
+  },
+  statusSuccessText: {
+    color: '#10B981',
+  },
+  statusExpiredText: {
+    color: '#EF4444',
+  },
+  statusInvalidText: {
+    color: '#F59E0B',
   },
   centeredScreen: {
     flex: 1,

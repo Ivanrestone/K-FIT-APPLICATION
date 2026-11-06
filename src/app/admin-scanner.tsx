@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Sidebar from '@/components/Sidebar';
 import { useAttendance, type AttendanceScanResult } from '@/hooks/use-attendance';
+import { triggerDoorUnlock } from '@/utils/door-lock';
 
 const SCAN_COOLDOWN_MS = 3000;
 
@@ -46,6 +47,8 @@ export default function AdminScannerScreen() {
       const result = await attendance.scan(data);
       setScanResult(result);
       if (result.outcome === 'check_in' || result.outcome === 'check_out') {
+        // Trigger the Pi door lock asynchronously; never block the UI on it.
+        void triggerDoorUnlock();
         const label = result.outcome === 'check_in' ? 'Checked in' : 'Checked out';
         setStatusMessage(`${label}: ${result.member?.name ?? 'Member'}`);
       } else {
