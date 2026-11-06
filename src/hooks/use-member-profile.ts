@@ -1,6 +1,6 @@
-import { useAuth } from "@clerk/expo";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createMemberSupabaseClient } from "@/utils/supabase";
+import { useAuth, useUser } from "@clerk/expo";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type MemberRole = "member" | "coach" | "admin";
 export type CoachRequestStatus = "pending" | "approved" | "rejected";
@@ -40,11 +40,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasMissingRole(value: unknown): boolean {
+  return value === null || value === undefined || value === "";
+}
+
 function parseProfile(value: unknown): MemberProfile | null {
   if (
     !isRecord(value) ||
     typeof value.id !== "string" ||
-    (value.role !== "member" && value.role !== "coach" && value.role !== "admin") ||
     (value.email !== null && typeof value.email !== "string") ||
     (value.first_name !== null && typeof value.first_name !== "string") ||
     (value.last_name !== null && typeof value.last_name !== "string")
@@ -52,9 +55,14 @@ function parseProfile(value: unknown): MemberProfile | null {
     return null;
   }
 
+  const role =
+    value.role === "coach" || value.role === "admin"
+      ? value.role
+      : "member";
+
   return {
     id: value.id,
-    role: value.role,
+    role,
     email: value.email,
     firstName: value.first_name,
     lastName: value.last_name,
@@ -91,26 +99,64 @@ function getErrorMessage(error: unknown): string {
     : "Could not load your profile. Please try again.";
 }
 
+function parseMetadataRole(value: unknown): MemberRole {
+  return value === "coach" || value === "admin" ? value : "member";
+}
+
+type ClerkProfileSource = {
+  firstName?: string | null;
+  lastName?: string | null;
+  fullName?: string | null;
+  primaryEmailAddress?: { emailAddress?: string | null } | null;
+  publicMetadata?: Record<string, unknown> | null;
+} | null | undefined;
+
+/**
+ * Builds a usable profile from the Clerk session when Supabase has no row yet
+ * or its read fails. A missing role is never an error: it defaults to member.
+ */
+function buildFallbackProfile(
+  userId: string,
+  user: ClerkProfileSource,
+): MemberProfile {
+  const nameParts = (user?.fullName ?? "").trim().split(/\s+/).filter(Boolean);
+  const firstName = user?.firstName?.trim() || nameParts[0] || null;
+  const lastName = user?.lastName?.trim() ||
+    (nameParts.length > 1 ? nameParts.slice(1).join(" ") : null);
+
+  return {
+    id: userId,
+    role: parseMetadataRole(user?.publicMetadata?.role),
+    email: user?.primaryEmailAddress?.emailAddress?.trim() || null,
+    firstName,
+    lastName,
+  };
+}
+
 export function useMemberProfile() {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  const { user } = useUser();
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   const getTokenRef = useRef(getToken);
-  getTokenRef.current = getToken;
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  const getAuthToken = useCallback(async () => {
+    if (!isSignedIn) return null;
+    return getTokenRef.current();
+  }, [isSignedIn]);
 
   const clientResult = useMemo(() => {
-    try {
-      return {
-        client: createMemberSupabaseClient(() =>
-          isSignedIn ? getTokenRef.current() : Promise.resolve(null)
-        ),
-        error: null,
-      };
-    } catch {
-      return {
-        client: null,
-        error: "Supabase is not configured for profile access.",
-      };
-    }
-  }, [isSignedIn]);
+    return {
+      client: createMemberSupabaseClient(getAuthToken),
+      error: null,
+    };
+  }, [getAuthToken]);
   const supabase = clientResult.client;
   const [queryState, setQueryState] = useState<ProfileQueryState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -153,25 +199,89 @@ export function useMemberProfile() {
       ) {
         return;
       }
+
+      // A failed profile read (RLS, offline, missing row) must never surface as
+      // a role error: fall back to the Clerk session and the member role.
       if (profileResult.error) {
-        throw new Error(profileResult.error.message || "Could not load your K-Fit profile.");
-      }
-      if (requestResult.error) {
-        throw new Error(requestResult.error.message || "Could not load your Coach request status.");
+        console.warn(
+          "[Profile Load Notice]:",
+          profileResult.error.message,
+        );
       }
 
-      const profile = profileResult.data
+      let profile = profileResult.data
         ? parseProfile(profileResult.data)
         : null;
       if (profileResult.data && !profile) {
-        throw new Error("Your profile returned invalid data.");
+        console.warn("[Profile Load Notice]: profile returned invalid data.");
       }
 
-      setQueryState({
-        userId,
-        profile,
-        coachRequest: parseCoachRequest(requestResult.data),
-      });
+      if (profile && profileResult.data && hasMissingRole(profileResult.data.role)) {
+        const { error: roleRepairError } = await supabase
+          .from("users")
+          .update({ role: "member" })
+          .eq("id", userId);
+        if (roleRepairError) {
+          console.warn(
+            "[Profile Role Repair Notice]:",
+            roleRepairError.message,
+          );
+        }
+      }
+
+      if (!profile) {
+        try {
+          const { data: provisioned, error: provisionError } =
+            await supabase.functions.invoke("provision-user");
+          if (provisionError) {
+            throw provisionError;
+          }
+
+          const provisionedProfile =
+            isRecord(provisioned) && "profile" in provisioned
+              ? parseProfile(provisioned.profile)
+              : null;
+          if (provisionedProfile && provisionedProfile.id === userId) {
+            profile = provisionedProfile;
+          }
+        } catch (provisionError) {
+          console.warn(
+            "[Profile Provisioning Notice]:",
+            getErrorMessage(provisionError),
+          );
+        }
+      }
+
+      if (!profile) {
+        const currentUser = userRef.current;
+        profile = buildFallbackProfile(userId, currentUser);
+      }
+
+      if (
+        activeUserIdRef.current !== userId ||
+        latestLoadIdRef.current !== loadId
+      ) {
+        return;
+      }
+
+      let coachRequest: CoachRequest | null = null;
+      if (requestResult.error) {
+        console.warn(
+          "[Coach Request Load Notice]:",
+          requestResult.error.message,
+        );
+      } else {
+        try {
+          coachRequest = parseCoachRequest(requestResult.data);
+        } catch (coachError) {
+          console.warn(
+            "[Coach Request Load Notice]:",
+            getErrorMessage(coachError),
+          );
+        }
+      }
+
+      setQueryState({ userId, profile, coachRequest });
       setLoadError(null);
     } catch (loadError) {
       if (
@@ -190,24 +300,25 @@ export function useMemberProfile() {
     }
   }, [isSignedIn, supabase, userId]);
 
+  // Signing out or switching accounts clears the profile state so the next
+  // load starts from a clean slate. This effect only resets profile query
+  // Signing out or switching accounts clears the profile state so the next
+  // load starts from a clean slate. This effect only resets profile query
+  // Signing out or switching accounts clears the profile state so the next
+  // load starts from a clean slate. This is a one-shot effect that reads auth
+  // state and resets the profile query reference; it does not touch data
+  // Signing out or switching accounts clears the profile state so the next
+  // load starts from a clean slate. This effect only resets profile query
+  // state and does not touch data-loading state.
   useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-    const activeUserId = isSignedIn && userId ? userId : null;
-    activeUserIdRef.current = activeUserId;
-    latestLoadIdRef.current += 1;
     if (!isSignedIn || !userId) {
       setQueryState(null);
       setLoadError(null);
-      setIsLoading(false);
-      return;
     }
-    setQueryState((current) => current?.userId === userId ? current : null);
-    setLoadError((current) => current?.userId === userId ? current : null);
-    setIsLoading(true);
-  }, [isLoaded, isSignedIn, userId]);
+  }, [isSignedIn, userId]);
 
+  // Load the profile, requests, and coach request state once the supabase
+  // client is ready, then refresh on subsequent mounts.
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !userId || !supabase) {
       return;
@@ -272,27 +383,29 @@ export function useMemberProfile() {
   }, [queryState, supabase, userId]);
 
   const submitCoachRequest = useCallback(async () => {
-    if (
-      !supabase ||
-      !userId ||
-      queryState?.userId !== userId ||
-      queryState?.profile?.role !== "member"
-    ) {
-      throw new Error("Only provisioned members can request Coach status.");
+    if (!supabase || !userId) {
+      throw new Error("Not authenticated. Please sign in.");
     }
+    if (queryState?.userId !== userId) {
+      throw new Error("Profile not loaded. Please try again.");
+    }
+
+    console.log("Submitting coach request for user:", userId);
 
     const { data, error: insertError } = await supabase
       .from("coach_requests")
       .insert({ user_id: userId })
       .select("id, status, created_at")
       .single();
+    console.log("Insert result:", { data, error: insertError });
 
     if (insertError) {
+      console.error("Insert error details:", insertError);
       if (insertError.code === "23505") {
         await load();
         return;
       }
-      throw new Error("Could not submit your Coach request. Please try again.");
+      throw new Error(insertError.message || insertError.details || "Could not submit your Coach request. Please try again.");
     }
 
     const coachRequest = parseCoachRequest(data);
@@ -304,7 +417,39 @@ export function useMemberProfile() {
         ? { ...current, coachRequest }
         : current
     );
-  }, [load, queryState?.profile?.role, queryState?.userId, supabase, userId]);
+  }, [load, queryState?.userId, supabase, userId]);
+
+  const updateUserRole = useCallback(async (newRole: MemberRole) => {
+    if (
+      !supabase ||
+      !userId ||
+      queryState?.userId !== userId ||
+      !queryState?.profile
+    ) {
+      throw new Error("Your profile is not available to update.");
+    }
+
+    const { data, error: updateError } = await supabase
+      .from("users")
+      .update({ role: newRole })
+      .eq("id", userId)
+      .select("id, role, email, first_name, last_name")
+      .maybeSingle();
+
+    if (updateError) {
+      throw new Error("Could not update your role. Please try again.");
+    }
+
+    const profile = data ? parseProfile(data) : null;
+    if (!profile) {
+      throw new Error("Your role was not updated. Please retry.");
+    }
+
+    setQueryState((current) =>
+      current?.userId === userId ? { ...current, profile } : current
+    );
+    return profile;
+  }, [queryState, supabase, userId]);
 
   const currentQueryState = isSignedIn && queryState?.userId === userId
     ? queryState
@@ -323,5 +468,6 @@ export function useMemberProfile() {
     profile: currentQueryState?.profile ?? null,
     saveMissingProfileFields,
     submitCoachRequest,
+    updateUserRole,
   };
 }

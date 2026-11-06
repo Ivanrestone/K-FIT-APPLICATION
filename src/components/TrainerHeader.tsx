@@ -9,39 +9,164 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   Image,
+  LayoutAnimation,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// Enable LayoutAnimation on Android
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 type Props = {
-  /** Show a back arrow instead of the brand block (for detail screens). */
   showBack?: boolean;
-  /** Override the small subtitle under the brand title. */
   subtitle?: string;
+  onOpenSettings?: (key: "notifications" | "privacy" | "language") => void;
+  onOpenSupport?: (key: "help" | "contact" | "terms" | "privacy") => void;
 };
+
+type SubLink = {
+  label: string;
+  hint: string;
+  icon: keyof typeof Feather.glyphMap;
+  value?: string;
+  onPress?: () => void;
+};
+
+/* ───────────────────────── Accordion section ───────────────────────── */
+
+function AccordionSection({
+  title,
+  icon,
+  badge,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  icon: keyof typeof Feather.glyphMap;
+  badge?: number;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const rotate = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotate, {
+      toValue: expanded ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, rotate]);
+
+  const chevronRotate = rotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "90deg"],
+  });
+
+  return (
+    <View>
+      <TouchableOpacity
+        style={styles.accordionHeader}
+        onPress={onToggle}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={`${title}, ${expanded ? "expanded" : "collapsed"}`}
+      >
+        <View style={styles.accordionIcon}>
+          <Feather name={icon} size={15} color={KFitColors.accent} />
+        </View>
+        <Text style={styles.accordionTitle}>{title}</Text>
+        {badge !== undefined && badge > 0 ? (
+          <View style={styles.accordionBadge}>
+            <Text style={styles.accordionBadgeText}>
+              {badge > 9 ? "9+" : badge}
+            </Text>
+          </View>
+        ) : null}
+        <Animated.View style={{ transform: [{ rotate: chevronRotate }] }}>
+          <Feather
+            name="chevron-right"
+            size={16}
+            color={KFitColors.mutedText}
+          />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {expanded ? <View style={styles.accordionBody}>{children}</View> : null}
+    </View>
+  );
+}
+
+/* ───────────────────────── Sub-link row ───────────────────────── */
+
+function SubLinkRow({ link }: { link: SubLink }) {
+  return (
+    <TouchableOpacity
+      style={styles.subRow}
+      onPress={link.onPress}
+      activeOpacity={0.75}
+      accessibilityRole="button"
+      accessibilityLabel={link.label}
+    >
+      <View style={styles.subIcon}>
+        <Feather name={link.icon} size={13} color={KFitColors.accent} />
+      </View>
+      <View style={styles.flex}>
+        <Text style={styles.subLabel}>{link.label}</Text>
+        <Text style={styles.subHint}>{link.hint}</Text>
+      </View>
+      {link.value ? <Text style={styles.subValue}>{link.value}</Text> : null}
+      <Feather name="chevron-right" size={14} color={KFitColors.mutedText} />
+    </TouchableOpacity>
+  );
+}
+
+/* ───────────────────────── TrainerHeader ───────────────────────── */
 
 export default function TrainerHeader({
   showBack = false,
   subtitle = "COACH WORKSPACE",
+  onOpenSettings,
+  onOpenSupport,
 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isSigningOut, logout } = useLogout();
 
   const [panel, setPanel] = useState<"notifications" | "profile" | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
 
-  // Notifications now come from the shared challenge store.
+  /** Logout confirmation dialog state */
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+
   const { notices: notifications, unread } = useNotices("trainer");
 
-  const closePanel = () => setPanel(null);
+  const closePanel = () => {
+    setPanel(null);
+    setSettingsOpen(false);
+    setSupportOpen(false);
+  };
 
   const openPanel = (next: "notifications" | "profile") => {
     void Haptics.selectionAsync();
@@ -54,13 +179,110 @@ export default function TrainerHeader({
 
   const markAllRead = () => {
     if (unread === 0) return;
-
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
     markAllNoticesRead("trainer");
   };
 
-  // Modal content is not inside SafeAreaView, so offset by the top inset.
+  const toggleAccordion = (
+    setter: React.Dispatch<React.SetStateAction<boolean>>,
+    open: boolean,
+  ) => {
+    void Haptics.selectionAsync();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setter(!open);
+  };
+
+  /** Open the logout confirmation */
+  const askLogout = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLogoutConfirmOpen(true);
+  };
+
+  /** Confirmed → close panel + dialog, then sign out */
+  const confirmLogout = () => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setLogoutConfirmOpen(false);
+    closePanel();
+    logout();
+  };
+
+  /** Cancel → close dialog only */
+  const cancelLogout = () => {
+    void Haptics.selectionAsync();
+    setLogoutConfirmOpen(false);
+  };
+
+  /* ── Settings & Support definitions ── */
+  const settingsLinks: SubLink[] = [
+    {
+      label: "Notifications",
+      hint: "Push alerts & reminders",
+      icon: "bell",
+      onPress: () => {
+        closePanel();
+        onOpenSettings?.("notifications");
+      },
+    },
+    {
+      label: "Privacy Settings",
+      hint: "Who can see your activity",
+      icon: "lock",
+      onPress: () => {
+        closePanel();
+        onOpenSettings?.("privacy");
+      },
+    },
+    {
+      label: "Language",
+      hint: "App display language",
+      icon: "globe",
+      value: "English",
+      onPress: () => {
+        closePanel();
+        onOpenSettings?.("language");
+      },
+    },
+  ];
+
+  const supportLinks: SubLink[] = [
+    {
+      label: "Help Center",
+      hint: "Guides & FAQs",
+      icon: "help-circle",
+      onPress: () => {
+        closePanel();
+        onOpenSupport?.("help");
+      },
+    },
+    {
+      label: "Contact Support",
+      hint: "We're here to help",
+      icon: "message-square",
+      onPress: () => {
+        closePanel();
+        onOpenSupport?.("contact");
+      },
+    },
+    {
+      label: "Terms of Service",
+      hint: "Rules of the club",
+      icon: "file-text",
+      onPress: () => {
+        closePanel();
+        onOpenSupport?.("terms");
+      },
+    },
+    {
+      label: "Privacy Policy",
+      hint: "How we handle your data",
+      icon: "shield",
+      onPress: () => {
+        closePanel();
+        onOpenSupport?.("privacy");
+      },
+    },
+  ];
+
   const panelTop = insets.top + 62;
 
   return (
@@ -203,11 +425,9 @@ export default function TrainerHeader({
                         <Text style={styles.notifTitle}>
                           {notification.title}
                         </Text>
-
                         <Text style={styles.notifBody}>
                           {notification.body}
                         </Text>
-
                         <Text style={styles.notifTime}>
                           {timeAgo(notification.createdAt)}
                         </Text>
@@ -239,27 +459,69 @@ export default function TrainerHeader({
                   style={styles.menuRow}
                   onPress={() => {
                     closePanel();
-                    router.replace("/trainer-dashboard" as any);
+                    router.replace("/trainer-profile" as any);
                   }}
                   activeOpacity={0.8}
                   accessibilityRole="button"
+                  accessibilityLabel="Open trainer profile"
                 >
-                  <Feather name="home" size={16} color={KFitColors.text} />
-                  <Text style={styles.menuText}>Dashboard</Text>
+                  <View style={styles.menuIcon}>
+                    <Feather name="user" size={15} color={KFitColors.accent} />
+                  </View>
+                  <Text style={styles.menuText}>Profile</Text>
+                  <Feather
+                    name="chevron-right"
+                    size={16}
+                    color={KFitColors.mutedText}
+                  />
                 </TouchableOpacity>
 
+                <View style={styles.divider} />
+
+                <AccordionSection
+                  title="Settings"
+                  icon="settings"
+                  expanded={settingsOpen}
+                  onToggle={() =>
+                    toggleAccordion(setSettingsOpen, settingsOpen)
+                  }
+                >
+                  {settingsLinks.map((link) => (
+                    <SubLinkRow key={link.label} link={link} />
+                  ))}
+                </AccordionSection>
+
+                <View style={styles.divider} />
+
+                <AccordionSection
+                  title="Help & Support"
+                  icon="help-circle"
+                  expanded={supportOpen}
+                  onToggle={() => toggleAccordion(setSupportOpen, supportOpen)}
+                >
+                  {supportLinks.map((link) => (
+                    <SubLinkRow key={link.label} link={link} />
+                  ))}
+                </AccordionSection>
+
+                <View style={styles.divider} />
+
+                {/* Logout — opens confirmation dialog */}
                 <TouchableOpacity
                   style={styles.menuRow}
                   disabled={isSigningOut}
-                  onPress={() => {
-                    closePanel();
-                    logout();
-                  }}
+                  onPress={askLogout}
                   activeOpacity={0.8}
                   accessibilityRole="button"
+                  accessibilityLabel="Log out"
                 >
-                  <Feather name="log-out" size={16} color={KFitColors.error} />
-
+                  <View style={styles.menuIconDanger}>
+                    <Feather
+                      name="log-out"
+                      size={15}
+                      color={KFitColors.error}
+                    />
+                  </View>
                   <Text style={[styles.menuText, { color: KFitColors.error }]}>
                     {isSigningOut ? "Signing out…" : "Log out"}
                   </Text>
@@ -269,15 +531,70 @@ export default function TrainerHeader({
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ───────────── Logout confirmation dialog ───────────── */}
+      <Modal
+        visible={logoutConfirmOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelLogout}
+      >
+        <Pressable style={styles.confirmBackdrop} onPress={cancelLogout}>
+          <Pressable
+            style={styles.confirmCard}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.confirmIconWrap}>
+              <Feather name="log-out" size={22} color={KFitColors.error} />
+            </View>
+
+            <Text style={styles.confirmTitle}>Log out?</Text>
+            <Text style={styles.confirmBody}>
+              You&apos;ll need to sign in again to access the trainer workspace.
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmCancel]}
+                onPress={cancelLogout}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel logout"
+              >
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmDanger]}
+                onPress={confirmLogout}
+                activeOpacity={0.85}
+                disabled={isSigningOut}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm logout"
+              >
+                <Feather name="log-out" size={13} color="#fff" />
+                <Text style={styles.confirmDangerText}>
+                  {isSigningOut ? "Signing out…" : "Log out"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }
 
+/* ───────────────────────── Styles ───────────────────────── */
+
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-    minWidth: 0,
+  flex: { flex: 1, minWidth: 0 },
+  divider: {
+    height: 1,
+    backgroundColor: KFitColors.border,
+    marginVertical: 6,
   },
+
+  /* Header bar */
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -299,14 +616,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  brandLogo: {
-    width: 34,
-    height: 34,
-  },
-  titleBlock: {
-    flex: 1,
-    minWidth: 0,
-  },
+  brandLogo: { width: 34, height: 34 },
+  titleBlock: { flex: 1, minWidth: 0 },
   brandTitle: {
     color: KFitColors.text,
     fontSize: 15,
@@ -363,7 +674,7 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
 
-  /* Dropdown panels */
+  /* Dropdown shell */
   backdrop: {
     flex: 1,
     alignItems: "flex-end",
@@ -373,8 +684,8 @@ const styles = StyleSheet.create({
   panel: {
     width: "100%",
     maxWidth: 340,
-    gap: 4,
-    padding: 14,
+    gap: 2,
+    padding: 12,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: KFitColors.border,
@@ -397,6 +708,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
+
+  /* Notifications */
   notifRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -461,6 +774,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 16,
   },
+
+  /* Profile card */
   profileTop: {
     flexDirection: "row",
     alignItems: "center",
@@ -495,17 +810,196 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 2,
   },
+
+  /* Menu rows */
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  menuIcon: {
+    width: 32,
+    height: 32,
     borderRadius: 10,
+    backgroundColor: KFitColors.accent + "1A",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "4D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  menuIconDanger: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: KFitColors.error + "1A",
+    borderWidth: 1,
+    borderColor: KFitColors.error + "4D",
+    alignItems: "center",
+    justifyContent: "center",
   },
   menuText: {
+    flex: 1,
     color: KFitColors.text,
     fontSize: 13,
     fontWeight: "700",
+  },
+
+  /* Accordion */
+  accordionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  accordionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent + "1A",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "4D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accordionTitle: {
+    flex: 1,
+    color: KFitColors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  accordionBadge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: KFitColors.error,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+  },
+  accordionBadgeText: {
+    color: "#000",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  accordionBody: {
+    marginLeft: 20,
+    marginTop: 2,
+    marginBottom: 4,
+    paddingLeft: 16,
+    borderLeftWidth: 1,
+    borderLeftColor: KFitColors.border,
+    gap: 2,
+  },
+
+  /* Sub rows */
+  subRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  subIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  subLabel: { color: KFitColors.text, fontSize: 12, fontWeight: "600" },
+  subHint: { color: KFitColors.mutedText, fontSize: 10, marginTop: 1 },
+  subValue: {
+    color: KFitColors.accent,
+    fontSize: 11,
+    fontWeight: "700",
+    marginRight: 4,
+  },
+
+  /* Logout confirmation */
+  confirmBackdrop: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.7)",
+  },
+  confirmCard: {
+    width: "100%",
+    maxWidth: 320,
+    gap: 12,
+    padding: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.surface,
+    alignItems: "center",
+  },
+  confirmIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.error + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.error + "44",
+    marginBottom: 4,
+  },
+  confirmTitle: {
+    color: KFitColors.text,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+    textAlign: "center",
+  },
+  confirmBody: {
+    color: KFitColors.mutedText,
+    fontSize: 12,
+    textAlign: "center",
+    lineHeight: 18,
+    paddingHorizontal: 4,
+  },
+  confirmActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 6,
+    width: "100%",
+  },
+  confirmBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  confirmCancel: {
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+  },
+  confirmCancelText: {
+    color: KFitColors.mutedText,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  confirmDanger: {
+    backgroundColor: KFitColors.error,
+  },
+  confirmDangerText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "900",
   },
 });

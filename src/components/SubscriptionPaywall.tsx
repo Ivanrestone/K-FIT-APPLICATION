@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/expo";
 import { Button, Host } from "@expo/ui";
-import { useSubscriptionAccess, type PricingPlan, type SubscriptionPeriod, type SubscriptionPlanType } from "@/hooks/use-subscription-access";
+import { hasActiveSubscription, useSubscriptionAccess, type PricingPlan, type SubscriptionPeriod, type SubscriptionPlanType } from "@/hooks/use-subscription-access";
 import { KFitColors, Spacing } from "@/constants/theme";
 import { Linking } from "react-native";
 import { useCallback, useState, type ReactNode } from "react";
@@ -17,6 +17,10 @@ import {
 type Props = {
   children?: ReactNode;
   requireAppAccess?: boolean;
+  // Copy shown instead of the generic App-access prompt when app access is
+  // required and the subscription is not active.
+  appAccessTitle?: string;
+  appAccessMessage?: string;
 };
 
 const clerkConfigured = Boolean(process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -28,6 +32,8 @@ const supabaseConfigured = Boolean(
 export default function SubscriptionPaywall({
   children,
   requireAppAccess = false,
+  appAccessTitle,
+  appAccessMessage,
 }: Props) {
   if (!clerkConfigured) {
     return <MessagePanel message="Subscription access requires configured Clerk sign-in." />;
@@ -37,7 +43,11 @@ export default function SubscriptionPaywall({
   }
 
   return (
-    <AuthenticatedSubscriptionPaywall requireAppAccess={requireAppAccess}>
+    <AuthenticatedSubscriptionPaywall
+      requireAppAccess={requireAppAccess}
+      appAccessTitle={appAccessTitle}
+      appAccessMessage={appAccessMessage}
+    >
       {children}
     </AuthenticatedSubscriptionPaywall>
   );
@@ -46,6 +56,8 @@ export default function SubscriptionPaywall({
 function AuthenticatedSubscriptionPaywall({
   children,
   requireAppAccess,
+  appAccessTitle,
+  appAccessMessage,
 }: Props) {
   const { userId } = useAuth();
   const access = useSubscriptionAccess();
@@ -244,8 +256,10 @@ function AuthenticatedSubscriptionPaywall({
   }
 
   if (!access.isSignedIn || !userId) {
+    // Never mount app-access content (QR pass, dashboard data) for a signed-out
+    // session; those screens assume an authenticated account.
     if (requireAppAccess) {
-      return <>{children}</>;
+      return <MessagePanel message="Sign in to continue." />;
     }
     return (
       <MessagePanel message="Sign in to view and manage your subscriptions." />
@@ -289,8 +303,10 @@ function AuthenticatedSubscriptionPaywall({
   }
 
   const data = access.data;
-  const hasAppAccess = hasCurrentAccess(data.appSubscription);
-  if (requireAppAccess && hasAppAccess) {
+  // A future `expires_at` unlocks the app even when the `active` flag is stale;
+  // having an active App or Gym subscription unlocks the protected screens.
+  const hasAccess = hasActiveSubscription(data);
+  if (requireAppAccess && hasAccess) {
     return <>{children}</>;
   }
 
@@ -313,12 +329,14 @@ function AuthenticatedSubscriptionPaywall({
   return (
     <View style={styles.panel}>
       <Text style={styles.title}>
-        {requireAppAccess ? "App access is required" : "K-Fit subscriptions"}
+        {requireAppAccess
+          ? appAccessTitle ?? "App access is required"
+          : "K-Fit subscriptions"}
       </Text>
       {requireAppAccess && (
         <Text style={styles.helperText}>
-          Activate a monthly App plan to unlock your dashboard. You can renew
-          manually through PayMongo Checkout.
+          {appAccessMessage ??
+            "Activate a monthly App plan to unlock your dashboard. You can renew manually through PayMongo Checkout."}
         </Text>
       )}
       {access.error && (
@@ -399,7 +417,7 @@ function PlanCard({
   const expiry = subscription?.expiresAt
     ? Date.parse(subscription.expiresAt)
     : Number.NaN;
-  const hasAccess = hasCurrentAccess(subscription);
+  const hasAccess = hasActiveSubscription(subscription);
   const isCancelled = hasAccess && subscription?.cancelledAt !== null;
   const isInvalid = subscription?.active === true && !Number.isFinite(expiry);
   const canCheckout = Boolean(
@@ -515,14 +533,6 @@ function PlanCard({
   );
 }
 
-function hasCurrentAccess(subscription: SubscriptionPeriod | null): boolean {
-  if (!subscription?.active || !subscription.expiresAt) {
-    return false;
-  }
-  const expiry = Date.parse(subscription.expiresAt);
-  return Number.isFinite(expiry) && expiry > Date.now();
-}
-
 function getStatusLabel(
   subscription: SubscriptionPeriod | null,
   isInvalid: boolean,
@@ -533,7 +543,7 @@ function getStatusLabel(
   if (isInvalid) {
     return "Check status";
   }
-  if (hasCurrentAccess(subscription)) {
+  if (hasActiveSubscription(subscription)) {
     return subscription.cancelledAt ? "Canceled" : "Active";
   }
   if (subscription.expiresAt && Date.parse(subscription.expiresAt) <= Date.now()) {

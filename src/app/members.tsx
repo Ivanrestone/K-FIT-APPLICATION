@@ -1,10 +1,12 @@
 import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import { KFitColors } from "@/constants/theme";
+import { useMembers } from "@/hooks/use-members";
 import { useRegisterMember } from "@/hooks/use-register-member";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
   ImageBackground,
@@ -12,6 +14,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 type Status = "Active" | "Pending" | "Expired";
+type Filter = "all" | "active" | "pending" | "expired";
 
 interface Member {
   id: string;
@@ -34,55 +38,6 @@ interface Member {
   status: Status;
 }
 
-const INITIAL_MEMBERS: Member[] = [
-  {
-    id: "1",
-    name: "Jordan Lee",
-    email: "jordan.lee@email.com",
-    membership: "Performance",
-    trainer: "Marcus Reed",
-    joinedDate: "Sep 01, 2026",
-    status: "Active",
-  },
-  {
-    id: "2",
-    name: "Sam Rivera",
-    email: "sam.rivera@email.com",
-    membership: "Elite",
-    trainer: "Marcus Reed",
-    joinedDate: "Aug 12, 2026",
-    status: "Active",
-  },
-  {
-    id: "3",
-    name: "Maya Patel",
-    email: "maya.patel@email.com",
-    membership: "Performance",
-    trainer: "Sofia Chen",
-    joinedDate: "Jul 04, 2026",
-    status: "Active",
-  },
-  {
-    id: "4",
-    name: "Noah Williams",
-    email: "noah.w@email.com",
-    membership: "Essential",
-    trainer: "Unassigned",
-    joinedDate: "Oct 18, 2026",
-    status: "Pending",
-  },
-  {
-    id: "5",
-    name: "Emma Davis",
-    email: "emma.davis@email.com",
-    membership: "Performance",
-    trainer: "Daniel Brooks",
-    joinedDate: "Jun 22, 2026",
-    status: "Active",
-  },
-];
-
-/* Shortcuts to the other admin screens (same routes as the Sidebar) */
 const QUICK_LINKS: { label: string; icon: IconName; route: string }[] = [
   { label: "Races", icon: "trophy", route: "/challenges" },
   { label: "Attendance", icon: "calendar", route: "/attendance" },
@@ -92,48 +47,12 @@ const QUICK_LINKS: { label: string; icon: IconName; route: string }[] = [
   { label: "Scanner", icon: "qr-code", route: "/admin-scanner" },
 ];
 
-const STATS: {
-  label: string;
-  value: string;
-  sub: string;
-  icon: IconName;
-  warn?: boolean;
-}[] = [
-  {
-    label: "Total members",
-    value: "1,342",
-    sub: "Across all memberships",
-    icon: "people",
-  },
-  {
-    label: "Active",
-    value: "1,284",
-    sub: "95.7% of all members",
-    icon: "checkmark-circle",
-  },
-  {
-    label: "Expiring this week",
-    value: "12",
-    sub: "Renewal outreach recommended",
-    icon: "time",
-    warn: true,
-  },
-  {
-    label: "New this month",
-    value: "48",
-    sub: "+14 from September",
-    icon: "trending-up",
-  },
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "pending", label: "Pending" },
+  { key: "expired", label: "Expired" },
 ];
-
-const FILTERS: { label: "All" | Status; count: number }[] = [
-  { label: "All", count: 1342 },
-  { label: "Active", count: 1284 },
-  { label: "Pending", count: 18 },
-  { label: "Expired", count: 40 },
-];
-
-const PLANS = ["Essential", "Performance", "Elite"];
 
 const statusColor = (status: Status) =>
   status === "Active"
@@ -160,71 +79,101 @@ const initials = (name: string) =>
 export default function MembersScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const isWide = width >= 768;
+  const isWide = width >= 820;
+  const { members, loading: membersLoading, refetch } = useMembers();
   const { registerMember, loading: registerLoading } = useRegisterMember();
 
-  const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS);
-  const [selectedFilter, setSelectedFilter] = useState<"All" | Status>("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [refreshing, setRefreshing] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
-  const filteredMembers = members.filter((member) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      member.name.toLowerCase().includes(q) ||
-      member.email.toLowerCase().includes(q);
-    const matchesFilter =
-      selectedFilter === "All" || member.status === selectedFilter;
-    return matchesSearch && matchesFilter;
-  });
+  const stats = useMemo(() => {
+    const total = members.length;
+    const active = members.filter((m) => m.status === "Active").length;
+    const pending = members.filter((m) => m.status === "Pending").length;
+    const expired = members.filter((m) => m.status === "Expired").length;
+    return { total, active, pending, expired };
+  }, [members]);
+
+  const filteredMembers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return members.filter((m) => {
+      const matchesQuery =
+        q.length === 0 ||
+        m.name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q);
+      const matchesFilter =
+        filter === "all" ||
+        (filter === "active" && m.status === "Active") ||
+        (filter === "pending" && m.status === "Pending") ||
+        (filter === "expired" && m.status === "Expired");
+      return matchesQuery && matchesFilter;
+    });
+  }, [members, searchQuery, filter]);
+
+  const countFor = (f: Filter) =>
+    f === "all"
+      ? stats.total
+      : f === "active"
+        ? stats.active
+        : f === "pending"
+          ? stats.pending
+          : stats.expired;
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.resolve(refetch());
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const saveMember = async () => {
+    const email = newEmail.trim();
+
     if (!newName.trim()) {
-      Alert.alert("Name required", "Please enter the member's full name.");
-      return;
-    }
-    if (!newEmail.trim()) {
-      Alert.alert("Email required", "Please enter the member's email.");
-      return;
-    }
-    if (!newPassword.trim()) {
-      Alert.alert("Password required", "Please enter a password for the member.");
+      Alert.alert("Name required", "Enter the member's full name.");
       return;
     }
 
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      Alert.alert(
+        "Invalid email",
+        "Enter a valid email, for example name@email.com.",
+      );
+      return;
+    }
+
+    if (newPassword.trim().length < 8) {
+      Alert.alert("Password too short", "Use at least 8 characters.");
+      return;
+    }
+
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     const result = await registerMember({
-      email: newEmail.trim(),
+      email,
       password: newPassword.trim(),
       fullName: newName.trim(),
     });
 
     if (result.success) {
-      const today = new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "2-digit",
-        year: "numeric",
-      });
-      setMembers((prev) => [
-        {
-          id: result.userId || `${Date.now()}`,
-          name: newName.trim(),
-          email: newEmail.trim(),
-          membership: "Paid",
-          trainer: "Unassigned",
-          joinedDate: today,
-          status: "Active",
-        },
-        ...prev,
-      ]);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setNewName("");
       setNewEmail("");
       setNewPassword("");
       setModalOpen(false);
-      Alert.alert("Success", "Member registered successfully!");
+      Alert.alert("Member registered", "The account has been created.");
+      refetch();
+    } else {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Registration Error", result.error || "Registration failed");
     }
   };
 
@@ -233,7 +182,6 @@ export default function MembersScreen() {
       <View style={styles.mainContainer}>
         <Sidebar activeRoute="/members" />
 
-        {/* Header + scrollable content */}
         <View style={styles.main}>
           <AppHeader onAddPress={() => setModalOpen(true)} />
 
@@ -241,9 +189,19 @@ export default function MembersScreen() {
             style={styles.content}
             contentContainerStyle={styles.contentContainer}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor={KFitColors.accent}
+                colors={[KFitColors.accent]}
+                progressBackgroundColor={KFitColors.surface}
+              />
+            }
           >
             {/* Page title + actions */}
-            <View style={[styles.header, isWide && styles.headerWide]}>
+            <View style={[styles.pageHeader, isWide && styles.pageHeaderWide]}>
               <View style={styles.headerText}>
                 <Text style={styles.eyebrow}>ROSTER MANAGEMENT</Text>
                 <Text style={styles.heroTitle}>Members</Text>
@@ -253,25 +211,6 @@ export default function MembersScreen() {
               </View>
 
               <View style={styles.actionButtons}>
-                <Pressable
-                  onPress={() =>
-                    Alert.alert("Import", "Member import is coming soon.")
-                  }
-                  style={({ pressed }) => [
-                    styles.importButton,
-                    pressed && styles.pressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Import members"
-                >
-                  <Ionicons
-                    name="download-outline"
-                    size={16}
-                    color={KFitColors.text}
-                  />
-                  <Text style={styles.importButtonText}>Import</Text>
-                </Pressable>
-
                 <Pressable
                   onPress={() => setModalOpen(true)}
                   style={({ pressed }) => [
@@ -289,7 +228,7 @@ export default function MembersScreen() {
                   >
                     <Ionicons
                       name="person-add"
-                      size={16}
+                      size={15}
                       color={KFitColors.onAccent}
                     />
                     <Text style={styles.addButtonText}>Add member</Text>
@@ -318,7 +257,7 @@ export default function MembersScreen() {
                 >
                   <Ionicons
                     name={link.icon}
-                    size={14}
+                    size={13}
                     color={KFitColors.accent}
                   />
                   <Text style={styles.quickLinkText}>{link.label}</Text>
@@ -328,49 +267,83 @@ export default function MembersScreen() {
 
             {/* Stats */}
             <View style={styles.statsGrid}>
-              {STATS.map((stat) => (
-                <View
-                  key={stat.label}
-                  style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
-                >
-                  <View style={styles.statTop}>
-                    <Text style={styles.statLabel} numberOfLines={1}>
-                      {stat.label}
-                    </Text>
-                    <View
-                      style={[
-                        styles.statIconBox,
-                        stat.warn && styles.statIconBoxWarn,
-                      ]}
-                    >
-                      <Ionicons
-                        name={stat.icon}
-                        size={14}
-                        color={
-                          stat.warn ? KFitColors.warning : KFitColors.accent
-                        }
-                      />
-                    </View>
+              <View
+                style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+              >
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel}>Total members</Text>
+                  <View style={styles.statIconBox}>
+                    <Ionicons
+                      name="people"
+                      size={13}
+                      color={KFitColors.accent}
+                    />
                   </View>
-                  <Text style={styles.statNumber}>{stat.value}</Text>
-                  <Text
-                    style={stat.warn ? styles.statSubWarn : styles.statSub}
-                    numberOfLines={2}
-                  >
-                    {stat.sub}
-                  </Text>
                 </View>
-              ))}
+                <Text style={styles.statNumber}>{stats.total}</Text>
+                <Text style={styles.statSub}>Across all memberships</Text>
+              </View>
+
+              <View
+                style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+              >
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel}>Active</Text>
+                  <View style={styles.statIconBox}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={13}
+                      color={KFitColors.accent}
+                    />
+                  </View>
+                </View>
+                <Text style={styles.statNumber}>{stats.active}</Text>
+                <Text style={styles.statSubAccent}>
+                  {stats.total > 0
+                    ? `${Math.round((stats.active / stats.total) * 100)}%`
+                    : "0%"}{" "}
+                  of all members
+                </Text>
+              </View>
+
+              <View
+                style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+              >
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel}>Pending</Text>
+                  <View style={[styles.statIconBox, styles.statIconBoxWarn]}>
+                    <Ionicons
+                      name="time"
+                      size={13}
+                      color={KFitColors.warning}
+                    />
+                  </View>
+                </View>
+                <Text style={styles.statNumber}>{stats.pending}</Text>
+                <Text style={styles.statSubWarn}>Awaiting activation</Text>
+              </View>
+
+              <View
+                style={[styles.statCard, { width: isWide ? "23.5%" : "48%" }]}
+              >
+                <View style={styles.statTop}>
+                  <Text style={styles.statLabel}>Expired</Text>
+                  <View style={[styles.statIconBox, styles.statIconBoxError]}>
+                    <Ionicons
+                      name="alert-circle"
+                      size={13}
+                      color={KFitColors.error}
+                    />
+                  </View>
+                </View>
+                <Text style={styles.statNumber}>{stats.expired}</Text>
+                <Text style={styles.statSubError}>Renewal required</Text>
+              </View>
             </View>
 
             {/* Search */}
             <View style={styles.searchContainer}>
-              <Ionicons
-                name="search"
-                size={18}
-                color={KFitColors.mutedText}
-                style={styles.searchIcon}
-              />
+              <Ionicons name="search" size={16} color={KFitColors.mutedText} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search members by name or email"
@@ -378,41 +351,51 @@ export default function MembersScreen() {
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                accessibilityLabel="Search members"
               />
               {searchQuery.length > 0 && (
                 <Pressable
                   onPress={() => setSearchQuery("")}
                   hitSlop={10}
-                  style={styles.searchClear}
+                  accessibilityRole="button"
                   accessibilityLabel="Clear search"
                 >
                   <Ionicons
                     name="close-circle"
-                    size={18}
+                    size={16}
                     color={KFitColors.mutedText}
                   />
                 </Pressable>
               )}
             </View>
 
-            {/* Filter tabs */}
+            {/* Filter pills */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.filterScroll}
               contentContainerStyle={styles.filterContainer}
             >
-              {FILTERS.map((filter) => {
-                const active = selectedFilter === filter.label;
+              {FILTERS.map((f) => {
+                const active = filter === f.key;
+                const count = countFor(f.key);
                 return (
                   <Pressable
-                    key={filter.label}
+                    key={f.key}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                      setFilter(f.key);
+                    }}
                     style={({ pressed }) => [
                       styles.filterTab,
                       active && styles.filterTabActive,
                       pressed && styles.pressed,
                     ]}
-                    onPress={() => setSelectedFilter(filter.label)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`${f.label}, ${count} members`}
                   >
                     <Text
                       style={[
@@ -420,7 +403,7 @@ export default function MembersScreen() {
                         active && styles.filterTabTextActive,
                       ]}
                     >
-                      {filter.label}
+                      {f.label}
                     </Text>
                     <View
                       style={[
@@ -434,7 +417,7 @@ export default function MembersScreen() {
                           active && styles.filterCountTextActive,
                         ]}
                       >
-                        {filter.count}
+                        {count}
                       </Text>
                     </View>
                   </Pressable>
@@ -442,8 +425,8 @@ export default function MembersScreen() {
               })}
             </ScrollView>
 
-            {/* Table header (wide screens only) */}
-            {isWide && (
+            {/* Table header (wide) */}
+            {isWide && !membersLoading && filteredMembers.length > 0 && (
               <View style={styles.listHeader}>
                 <Text style={[styles.headerText2, { flex: 2.2 }]}>MEMBER</Text>
                 <Text style={[styles.headerText2, { flex: 1.2 }]}>
@@ -457,22 +440,39 @@ export default function MembersScreen() {
 
             {/* Members */}
             <View style={styles.memberList}>
-              {filteredMembers.length === 0 ? (
+              {membersLoading ? (
+                <Text style={styles.emptySub}>Loading members…</Text>
+              ) : filteredMembers.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons
-                    name="people-outline"
-                    size={34}
-                    color={KFitColors.mutedText}
-                  />
-                  <Text style={styles.emptyTitle}>No members found</Text>
+                  <View style={styles.emptyIconWrap}>
+                    <Ionicons
+                      name="people-outline"
+                      size={26}
+                      color={KFitColors.accent}
+                    />
+                  </View>
+                  <Text style={styles.emptyTitle}>
+                    {searchQuery ? "No matches" : "No members yet"}
+                  </Text>
                   <Text style={styles.emptySub}>
-                    Try a different search or filter.
+                    {searchQuery
+                      ? "Try a different search or filter."
+                      : "Register your first member to get started."}
                   </Text>
                 </View>
               ) : isWide ? (
                 filteredMembers.map((m) => (
                   <View key={m.id} style={styles.tableRow}>
-                    <View style={[styles.memberInfo, { flex: 2.2 }]}>
+                    <Pressable
+                      style={[styles.memberInfo, { flex: 2.2 }]}
+                      onPress={() =>
+                        router.push(
+                          `/member-attendance/${encodeURIComponent(m.id)}` as any,
+                        )
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={`View ${m.name} attendance`}
+                    >
                       <View style={styles.memberAvatar}>
                         <Text style={styles.avatarText}>
                           {initials(m.name)}
@@ -486,11 +486,14 @@ export default function MembersScreen() {
                           {m.email}
                         </Text>
                       </View>
-                    </View>
+                    </Pressable>
                     <Text
                       style={[
                         styles.membershipText,
-                        { flex: 1.2, color: membershipColor(m.membership) },
+                        {
+                          flex: 1.2,
+                          color: membershipColor(m.membership),
+                        },
                       ]}
                     >
                       {m.membership}
@@ -508,7 +511,20 @@ export default function MembersScreen() {
                 ))
               ) : (
                 filteredMembers.map((m) => (
-                  <View key={m.id} style={styles.memberCard}>
+                  <Pressable
+                    key={m.id}
+                    style={({ pressed }) => [
+                      styles.memberCard,
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() =>
+                      router.push(
+                        `/member-attendance/${encodeURIComponent(m.id)}` as any,
+                      )
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${m.name} attendance`}
+                  >
                     <View style={styles.cardTop}>
                       <View style={styles.memberAvatar}>
                         <Text style={styles.avatarText}>
@@ -547,7 +563,7 @@ export default function MembersScreen() {
                       <View style={styles.metaItem}>
                         <Ionicons
                           name="person-outline"
-                          size={13}
+                          size={11}
                           color={KFitColors.mutedText}
                         />
                         <Text style={styles.metaText} numberOfLines={1}>
@@ -557,15 +573,19 @@ export default function MembersScreen() {
                       <View style={styles.metaItem}>
                         <Ionicons
                           name="calendar-outline"
-                          size={13}
+                          size={11}
                           color={KFitColors.mutedText}
                         />
                         <Text style={styles.metaText}>{m.joinedDate}</Text>
                       </View>
                     </View>
-                  </View>
+                  </Pressable>
                 ))
               )}
+            </View>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerLabel}>KFIT ADMIN · MEMBERS</Text>
             </View>
           </ScrollView>
         </View>
@@ -591,10 +611,20 @@ export default function MembersScreen() {
               onPress={(e) => e.stopPropagation()}
             >
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Register member</Text>
+                <View style={styles.modalTitleRow}>
+                  <View style={styles.modalIcon}>
+                    <Ionicons
+                      name="person-add"
+                      size={14}
+                      color={KFitColors.accent}
+                    />
+                  </View>
+                  <Text style={styles.modalTitle}>Register member</Text>
+                </View>
                 <Pressable
                   onPress={() => setModalOpen(false)}
                   hitSlop={10}
+                  accessibilityRole="button"
                   accessibilityLabel="Close"
                 >
                   <Ionicons
@@ -629,7 +659,7 @@ export default function MembersScreen() {
               <TextInput
                 value={newPassword}
                 onChangeText={setNewPassword}
-                placeholder="Enter passwordForMember"
+                placeholder="Enter a secure password"
                 placeholderTextColor={KFitColors.mutedText}
                 secureTextEntry
                 style={styles.input}
@@ -637,9 +667,11 @@ export default function MembersScreen() {
 
               <Pressable
                 onPress={saveMember}
+                disabled={registerLoading}
                 style={({ pressed }) => [
                   styles.saveButtonWrapper,
                   pressed && styles.pressed,
+                  registerLoading && styles.saveButtonDisabled,
                 ]}
               >
                 <ImageBackground
@@ -649,11 +681,13 @@ export default function MembersScreen() {
                   imageStyle={styles.saveButtonImage}
                 >
                   <Ionicons
-                    name="checkmark"
+                    name="checkmark-circle"
                     size={16}
                     color={KFitColors.onAccent}
                   />
-                  <Text style={styles.saveButtonText}>Save & issue pass</Text>
+                  <Text style={styles.saveButtonText}>
+                    {registerLoading ? "Registering…" : "Save & issue pass"}
+                  </Text>
                 </ImageBackground>
               </Pressable>
             </Pressable>
@@ -670,7 +704,7 @@ function StatusBadge({ status }: { status: Status }) {
     <View
       style={[
         styles.statusBadge,
-        { backgroundColor: color + "1F", borderColor: color + "55" },
+        { backgroundColor: color + "1A", borderColor: color + "44" },
       ]}
     >
       <View style={[styles.statusDot, { backgroundColor: color }]} />
@@ -688,52 +722,43 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   pressed: { opacity: 0.7 },
 
-  /* Page title */
-  header: {
+  /* Page header */
+  pageHeader: {
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 16,
     marginBottom: 16,
     gap: 16,
   },
-  headerWide: {
+  pageHeaderWide: {
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
   },
-  headerText: { flexShrink: 1 },
+  headerText: { flexShrink: 1, gap: 2 },
   eyebrow: {
     color: KFitColors.accent,
     fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-    marginBottom: 4,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
   },
   heroTitle: {
-    fontSize: 28,
-    fontWeight: "800",
+    fontSize: 26,
+    fontWeight: "900",
     color: KFitColors.text,
-    marginBottom: 4,
+    marginTop: 2,
+    letterSpacing: -0.5,
   },
-  heroSubtitle: { fontSize: 13, color: KFitColors.mutedText, lineHeight: 19 },
+  heroSubtitle: {
+    fontSize: 13,
+    color: KFitColors.mutedText,
+    lineHeight: 19,
+    marginTop: 2,
+  },
 
   actionButtons: { flexDirection: "row", gap: 10 },
-  importButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    minHeight: 44,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.surface,
-  },
-  importButtonText: { fontSize: 14, fontWeight: "700", color: KFitColors.text },
   addButtonWrapper: {
-    flex: 1,
-    borderRadius: 12,
+    borderRadius: 10,
     overflow: "hidden",
     shadowColor: KFitColors.accent,
     shadowOffset: { width: 0, height: 4 },
@@ -745,47 +770,49 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    minHeight: 44,
-    paddingHorizontal: 16,
+    gap: 6,
+    minHeight: 42,
+    paddingHorizontal: 14,
   },
-  addButtonImage: {
-    borderRadius: 12,
-  },
+  addButtonImage: { borderRadius: 10 },
   addButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     color: KFitColors.onAccent,
   },
 
   /* Quick links */
-  quickLinksScroll: { flexGrow: 0, marginBottom: 18 },
+  quickLinksScroll: { flexGrow: 0, marginBottom: 16 },
   quickLinksContainer: { gap: 8, paddingHorizontal: 20 },
   quickLinkChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.surface,
   },
-  quickLinkText: { fontSize: 12, fontWeight: "700", color: KFitColors.text },
+  quickLinkText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: KFitColors.text,
+  },
 
   /* Stats */
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 20,
+    gap: 10,
+    marginBottom: 16,
   },
   statCard: {
     backgroundColor: KFitColors.surface,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: KFitColors.border,
   },
@@ -794,65 +821,97 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 6,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   statLabel: {
     flexShrink: 1,
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 10,
+    fontWeight: "900",
     color: KFitColors.mutedText,
+    letterSpacing: 0.6,
+    fontFamily: "monospace",
+    textTransform: "uppercase",
   },
   statIconBox: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: KFitColors.accent + "1A",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
   },
-  statIconBoxWarn: { backgroundColor: KFitColors.warning + "1F" },
+  statIconBoxWarn: {
+    backgroundColor: KFitColors.warning + "14",
+    borderColor: KFitColors.warning + "33",
+  },
+  statIconBoxError: {
+    backgroundColor: KFitColors.error + "14",
+    borderColor: KFitColors.error + "33",
+  },
   statNumber: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "900",
     color: KFitColors.text,
     letterSpacing: -0.5,
-    marginBottom: 4,
+    fontFamily: "monospace",
+    marginBottom: 2,
   },
-  statSub: { fontSize: 11, color: KFitColors.mutedText },
-  statSubWarn: { fontSize: 11, color: KFitColors.warning },
+  statSub: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
+  statSubAccent: {
+    fontSize: 10,
+    color: KFitColors.accent,
+    fontWeight: "700",
+    fontFamily: "monospace",
+  },
+  statSubWarn: {
+    fontSize: 10,
+    color: KFitColors.warning,
+    fontFamily: "monospace",
+  },
+  statSubError: {
+    fontSize: 10,
+    color: KFitColors.error,
+    fontFamily: "monospace",
+  },
 
   /* Search */
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
     marginHorizontal: 20,
-    marginBottom: 14,
-    height: 46,
-    borderRadius: 12,
+    marginBottom: 12,
+    height: 42,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.surface,
     paddingHorizontal: 12,
   },
-  searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
     height: "100%",
-    fontSize: 14,
+    fontSize: 12,
     color: KFitColors.text,
+    paddingVertical: 0,
   },
-  searchClear: { marginLeft: 6 },
 
   /* Filters */
-  filterScroll: { flexGrow: 0, marginBottom: 16 },
-  filterContainer: { gap: 8, paddingHorizontal: 20 },
+  filterScroll: { flexGrow: 0, marginBottom: 14 },
+  filterContainer: { gap: 6, paddingHorizontal: 20 },
   filterTab: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingLeft: 14,
-    paddingRight: 8,
-    paddingVertical: 7,
+    gap: 6,
+    paddingLeft: 12,
+    paddingRight: 6,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: KFitColors.border,
@@ -862,122 +921,194 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent,
     borderColor: KFitColors.accent,
   },
-  filterTabText: { fontSize: 13, color: KFitColors.text, fontWeight: "600" },
-  filterTabTextActive: { color: KFitColors.onAccent, fontWeight: "800" },
+  filterTabText: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontWeight: "700",
+  },
+  filterTabTextActive: { color: KFitColors.onAccent, fontWeight: "900" },
   filterCount: {
-    minWidth: 28,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    minWidth: 22,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     borderRadius: 999,
     alignItems: "center",
     backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
   },
-  filterCountActive: { backgroundColor: KFitColors.onAccent + "26" },
+  filterCountActive: {
+    backgroundColor: KFitColors.onAccent + "22",
+    borderColor: KFitColors.onAccent + "44",
+  },
   filterCountText: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 9,
+    fontWeight: "900",
     color: KFitColors.mutedText,
+    fontFamily: "monospace",
   },
   filterCountTextActive: { color: KFitColors.onAccent },
 
-  /* Table header (wide) */
+  /* Table header */
   listHeader: {
     flexDirection: "row",
     marginHorizontal: 20,
     paddingHorizontal: 14,
-    paddingBottom: 10,
+    paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: KFitColors.border,
   },
   headerText2: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 9,
+    fontWeight: "900",
     color: KFitColors.mutedText,
-    letterSpacing: 0.8,
+    letterSpacing: 1.2,
+    fontFamily: "monospace",
   },
 
   /* Member list */
-  memberList: { paddingHorizontal: 20, gap: 10, marginTop: 10 },
+  memberList: { paddingHorizontal: 20, gap: 8, marginTop: 8 },
 
   tableRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 14,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.surface,
   },
 
   memberCard: {
-    padding: 14,
-    borderRadius: 16,
+    padding: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.surface,
-    gap: 12,
+    gap: 10,
   },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
   cardMeta: {
     flexDirection: "row",
     flexWrap: "wrap",
     alignItems: "center",
-    gap: 10,
-    paddingTop: 12,
+    gap: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: KFitColors.border,
   },
   planChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
   },
-  planChipText: { fontSize: 11, fontWeight: "800" },
-  metaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  metaText: { fontSize: 12, color: KFitColors.mutedText },
+  planChipText: { fontSize: 10, fontWeight: "900", fontFamily: "monospace" },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  metaText: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
 
   memberInfo: { flexDirection: "row", alignItems: "center", gap: 12 },
   memberAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: KFitColors.accent,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { fontSize: 14, fontWeight: "900", color: KFitColors.onAccent },
+  avatarText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: KFitColors.accent,
+    fontFamily: "monospace",
+    letterSpacing: 0.3,
+  },
   memberDetails: { flex: 1, minWidth: 0 },
-  memberName: { fontSize: 14, fontWeight: "700", color: KFitColors.text },
-  memberEmail: { fontSize: 12, color: KFitColors.mutedText, marginTop: 2 },
-  membershipText: { fontSize: 13, fontWeight: "700" },
-  trainerText: { fontSize: 13, color: KFitColors.text },
-  joinedText: { fontSize: 12, color: KFitColors.mutedText },
+  memberName: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: KFitColors.text,
+    letterSpacing: -0.2,
+  },
+  memberEmail: {
+    fontSize: 10,
+    color: KFitColors.mutedText,
+    marginTop: 2,
+    fontFamily: "monospace",
+  },
+  membershipText: { fontSize: 12, fontWeight: "800" },
+  trainerText: {
+    fontSize: 12,
+    color: KFitColors.text,
+    fontFamily: "monospace",
+  },
+  joinedText: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    fontFamily: "monospace",
+  },
 
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
   },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 11, fontWeight: "800" },
+  statusDot: { width: 5, height: 5, borderRadius: 3 },
+  statusText: {
+    fontSize: 9,
+    fontWeight: "900",
+    fontFamily: "monospace",
+    letterSpacing: 0.4,
+  },
 
   emptyState: {
     alignItems: "center",
-    paddingVertical: 40,
-    gap: 6,
-    borderRadius: 16,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    gap: 8,
+    borderRadius: 14,
     borderWidth: 1,
     borderStyle: "dashed",
     borderColor: KFitColors.border,
   },
-  emptyTitle: { fontSize: 15, fontWeight: "700", color: KFitColors.text },
-  emptySub: { fontSize: 12, color: KFitColors.mutedText },
+  emptyIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "33",
+    marginBottom: 4,
+  },
+  emptyTitle: { fontSize: 14, fontWeight: "800", color: KFitColors.text },
+  emptySub: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    textAlign: "center",
+    lineHeight: 16,
+  },
+
+  footer: { alignItems: "center", paddingVertical: 20 },
+  footerLabel: {
+    color: KFitColors.mutedText,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+    opacity: 0.7,
+  },
 
   /* Modal */
   backdrop: {
@@ -989,13 +1120,13 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: "100%",
-    maxWidth: 360,
+    maxWidth: 380,
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
     borderColor: KFitColors.border,
     borderRadius: 18,
     padding: 20,
-    gap: 6,
+    gap: 4,
   },
   modalHeader: {
     flexDirection: "row",
@@ -1003,44 +1134,46 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 6,
   },
-  modalTitle: { color: KFitColors.text, fontSize: 16, fontWeight: "800" },
+  modalTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  modalIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "44",
+  },
+  modalTitle: {
+    color: KFitColors.text,
+    fontSize: 15,
+    fontWeight: "900",
+  },
   label: {
     color: KFitColors.mutedText,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    marginTop: 8,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    fontFamily: "monospace",
+    marginTop: 10,
   },
   input: {
     backgroundColor: KFitColors.background,
     borderWidth: 1,
     borderColor: KFitColors.border,
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: KFitColors.text,
-    fontSize: 14,
+    fontSize: 13,
+    marginTop: 6,
   },
-  planRow: { flexDirection: "row", gap: 8 },
-  planOption: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: KFitColors.border,
-    backgroundColor: KFitColors.background,
-  },
-  planOptionOn: {
-    borderColor: KFitColors.accent,
-    backgroundColor: KFitColors.accent + "26",
-  },
-  planOptionText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: KFitColors.mutedText,
-  },
-  planOptionTextOn: { color: KFitColors.accent },
+  saveButtonDisabled: { opacity: 0.55 },
   saveButtonWrapper: {
     marginTop: 16,
     borderRadius: 12,
@@ -1055,16 +1188,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     minHeight: 46,
     paddingHorizontal: 16,
   },
-  saveButtonImage: {
-    borderRadius: 12,
-  },
+  saveButtonImage: { borderRadius: 12 },
   saveButtonText: {
     color: KFitColors.onAccent,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
+    letterSpacing: 0.3,
   },
 });

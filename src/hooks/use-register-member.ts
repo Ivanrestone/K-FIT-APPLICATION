@@ -59,39 +59,31 @@ export function useRegisterMember() {
       }
 
       // Step 3: Create default subscription records (inactive)
-      // Use on conflict do nothing to handle existing subscriptions
-      const { error: appSubError } = await supabase
-        .from('subscriptions_app')
-        .upsert(
-          {
+      // Don't fail registration if subscriptions fail - they can be created later via payment
+      try {
+        await supabase
+          .from('subscriptions_app')
+          .insert({
             user_id: clerkUserId,
             active: false,
             expires_at: null,
             cancelled_at: null,
-          },
-          { onConflict: 'user_id', ignoreDuplicates: true }
-        );
-
-      if (appSubError && appSubError.code !== '23505') {
-        console.error('App subscription error:', appSubError);
-        throw new Error('Failed to create app subscription');
+          });
+      } catch (e) {
+        // Ignore subscription errors - user is created successfully
       }
 
-      const { error: gymSubError } = await supabase
-        .from('subscriptions_gym')
-        .upsert(
-          {
+      try {
+        await supabase
+          .from('subscriptions_gym')
+          .insert({
             user_id: clerkUserId,
             active: false,
             expires_at: null,
             cancelled_at: null,
-          },
-          { onConflict: 'user_id', ignoreDuplicates: true }
-        );
-
-      if (gymSubError && gymSubError.code !== '23505') {
-        console.error('Gym subscription error:', gymSubError);
-        throw new Error('Failed to create gym subscription');
+          });
+      } catch (e) {
+        // Ignore subscription errors - user is created successfully
       }
 
       return {

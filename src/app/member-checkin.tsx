@@ -1,10 +1,11 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
 import { KFitColors } from "@/constants/theme";
+import { useAttendanceHistory, formatAttendanceDate, formatAttendanceTime, attendanceDuration } from "@/hooks/use-attendance";
 import { useLogout } from "@/hooks/use-logout";
+import { useMemberProfile } from "@/hooks/use-member-profile";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -15,54 +16,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const NAV_CLEARANCE = 140;
-const QR_REFRESH_SECONDS = 15;
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
-type CheckinEntry = {
-  id: string;
-  date: string;
-  time: string;
-  activity: string;
-  duration: string;
-};
-
-// TODO: replace with data from your backend.
-const INITIAL_HISTORY: CheckinEntry[] = [
-  {
-    id: "h1",
-    date: "Oct 19",
-    time: "06:00 PM",
-    activity: "Strength training",
-    duration: "55 min",
-  },
-  {
-    id: "h2",
-    date: "Oct 17",
-    time: "08:12 AM",
-    activity: "Strength training",
-    duration: "60 min",
-  },
-  {
-    id: "h3",
-    date: "Oct 15",
-    time: "07:30 AM",
-    activity: "Open gym",
-    duration: "48 min",
-  },
-];
-
-const formatTime = (d: Date) =>
-  d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-
-const formatShortDate = (d: Date) =>
-  d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
 const formatDuration = (ms: number) => {
-  const totalMin = Math.max(0, Math.floor(ms / 60000));
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m} min`;
+  const minutes = Math.max(0, Math.floor(ms / 60_000));
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours ? `${hours}h ${remainder}m` : `${minutes} min`;
 };
 
 const formatClock = (ms: number) => {
@@ -98,11 +59,8 @@ export default function MemberCheckinScreen() {
   const router = useRouter();
   const { isSigningOut, logout } = useLogout();
 
-  // Start with an active session (matches the previous mock: ~1h 24m in).
-  const [checkedInAt, setCheckedInAt] = useState<Date | null>(
-    () => new Date(Date.now() - 84 * 60 * 1000),
-  );
-  const [history, setHistory] = useState<CheckinEntry[]>(INITIAL_HISTORY);
+  const { profile } = useMemberProfile();
+  const { records, isLoading, error, refetch } = useAttendanceHistory();
   const [now, setNow] = useState(() => Date.now());
 
   // One ticking clock drives both the session timer and the QR countdown.
@@ -111,44 +69,28 @@ export default function MemberCheckinScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const today = useMemo(
-    () =>
-      new Date().toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }),
-    [],
-  );
+  const today = new Date(now).toLocaleDateString("en-US", {
+    timeZone: "Asia/Manila",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 
+  const openSession = records.find((record) => record.checkout_timestamp === null);
+  const checkedInAt = openSession ? new Date(openSession.scan_timestamp) : null;
   const isCheckedIn = checkedInAt !== null;
   const sessionMs = checkedInAt ? now - checkedInAt.getTime() : 0;
-
-  // Placeholder dynamic token: swap for your real TOTP value.
-  const cycle = Math.floor(now / (QR_REFRESH_SECONDS * 1000));
-  const secondsLeft =
-    QR_REFRESH_SECONDS - (Math.floor(now / 1000) % QR_REFRESH_SECONDS);
-  const token = `KFIT-${1000 + ((cycle * 7919) % 9000)}`;
-
-  const handleCheckIn = () => {
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setCheckedInAt(new Date());
-  };
-
-  const handleCheckOut = () => {
-    if (!checkedInAt) return;
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    const entry: CheckinEntry = {
-      id: `h-${Date.now()}`,
-      date: formatShortDate(checkedInAt),
-      time: formatTime(checkedInAt),
-      activity: "Open gym",
-      duration: formatDuration(Date.now() - checkedInAt.getTime()),
-    };
-    setHistory((prev) => [entry, ...prev]);
-    setCheckedInAt(null);
-  };
+  const token = "Tap to open your secure QR pass";
+  const visitsThisMonth = records.filter((record) => {
+    const visitMonth = new Date(record.scan_timestamp).toLocaleDateString("en-US", {
+      timeZone: "Asia/Manila", year: "numeric", month: "numeric",
+    });
+    const currentMonth = new Date(now).toLocaleDateString("en-US", {
+      timeZone: "Asia/Manila", year: "numeric", month: "numeric",
+    });
+    return visitMonth === currentMonth;
+  }).length;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -183,7 +125,7 @@ export default function MemberCheckinScreen() {
 
           {/* Title */}
           <View style={styles.titleSection}>
-            <Text style={styles.memberLabel}>Member · Jordan Lee</Text>
+            <Text style={styles.memberLabel}>Member · {[profile?.firstName, profile?.lastName].filter(Boolean).join(" ") || "Member"}</Text>
             <Text style={styles.title}>Check in</Text>
             <Text style={styles.subtitle}>
               Scan your QR code at the kiosk to check in.
@@ -193,28 +135,22 @@ export default function MemberCheckinScreen() {
           {/* QR card */}
           <View style={styles.qrCard}>
             <View style={styles.qrFrame}>
-              <Ionicons name="qr-code" size={150} color={KFitColors.accent} />
+              <TouchableOpacity onPress={() => router.replace("/member-qr" as any)} accessibilityRole="button">
+                <Ionicons name="qr-code" size={150} color={KFitColors.accent} />
+              </TouchableOpacity>
               <Text style={styles.qrToken}>{token}</Text>
             </View>
 
             <View style={styles.qrMetaRow}>
               <Text style={styles.qrLabel}>Member ID</Text>
-              <Text style={styles.qrValue}>PM-1042</Text>
+              <Text style={styles.qrValue}>{profile?.id ?? "—"}</Text>
             </View>
             <View style={styles.divider} />
             <View style={styles.qrMetaRow}>
-              <Text style={styles.qrLabel}>Refreshes in</Text>
+              <Text style={styles.qrLabel}>Pass status</Text>
               <Text style={[styles.qrValue, styles.qrCountdown]}>
-                {secondsLeft}s
+                {isLoading ? "Loading" : error ? "Unavailable" : "Ready"}
               </Text>
-            </View>
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { width: `${(secondsLeft / QR_REFRESH_SECONDS) * 100}%` },
-                ]}
-              />
             </View>
 
             <TouchableOpacity
@@ -257,18 +193,25 @@ export default function MemberCheckinScreen() {
                 </Text>
               </View>
               <Text style={styles.statusMain}>
-                {checkedInAt
-                  ? `Checked in at ${formatTime(checkedInAt)}`
-                  : "Ready when you are"}
+                {isLoading
+                  ? "Loading attendance status…"
+                  : error
+                    ? "Attendance status unavailable"
+                    : checkedInAt
+                      ? `Checked in at ${formatAttendanceTime(openSession!.scan_timestamp)}`
+                      : "Ready when you are"}
               </Text>
               <Text style={styles.statusSub}>
-                {checkedInAt
-                  ? checkedInAt.toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })
-                  : "Check in below or scan your QR at the kiosk."}
+                {isLoading
+                  ? "Checking latest attendance…"
+                  : error ?? (checkedInAt
+                    ? checkedInAt.toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                        timeZone: "Asia/Manila",
+                      })
+                    : "Scan your QR pass at the kiosk to check in.")}
               </Text>
             </View>
           </View>
@@ -287,34 +230,8 @@ export default function MemberCheckinScreen() {
               <Text style={styles.sessionHint}>
                 {isCheckedIn
                   ? `Duration: ${formatDuration(sessionMs)}`
-                  : "Your timer starts when you check in."}
+                  : "Check-in and check-out are recorded by the staff scanner."}
               </Text>
-
-              {isCheckedIn ? (
-                <TouchableOpacity
-                  style={styles.checkoutButton}
-                  onPress={handleCheckOut}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                >
-                  <Feather name="log-out" size={16} color={KFitColors.error} />
-                  <Text style={styles.checkoutText}>Check Out</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.checkinButton}
-                  onPress={handleCheckIn}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                >
-                  <Feather
-                    name="log-in"
-                    size={16}
-                    color={KFitColors.onAccent}
-                  />
-                  <Text style={styles.checkinText}>Check In Now</Text>
-                </TouchableOpacity>
-              )}
             </View>
           </View>
 
@@ -324,26 +241,35 @@ export default function MemberCheckinScreen() {
               <Feather name="list" size={16} color={KFitColors.accent} />
               <Text style={styles.sectionTitle}>Recent Check-ins</Text>
             </View>
-            <View style={styles.list}>
-              {history.slice(0, 5).map((h) => (
-                <View key={h.id} style={styles.historyCard}>
-                  <View style={styles.historyIconBox}>
-                    <Feather
-                      name="map-pin"
-                      size={16}
-                      color={KFitColors.accent}
-                    />
+            {isLoading ? (
+              <Text style={styles.historyMeta}>Loading attendance…</Text>
+            ) : error ? (
+              <View style={styles.card}>
+                <Text style={styles.statusSub}>{error}</Text>
+                <TouchableOpacity onPress={() => void refetch()} accessibilityRole="button">
+                  <Text style={styles.fullQrText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : records.length === 0 ? (
+              <Text style={styles.historyMeta}>No attendance records yet.</Text>
+            ) : (
+              <View style={styles.list}>
+                {records.slice(0, 5).map((record) => (
+                  <View key={record.id} style={styles.historyCard}>
+                    <View style={styles.historyIconBox}>
+                      <Feather name="map-pin" size={16} color={KFitColors.accent} />
+                    </View>
+                    <View style={styles.historyInfo}>
+                      <Text style={styles.historyActivity}>{formatAttendanceDate(record.scan_timestamp)}</Text>
+                      <Text style={styles.historyMeta}>
+                        IN {formatAttendanceTime(record.scan_timestamp)} · OUT {record.checkout_timestamp ? formatAttendanceTime(record.checkout_timestamp) : "In progress"}
+                      </Text>
+                    </View>
+                    <Text style={styles.historyDuration}>{attendanceDuration(record.scan_timestamp, record.checkout_timestamp, now)}</Text>
                   </View>
-                  <View style={styles.historyInfo}>
-                    <Text style={styles.historyActivity}>{h.activity}</Text>
-                    <Text style={styles.historyMeta}>
-                      {h.date} · {h.time}
-                    </Text>
-                  </View>
-                  <Text style={styles.historyDuration}>{h.duration}</Text>
-                </View>
-              ))}
-            </View>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* This month */}
@@ -353,15 +279,15 @@ export default function MemberCheckinScreen() {
               <Text style={styles.sectionTitle}>This Month</Text>
             </View>
             <View style={styles.statsGrid}>
-              <StatCard icon="check-circle" value="18" label="Visits" />
-              <StatCard icon="clock" value="14h 32m" label="Total Time" />
-              <StatCard icon="zap" value="14" label="Day Streak" />
+              <StatCard icon="check-circle" value={String(visitsThisMonth)} label="Visits" />
+              <StatCard icon="clock" value={formatDuration(records.reduce((total, record) => total + (record.checkout_timestamp ? Math.max(0, Date.parse(record.checkout_timestamp) - Date.parse(record.scan_timestamp)) : Math.max(0, now - Date.parse(record.scan_timestamp))), 0))} label="Total Time" />
+              <StatCard icon="zap" value="—" label="Day Streak" />
             </View>
           </View>
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerName}>Jordan Lee</Text>
+            <Text style={styles.footerName}>{[profile?.firstName, profile?.lastName].filter(Boolean).join(" ") || "Member"}</Text>
             <Text style={styles.footerLabel}>
               FORM ATHLETICS MEMBER WORKSPACE
             </Text>
