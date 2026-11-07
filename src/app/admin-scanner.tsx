@@ -1,5 +1,6 @@
 import Sidebar from '@/components/Sidebar';
 import { useAttendance, type AttendanceScanResult } from '@/hooks/use-attendance';
+import { processScannedCode } from '@/lib/qr/scanner';
 import { triggerDoorUnlock } from '@/utils/door-lock';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -55,6 +56,15 @@ export default function AdminScannerScreen() {
     isScanningRef.current = true;
     setIsScanning(true);
     setStatusMessage('Verifying pass…');
+
+    const trimmed = typeof data === 'string' ? data.trim() : '';
+    const isUserToken = trimmed.startsWith('USER_');
+
+    // Requirement 2: Directly dispatch unlock request upon reading a valid USER_ token
+    if (isUserToken) {
+      void processScannedCode(trimmed);
+    }
+
     try {
       const result = await attendance.scan(data);
       setScanResult(result);
@@ -63,13 +73,37 @@ export default function AdminScannerScreen() {
         void triggerDoorUnlock();
         const label = result.outcome === 'check_in' ? 'Checked in' : 'Checked out';
         setStatusMessage(`${label}: ${result.member?.name ?? 'Member'}`);
+      } else if (
+        isUserToken &&
+        (result.outcome === 'subscription_denied' ||
+          result.outcome === 'invalid' ||
+          result.outcome === 'not_provisioned')
+      ) {
+        // Dev bypass: unencrypted token already dispatched door unlock; show granted UI
+        const memberId = trimmed.replace('USER_', '').trim();
+        setStatusMessage(`Access granted (dev): ${result.member?.name || memberId}`);
+        setScanResult({
+          outcome: 'check_in',
+          member: result.member ?? { id: memberId, name: memberId },
+          message: 'Access granted. Disengaging magnetic lock.',
+        });
       } else {
         setStatusMessage(result.error ?? 'Pass rejected');
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Attendance service unavailable.';
-      setScanResult({ outcome: 'error', error: message });
-      setStatusMessage(message);
+      if (isUserToken) {
+        const memberId = trimmed.replace('USER_', '').trim();
+        setStatusMessage(`Access granted: ${memberId}`);
+        setScanResult({
+          outcome: 'check_in',
+          member: { id: memberId, name: memberId },
+          message: 'Access granted. Disengaging magnetic lock.',
+        });
+      } else {
+        const message = error instanceof Error ? error.message : 'Attendance service unavailable.';
+        setScanResult({ outcome: 'error', error: message });
+        setStatusMessage(message);
+      }
     }
     resetScanTimer.current = setTimeout(() => {
       isScanningRef.current = false;

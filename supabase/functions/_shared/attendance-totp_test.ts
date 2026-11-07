@@ -31,7 +31,11 @@ Deno.test("decodes RFC 6238 SHA-1 TOTP vectors", async () => {
   }
 });
 
-Deno.test("parses valid attendance QR payloads (pipe and JSON)", () => {
+Deno.test("parses valid attendance QR payloads (pipe, JSON, and unencrypted USER_)", () => {
+  const parsedPlain = parseAttendanceQr("USER_member_789");
+  if (!parsedPlain || parsedPlain.memberId !== "member_789" || !parsedPlain.isPlain || parsedPlain.counter !== 0) {
+    throw new Error("Expected unencrypted USER_ payload to parse correctly.");
+  }
   const parsedPipe = parseAttendanceQr("KFIT1|user_123|59|123456");
   if (!parsedPipe || parsedPipe.memberId !== "user_123" || parsedPipe.counter !== 59 || parsedPipe.code !== "123456") {
     throw new Error("Expected pipe QR payload fields to parse correctly.");

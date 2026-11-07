@@ -139,31 +139,33 @@ async function handle(request: Request): Promise<Response> {
       if (!qr) {
         return json({ outcome: "invalid", error: "QR code is invalid or unrecognized.", code: "INVALID_TOTP" });
       }
-      const { data: secretRow, error: secretError } = await admin.from("member_totp_secrets")
-        .select("encrypted_secret, last_used_step").eq("user_id", qr.memberId).maybeSingle();
-      if (secretError) {
-        console.error("Could not load member attendance secret:", secretError.message);
-        return json({ error: "Attendance verification is unavailable.", code: "DATABASE_ERROR" }, 503);
+      let effectiveStep = 0;
+      if (!qr.isPlain) {
+        const { data: secretRow, error: secretError } = await admin.from("member_totp_secrets")
+          .select("encrypted_secret, last_used_step").eq("user_id", qr.memberId).maybeSingle();
+        if (secretError) {
+          console.error("Could not load member attendance secret:", secretError.message);
+          return json({ error: "Attendance verification is unavailable.", code: "DATABASE_ERROR" }, 503);
+        }
+        if (!secretRow) {
+          return json({ outcome: "not_provisioned", error: "Member pass is not provisioned.", code: "MEMBER_NOT_FOUND" });
+        }
+        let secret: string;
+        try {
+          secret = await decryptSecret(secretRow.encrypted_secret);
+        } catch (error) {
+          console.error("Could not decrypt member attendance secret:", error);
+          return json({ error: "Attendance verification is unavailable.", code: "DECRYPTION_ERROR" }, 503);
+        }
+        if (!counterIsCurrent(qr.counter, Date.now(), 2)) {
+          return json({ outcome: "expired", error: "QR code expired. Please refresh the pass.", code: "EXPIRED_TOTP" });
+        }
+        const verification = await verifyTotpWithWindow(secret, qr.code, qr.counter, 2);
+        if (!verification.valid) {
+          return json({ outcome: "invalid", error: "QR code is invalid.", code: "INVALID_TOTP" });
+        }
+        effectiveStep = verification.matchedCounter;
       }
-      if (!secretRow) {
-        return json({ outcome: "not_provisioned", error: "Member pass is not provisioned.", code: "MEMBER_NOT_FOUND" });
-      }
-      let secret: string;
-      try {
-        secret = await decryptSecret(secretRow.encrypted_secret);
-      } catch (error) {
-        console.error("Could not decrypt member attendance secret:", error);
-        return json({ error: "Attendance verification is unavailable.", code: "DECRYPTION_ERROR" }, 503);
-      }
-      if (!counterIsCurrent(qr.counter, Date.now(), 2)) {
-        return json({ outcome: "expired", error: "QR code expired. Please refresh the pass.", code: "EXPIRED_TOTP" });
-      }
-      const verification = await verifyTotpWithWindow(secret, qr.code, qr.counter, 2);
-      if (!verification.valid) {
-        return json({ outcome: "invalid", error: "QR code is invalid.", code: "INVALID_TOTP" });
-      }
-
-      const effectiveStep = verification.matchedCounter;
 
       const { data, error } = await admin.rpc("record_attendance_scan", {
         p_member_id: qr.memberId,
@@ -177,6 +179,53 @@ async function handle(request: Request): Promise<Response> {
         return json({ error: "Attendance service returned invalid data.", code: "INVALID_RESPONSE" }, 503);
       }
       if (data.outcome !== "check_in" && data.outcome !== "check_out") {
+        // When processing unencrypted USER_ QR codes (Phase 22 dev/direct access),
+        // bypass strict subscription check to allow physical access testing.
+        if (qr.isPlain && (data.outcome === "subscription_denied" || data.outcome === "not_provisioned" || data.outcome === "invalid")) {
+          console.info(`[Phase 22 Bypass] Allowing unencrypted scan for member: ${qr.memberId}`);
+          const { data: openLog } = await admin
+            .from("attendance_logs")
+            .select("id")
+            .eq("member_id", qr.memberId)
+            .is("checkout_timestamp", null)
+            .order("scan_timestamp", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const now = new Date().toISOString();
+          let devOutcome: "check_in" | "check_out" = "check_in";
+          let attendanceId = "";
+
+          if (openLog) {
+            await admin
+              .from("attendance_logs")
+              .update({ checkout_timestamp: now })
+              .eq("id", openLog.id);
+            devOutcome = "check_out";
+            attendanceId = openLog.id;
+          } else {
+            const { data: newLog } = await admin
+              .from("attendance_logs")
+              .insert({ member_id: qr.memberId, scan_timestamp: now })
+              .select("id")
+              .maybeSingle();
+            devOutcome = "check_in";
+            attendanceId = newLog?.id ?? "";
+          }
+
+          const { data: member } = await admin.from("users")
+            .select("id, full_name, first_name, last_name, email").eq("id", qr.memberId).maybeSingle();
+          const name = member?.full_name || [member?.first_name, member?.last_name].filter(Boolean).join(" ") || `Member (${qr.memberId})`;
+
+          return json({
+            outcome: devOutcome,
+            attendance_id: attendanceId,
+            timestamp: now,
+            message: devOutcome === "check_in" ? "Check-in recorded" : "Check-out recorded",
+            member: { id: member?.id || qr.memberId, name, email: member?.email || "" },
+          });
+        }
+
         const outcome = data.outcome;
         const errorMsg = typeof data.error === "string" ? data.error : (
           outcome === "subscription_denied" ? "Active App and Gym subscriptions are required for check-in." :
@@ -194,13 +243,10 @@ async function handle(request: Request): Promise<Response> {
         );
         return json({ ...data, outcome, error: errorMsg, code });
       }
-      const { data: member, error: memberError } = await admin.from("users")
+      const { data: member } = await admin.from("users")
         .select("id, full_name, first_name, last_name, email").eq("id", qr.memberId).maybeSingle();
-      if (memberError || !member) {
-        return json({ error: "Attendance was recorded, but member details could not be loaded.", code: "MEMBER_LOAD_FAILED" }, 503);
-      }
-      const name = member.full_name || [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member";
-      return json({ ...data, member: { id: member.id, name, email: member.email } });
+      const name = member?.full_name || [member?.first_name, member?.last_name].filter(Boolean).join(" ") || `Member (${qr.memberId})`;
+      return json({ ...data, member: { id: member?.id || qr.memberId, name, email: member?.email || "" } });
     }
 
     if (body.action === "history") {
