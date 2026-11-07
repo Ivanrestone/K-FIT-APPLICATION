@@ -11,7 +11,7 @@ import {
   useSubscriptionAccess,
   type SubscriptionAccessData,
 } from "@/hooks/use-subscription-access";
-import { createMemberSupabaseClient } from "@/utils/supabase";
+import { createMemberSupabaseClient, resolveSupabaseUrl } from "@/utils/supabase";
 
 export type AttendanceRecord = {
   id: string;
@@ -30,7 +30,14 @@ export type AttendanceScanResult = {
 };
 export type AttendanceRole = "member" | "staff" | "admin";
 
-const PROVISION_REQUEST_TIMEOUT_MS = 9_000;
+// Provisioning waits on Edge Function cold starts and AES-GCM key work, which
+// regularly exceeds the default request budget on a cold emulator.
+const PROVISION_REQUEST_TIMEOUT_MS = 15_000;
+// Two retries with exponential backoff for 503 responses and transport
+// failures, so a cold Edge Function boot does not surface as a fatal error.
+const ATTENDANCE_RETRY_DELAYS_MS = [500, 1_500];
+const SESSION_TOKEN_WAIT_ATTEMPTS = 3;
+const SESSION_TOKEN_WAIT_INTERVAL_MS = 300;
 const ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE =
   "An active App subscription is required to load attendance history.";
 
@@ -42,6 +49,16 @@ function hasActiveAppSubscription(
   data: SubscriptionAccessData | null,
 ): boolean {
   return hasActiveSubscription(data);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeSessionToken(token: string | null | undefined): string | null {
+  if (!token) return null;
+  const normalized = token.replace(/^Bearer\s+/i, "").trim();
+  return normalized || null;
 }
 
 function getAttendanceRole(value: unknown): AttendanceRole {
@@ -59,20 +76,36 @@ export function useAttendance() {
     (user?.publicMetadata as Record<string, unknown> | undefined)?.role,
   );
 
-  // Always request the Clerk JWT template Supabase validates. If the template
-  // is not configured yet, fall back to the default session token.
+  // The attendance function validates the token against Clerk's JWKS, which
+  // only accepts asymmetric algorithms. The `supabase` JWT template is HS256
+  // (signed with the Supabase secret for the legacy integration), so sending it
+  // fails with "Session token algorithm is invalid". Use the default Clerk
+  // session token here; the template stays in use for PostgREST/RLS reads.
   const getSupabaseToken = useCallback(async () => {
     try {
-      const templateToken = await getToken({ template: "supabase" });
-      if (templateToken) return templateToken;
+      return normalizeSessionToken(await getToken());
     } catch (error) {
       console.warn(
         "[Attendance Token Notice]:",
         error instanceof Error ? error.message : String(error),
       );
+      return null;
     }
-    return getToken();
   }, [getToken]);
+
+  // Clerk can return an empty token while the session is still hydrating. Wait
+  // briefly instead of sending a request with no Authorization header, which
+  // only comes back as an unexplained 401 from the Edge Function.
+  const resolveSessionToken = useCallback(async () => {
+    for (let attempt = 0; attempt < SESSION_TOKEN_WAIT_ATTEMPTS; attempt += 1) {
+      const token = await getSupabaseToken();
+      if (token) return token;
+      if (attempt < SESSION_TOKEN_WAIT_ATTEMPTS - 1) {
+        await delay(SESSION_TOKEN_WAIT_INTERVAL_MS * (attempt + 1));
+      }
+    }
+    return null;
+  }, [getSupabaseToken]);
 
   const supabase = useMemo(() => {
     if (!isSignedIn) return null;
@@ -101,16 +134,87 @@ export function useAttendance() {
         : "Could not initialize the Supabase client. See the [Attendance Client Initialization Error] log.");
     }
 
-    const { data, error, response: invocationResponse } = await supabase.functions.invoke("attendance", {
-      body,
-      ...(timeout ? { timeout } : {}),
-    });
-    if (error) {
+    // A request without a token comes back as 401 and hides the real cause, so
+    // fail before anything leaves the device.
+    const token = await resolveSessionToken();
+    if (!token) {
+      throw new Error("Your session is not ready. Sign in again to load attendance.");
+    }
+
+    const requestUrl = `${resolveSupabaseUrl(
+      process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
+    ).replace(/\/+$/, "")}/functions/v1/attendance`;
+    const requestHeaders = {
+      "content-type": "application/json",
+      "x-client-info": "[supabase-js]",
+      apikey: "[redacted]",
+      authorization: "Bearer [redacted]",
+    };
+
+    for (let attempt = 0; ; attempt += 1) {
+      const { data, error, response: invocationResponse } = await supabase.functions.invoke("attendance", {
+        body,
+        ...(timeout ? { timeout } : {}),
+      });
+
+      if (!error) {
+        if (!data || typeof data !== "object") {
+          if (body.action === "history" || body.action === "staff_history") {
+            return { records: [], history: [] } as unknown as T;
+          }
+          throw new Error("Attendance service returned an invalid response.");
+        }
+        if (typeof data.error === "string") {
+          if (body.action === "history" || body.action === "staff_history") {
+            console.debug("[Attendance API Response Silent Notice]", {
+              action: body.action,
+              status: invocationResponse?.status,
+              message: data.error,
+            });
+            return { records: [], history: [] } as unknown as T;
+          }
+          console.error("[Attendance API Response Error]", {
+            action: body.action,
+            status: invocationResponse?.status,
+            statusText: invocationResponse?.statusText,
+            message: data.error,
+            platform: Platform.OS,
+          });
+          throw new Error(data.error);
+        }
+        return data as T;
+      }
+
       const response = error.context instanceof Response
         ? error.context
         : invocationResponse;
       const responseStatus = response?.status;
       const responseStatusText = response?.statusText;
+      const fetchCause = error instanceof FunctionsFetchError ? error.context : undefined;
+      const fetchWasAborted = fetchCause instanceof Error &&
+        (fetchCause.name === "AbortError" || /abort/i.test(fetchCause.message));
+      const retryDelay = attempt < ATTENDANCE_RETRY_DELAYS_MS.length
+        ? ATTENDANCE_RETRY_DELAYS_MS[attempt]
+        : undefined;
+      const shouldRetry = retryDelay !== undefined &&
+        (responseStatus === 503 ||
+          (error instanceof FunctionsFetchError && !fetchWasAborted));
+
+      if (shouldRetry) {
+        console.warn("[Attendance API Retry]", {
+          action: body.action,
+          attempt: attempt + 1,
+          maxRetries: ATTENDANCE_RETRY_DELAYS_MS.length,
+          status: responseStatus,
+          message: error.message,
+          retryInMs: retryDelay,
+          requestUrl,
+          platform: Platform.OS,
+        });
+        await delay(retryDelay);
+        continue;
+      }
+
       let responseBody: unknown;
       let responseText: string | undefined;
       if (response) {
@@ -136,7 +240,6 @@ export function useAttendance() {
           : error instanceof FunctionsFetchError
             ? "network-fetch-error"
             : "unknown-function-error";
-      const fetchCause = error instanceof FunctionsFetchError ? error.context : undefined;
 
       // If this is a background history call, silence errors to prevent red LogBox toasts
       if (body.action === "history" || body.action === "staff_history") {
@@ -155,6 +258,8 @@ export function useAttendance() {
         message: error.message,
         status: responseStatus,
         statusText: responseStatusText,
+        requestUrl,
+        requestHeaders,
         corsAllowOrigin: response?.headers.get("access-control-allow-origin") ?? undefined,
         responseContentType: response?.headers.get("content-type") ?? undefined,
         responseBody,
@@ -167,7 +272,6 @@ export function useAttendance() {
       });
 
       const statusSuffix = responseStatus ? ` (HTTP ${responseStatus})` : "";
-      const fetchWasAborted = fetchCause instanceof Error && fetchCause.name === "AbortError";
       const message = serviceMessage ?? (fetchWasAborted
         ? "Attendance service request timed out. The local QR pass remains available."
         : error instanceof FunctionsFetchError
@@ -175,32 +279,7 @@ export function useAttendance() {
           : error.message || "Attendance service is unavailable. Check your connection and retry.");
       throw new Error(`${message}${statusSuffix}`);
     }
-    if (!data || typeof data !== "object") {
-      if (body.action === "history" || body.action === "staff_history") {
-        return { records: [], history: [] } as unknown as T;
-      }
-      throw new Error("Attendance service returned an invalid response.");
-    }
-    if (typeof data.error === "string") {
-      if (body.action === "history" || body.action === "staff_history") {
-        console.debug("[Attendance API Response Silent Notice]", {
-          action: body.action,
-          status: invocationResponse?.status,
-          message: data.error,
-        });
-        return { records: [], history: [] } as unknown as T;
-      }
-      console.error("[Attendance API Response Error]", {
-        action: body.action,
-        status: invocationResponse?.status,
-        statusText: invocationResponse?.statusText,
-        message: data.error,
-        platform: Platform.OS,
-      });
-      throw new Error(data.error);
-    }
-    return data as T;
-  }, [isSignedIn, supabase]);
+  }, [isSignedIn, resolveSessionToken, supabase]);
 
   const provision = useCallback((secret: string) =>
     invoke<{ provisioned: boolean }>({ action: "provision", secret }, PROVISION_REQUEST_TIMEOUT_MS), [invoke]);
