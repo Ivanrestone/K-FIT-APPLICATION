@@ -18,7 +18,7 @@
  *   - Only check_in and check_out outcomes unlock the door.
  */
 
-const PI_LOCK_URL = process.env.EXPO_PUBLIC_PI_LOCK_URL ?? "";
+const PI_LOCK_URL = process.env.EXPO_PUBLIC_PI_LOCK_URL ?? process.env.NEXT_PUBLIC_PI_LOCK_URL ?? "";
 const LOCK_TIMEOUT_MS = 3_000;
 
 /**

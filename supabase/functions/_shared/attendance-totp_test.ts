@@ -31,23 +31,27 @@ Deno.test("decodes RFC 6238 SHA-1 TOTP vectors", async () => {
   }
 });
 
-Deno.test("parses only valid attendance QR payloads", () => {
-  const parsed = parseAttendanceQr("KFIT1|user_123|59|123456");
-  if (!parsed || parsed.memberId !== "user_123" || parsed.counter !== 59 || parsed.code !== "123456") {
-    throw new Error("Expected QR payload fields to parse correctly.");
+Deno.test("parses valid attendance QR payloads (pipe and JSON)", () => {
+  const parsedPipe = parseAttendanceQr("KFIT1|user_123|59|123456");
+  if (!parsedPipe || parsedPipe.memberId !== "user_123" || parsedPipe.counter !== 59 || parsedPipe.code !== "123456") {
+    throw new Error("Expected pipe QR payload fields to parse correctly.");
+  }
+  const parsedJson = parseAttendanceQr(JSON.stringify({ memberId: "user_456", code: "654321", timestamp: 1_800_000_000_000 }));
+  if (!parsedJson || parsedJson.memberId !== "user_456" || parsedJson.code !== "654321" || parsedJson.counter !== 60_000_000) {
+    throw new Error("Expected JSON QR payload fields to parse correctly.");
   }
   for (const value of [null, 3, "", "KFIT2|user_123|59|123456", "KFIT1|user_123|x|123456", "KFIT1|user_123|59|12345"]) {
     if (parseAttendanceQr(value) !== null) throw new Error(`Expected ${String(value)} to be rejected.`);
   }
 });
 
-Deno.test("accepts only current or adjacent 30-second time steps", () => {
+Deno.test("accepts current and adjacent time steps within tolerance window (window: 2)", () => {
   const now = 1_800_000_000_000;
   const current = Math.floor(now / 30_000);
-  if (!counterIsCurrent(current, now) || !counterIsCurrent(current - 1, now) || !counterIsCurrent(current + 1, now)) {
-    throw new Error("Current and adjacent counters should pass the clock window.");
+  if (!counterIsCurrent(current, now) || !counterIsCurrent(current - 1, now) || !counterIsCurrent(current + 1, now) || !counterIsCurrent(current - 2, now) || !counterIsCurrent(current + 2, now)) {
+    throw new Error("Counters within 2-step window should pass.");
   }
-  if (counterIsCurrent(current - 2, now) || counterIsCurrent(current + 2, now)) {
-    throw new Error("Counters outside the one-step clock window should fail.");
+  if (counterIsCurrent(current - 3, now) || counterIsCurrent(current + 3, now)) {
+    throw new Error("Counters outside the two-step clock window should fail.");
   }
 });

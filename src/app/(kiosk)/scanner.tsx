@@ -1,16 +1,28 @@
+import { useAttendance, type AttendanceScanResult } from '@/hooks/use-attendance';
+import { triggerDoorUnlock } from '@/utils/door-lock';
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { useAttendance, type AttendanceScanResult } from '@/hooks/use-attendance';
-import { triggerDoorUnlock } from '@/utils/door-lock';
 
-const SCAN_COOLDOWN_MS = 3000;
+const SCAN_COOLDOWN_MS = 3500;
+
+const getInitials = (name?: string) =>
+  (name || 'Member')
+    .split(' ')
+    .map((n) => n[0])
+    .filter(Boolean)
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
 export default function ScannerScreen() {
   const attendance = useAttendance();
@@ -18,7 +30,7 @@ export default function ScannerScreen() {
   const [isScanning, setIsScanning] = useState(false);
   const isScanningRef = useRef(false);
   const [statusMessage, setStatusMessage] = useState('Ready to scan');
-  const [scanResult, setScanResult] = useState<AttendanceScanResult | { outcome: 'error'; error: string; member?: { id: string; name: string } } | null>(null);
+  const [scanResult, setScanResult] = useState<AttendanceScanResult | { outcome: 'error'; error: string; code?: string; member?: { id: string; name: string } } | null>(null);
   const resetScanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -128,17 +140,59 @@ export default function ScannerScreen() {
         </View>
 
         {scanResult && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultTitle}>Scan Result</Text>
-            {scanResult.member && <Text style={styles.resultMember}>{scanResult.member.name}</Text>}
-            <Text style={[
-              styles.resultStatus,
-              (scanResult.outcome === 'check_in' || scanResult.outcome === 'check_out') && styles.statusSuccessText,
-              scanResult.outcome === 'expired' && styles.statusExpiredText,
-              !['check_in', 'check_out', 'expired'].includes(scanResult.outcome) && styles.statusInvalidText,
-            ]}>
-              {scanResult.error ?? (scanResult.outcome === 'check_in' ? 'Check-in recorded' : scanResult.outcome === 'check_out' ? 'Check-out recorded' : 'Pass rejected')}
-            </Text>
+          <View style={[
+            styles.resultCard,
+            (scanResult.outcome === 'check_in' || scanResult.outcome === 'check_out')
+              ? styles.resultCardSuccess
+              : styles.resultCardError,
+          ]}>
+            {scanResult.outcome === 'check_in' || scanResult.outcome === 'check_out' ? (
+              <>
+                <View style={styles.verifiedHeader}>
+                  <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                  <Text style={styles.verifiedTitle}>Pass Verified</Text>
+                </View>
+                <View style={styles.memberRow}>
+                  {scanResult.member && 'photo' in scanResult.member && scanResult.member.photo ? (
+                    <Image source={{ uri: scanResult.member.photo }} style={styles.memberPhoto} />
+                  ) : (
+                    <View style={styles.avatarBadge}>
+                      <Text style={styles.avatarText}>{getInitials(scanResult.member?.name)}</Text>
+                    </View>
+                  )}
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.resultMember}>{scanResult.member?.name ?? 'Member'}</Text>
+                    {scanResult.member && 'email' in scanResult.member && scanResult.member.email ? (
+                      <Text style={styles.memberEmail}>{scanResult.member.email}</Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={styles.badgeRow}>
+                  <View style={styles.actionBadge}>
+                    <Text style={styles.actionBadgeText}>
+                      {scanResult.outcome === 'check_in' ? 'Check-in Recorded' : 'Check-out Recorded'}
+                    </Text>
+                  </View>
+                  <View style={styles.doorUnlockBadge}>
+                    <Ionicons name="lock-open-outline" size={14} color="#F4C542" />
+                    <Text style={styles.doorUnlockText}>Door Unlocked</Text>
+                  </View>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.rejectedHeader}>
+                  <Ionicons name="close-circle" size={24} color="#EF4444" />
+                  <Text style={styles.rejectedTitle}>Pass Rejected</Text>
+                </View>
+                <Text style={styles.rejectedMessage}>
+                  {scanResult.error ?? 'Pass verification failed.'}
+                </Text>
+                {'code' in scanResult && scanResult.code ? (
+                  <Text style={styles.errorCodeText}>Code: {scanResult.code}</Text>
+                ) : null}
+              </>
+            )}
           </View>
         )}
       </View>
@@ -230,35 +284,133 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   resultCard: {
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    borderRadius: 12,
-    padding: 16,
-    minWidth: 200,
+    backgroundColor: 'rgba(17, 24, 39, 0.95)',
+    borderRadius: 16,
+    padding: 18,
+    minWidth: 260,
+    maxWidth: 340,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#374151',
   },
-  resultTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
+  resultCardSuccess: {
+    borderColor: '#10B981',
+  },
+  resultCardError: {
+    borderColor: '#EF4444',
+  },
+  verifiedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  verifiedTitle: {
+    color: '#10B981',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  rejectedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 8,
+  },
+  rejectedTitle: {
+    color: '#EF4444',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  rejectedMessage: {
+    color: '#F3F4F6',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  errorCodeText: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginTop: 2,
+  },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: 6,
+  },
+  memberPhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#F4C542',
+  },
+  avatarBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#374151',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#F4C542',
+  },
+  avatarText: {
+    color: '#F4C542',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  memberInfo: {
+    alignItems: 'flex-start',
   },
   resultMember: {
     color: '#F4C542',
-    fontSize: 14,
-    marginBottom: 4,
+    fontSize: 16,
+    fontWeight: '800',
   },
-  resultStatus: {
-    color: '#FFFFFF',
-    fontSize: 13,
+  memberEmail: {
+    color: '#9CA3AF',
+    fontSize: 12,
   },
-  statusSuccessText: {
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  actionBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#10B981',
+  },
+  actionBadgeText: {
     color: '#10B981',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  statusExpiredText: {
-    color: '#EF4444',
+  doorUnlockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(244, 197, 66, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F4C542',
   },
-  statusInvalidText: {
-    color: '#F59E0B',
+  doorUnlockText: {
+    color: '#F4C542',
+    fontSize: 11,
+    fontWeight: '700',
   },
   centeredScreen: {
     flex: 1,
