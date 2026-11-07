@@ -187,7 +187,11 @@ export default function MemberQRScreen() {
 
     void Promise.race([provision(activeSecret), timeout])
       .catch((error: unknown) => {
-        console.error("[TOTP Provisioning Error]:", error);
+        // Console panels clip long lines, and a long label would hide the whole
+        // message, so keep the tag short and the cause first.
+        console.error(
+          `[TOTP Err] ${error instanceof Error ? error.message : String(error)}`,
+        );
         if (generation === passGenerationRef.current && memberId === targetMemberId) {
           setProvisioningError(error instanceof Error
             ? error.message
@@ -313,13 +317,11 @@ export default function MemberQRScreen() {
             if (!isCurrent()) return;
           }
 
-          // Explicitly request the Clerk JWT template the Supabase Edge
-          // Functions validate so the check-in/QR pass requests never reach
-          // the server with the default (RS256) session token, which the
-          // attendance verifier rejects as an invalid algorithm.
-          const token =
-            (await getTokenRef.current({ template: "supabase" })) ??
-            (await getTokenRef.current());
+          // Confirm the session can mint a token before starting the server
+          // sync. The attendance verifier checks the default Clerk session
+          // token against Clerk's JWKS; the HS256 `supabase` JWT template is
+          // only for PostgREST/RLS reads and fails that verifier.
+          const token = await getTokenRef.current();
           if (!token && !didFallback) throw new Error("Could not load a valid session token.");
 
           const generated = await generateRef.current(stored, memberId, generation);
