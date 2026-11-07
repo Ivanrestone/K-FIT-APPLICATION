@@ -1,6 +1,6 @@
 import { createAdminClient } from "../_shared/server-client.ts";
 import { verifyClerkToken } from "../_shared/attendance-auth.ts";
-import { counterIsCurrent, decodeBase32, parseAttendanceQr, verifyTotp } from "../_shared/attendance-totp.ts";
+import { counterIsCurrent, decodeBase32, parseAttendanceQr, verifyTotp, verifyTotpWithWindow } from "../_shared/attendance-totp.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,8 +22,8 @@ function encodeHex(value: Uint8Array): string {
   return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 function encryptionKeyBytes(): ArrayBuffer {
-  const hex = Deno.env.get("TOTP_ENCRYPTION_KEY") ?? "";
-  if (!/^(?:[0-9a-f]{2}){32}$/i.test(hex)) throw new Error("TOTP_ENCRYPTION_KEY must be 32 bytes in hex format.");
+  const hex = Deno.env.get("TOTP_ENCRYPTION_KEY") ?? Deno.env.get("ATTENDANCE_ENCRYPTION_KEY") ?? "";
+  if (!/^(?:[0-9a-f]{2}){32}$/i.test(hex)) throw new Error("TOTP_ENCRYPTION_KEY or ATTENDANCE_ENCRYPTION_KEY must be 32 bytes in hex format.");
   const key = new Uint8Array(hex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16)));
   const buffer = new ArrayBuffer(key.length);
   new Uint8Array(buffer).set(key);
@@ -132,41 +132,75 @@ async function handle(request: Request): Promise<Response> {
     }
 
     if (body.action === "scan") {
-      if (role !== "admin" && role !== "coach") return json({ error: "Staff access is required to scan passes." }, 403);
+      if (role !== "admin" && role !== "coach") {
+        return json({ error: "Staff access is required to scan passes.", code: "UNAUTHORIZED_SCANNER" }, 403);
+      }
       const qr = parseAttendanceQr(body.payload);
-      if (!qr) return json({ outcome: "invalid", error: "QR code is invalid." });
+      if (!qr) {
+        return json({ outcome: "invalid", error: "QR code is invalid or unrecognized.", code: "INVALID_TOTP" });
+      }
       const { data: secretRow, error: secretError } = await admin.from("member_totp_secrets")
         .select("encrypted_secret, last_used_step").eq("user_id", qr.memberId).maybeSingle();
       if (secretError) {
         console.error("Could not load member attendance secret:", secretError.message);
-        return json({ error: "Attendance verification is unavailable." }, 503);
+        return json({ error: "Attendance verification is unavailable.", code: "DATABASE_ERROR" }, 503);
       }
-      if (!secretRow) return json({ outcome: "not_provisioned", error: "Member pass is not provisioned." });
+      if (!secretRow) {
+        return json({ outcome: "not_provisioned", error: "Member pass is not provisioned.", code: "MEMBER_NOT_FOUND" });
+      }
       let secret: string;
       try {
         secret = await decryptSecret(secretRow.encrypted_secret);
       } catch (error) {
         console.error("Could not decrypt member attendance secret:", error);
-        return json({ error: "Attendance verification is unavailable." }, 503);
+        return json({ error: "Attendance verification is unavailable.", code: "DECRYPTION_ERROR" }, 503);
       }
-      if (!counterIsCurrent(qr.counter)) return json({ outcome: "expired", error: "QR code expired." });
-      if (!await verifyTotp(secret, qr.code, qr.counter)) return json({ outcome: "invalid", error: "QR code is invalid." });
+      if (!counterIsCurrent(qr.counter, Date.now(), 2)) {
+        return json({ outcome: "expired", error: "QR code expired. Please refresh the pass.", code: "EXPIRED_TOTP" });
+      }
+      const verification = await verifyTotpWithWindow(secret, qr.code, qr.counter, 2);
+      if (!verification.valid) {
+        return json({ outcome: "invalid", error: "QR code is invalid.", code: "INVALID_TOTP" });
+      }
+
+      const effectiveStep = verification.matchedCounter;
 
       const { data, error } = await admin.rpc("record_attendance_scan", {
         p_member_id: qr.memberId,
-        p_time_step: qr.counter,
+        p_time_step: effectiveStep,
       });
       if (error) {
         console.error("Attendance transaction failed:", error.message);
-        return json({ error: "Could not verify or record attendance. Try again." }, 503);
+        return json({ error: "Could not verify or record attendance. Try again.", code: "TRANSACTION_FAILED" }, 503);
       }
-      if (!isRecord(data) || typeof data.outcome !== "string") return json({ error: "Attendance service returned invalid data." }, 503);
-      if (data.outcome !== "check_in" && data.outcome !== "check_out") return json(data);
+      if (!isRecord(data) || typeof data.outcome !== "string") {
+        return json({ error: "Attendance service returned invalid data.", code: "INVALID_RESPONSE" }, 503);
+      }
+      if (data.outcome !== "check_in" && data.outcome !== "check_out") {
+        const outcome = data.outcome;
+        const errorMsg = typeof data.error === "string" ? data.error : (
+          outcome === "subscription_denied" ? "Active App and Gym subscriptions are required for check-in." :
+          outcome === "expired" ? "QR code expired. Please refresh the pass." :
+          outcome === "replay" ? "This QR pass has already been scanned for this cycle." :
+          outcome === "not_provisioned" ? "Member pass is not provisioned." :
+          "Pass rejected"
+        );
+        const code = typeof data.code === "string" ? data.code : (
+          outcome === "subscription_denied" ? "EXPIRED_MEMBERSHIP" :
+          outcome === "expired" ? "EXPIRED_TOTP" :
+          outcome === "replay" ? "REPLAY_DETECTED" :
+          outcome === "not_provisioned" ? "MEMBER_NOT_FOUND" :
+          "INVALID_TOTP"
+        );
+        return json({ ...data, outcome, error: errorMsg, code });
+      }
       const { data: member, error: memberError } = await admin.from("users")
-        .select("id, full_name, first_name, last_name").eq("id", qr.memberId).maybeSingle();
-      if (memberError || !member) return json({ error: "Attendance was recorded, but member details could not be loaded." }, 503);
+        .select("id, full_name, first_name, last_name, email").eq("id", qr.memberId).maybeSingle();
+      if (memberError || !member) {
+        return json({ error: "Attendance was recorded, but member details could not be loaded.", code: "MEMBER_LOAD_FAILED" }, 503);
+      }
       const name = member.full_name || [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member";
-      return json({ ...data, member: { id: member.id, name } });
+      return json({ ...data, member: { id: member.id, name, email: member.email } });
     }
 
     if (body.action === "history") {

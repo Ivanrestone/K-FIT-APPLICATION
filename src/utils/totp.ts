@@ -80,19 +80,76 @@ export function generateCurrentTotp(secret: string, unixTimeMs = Date.now()): Pr
   return generateTotp(secret, currentTotpCounter(unixTimeMs));
 }
 
+export function counterIsCurrent(counter: number, unixTimeMs = Date.now(), tolerance = 2): boolean {
+  const current = currentTotpCounter(unixTimeMs);
+  return Math.abs(current - counter) <= tolerance;
+}
+
 export function createQrPayload(memberId: string, counter: number, code: string): string {
   return `KFIT1|${encodeURIComponent(memberId)}|${counter}|${code}`;
 }
 
-export function parseQrPayload(value: string): { memberId: string; counter: number; code: string } | null {
-  const match = /^KFIT1\|([^|]+)\|(\d{1,12})\|(\d{6})$/.exec(value);
-  if (!match) return null;
-  try {
-    const memberId = decodeURIComponent(match[1]);
-    const counter = Number(match[2]);
-    if (!memberId || memberId.length > 255 || !Number.isSafeInteger(counter)) return null;
-    return { memberId, counter, code: match[3] };
-  } catch {
+export function parseQrPayload(value: unknown): { memberId: string; counter: number; code: string } | null {
+  if (!value) return null;
+
+  if (typeof value === "object" && value !== null) {
+    const obj = value as Record<string, unknown>;
+    const rawMemberId = obj.memberId ?? obj.member_id ?? obj.userId ?? obj.user_id;
+    const rawCode = obj.code ?? obj.totp ?? obj.token;
+    const rawCounter = obj.counter ?? obj.timeStep ?? obj.time_step;
+    const rawTimestamp = obj.timestamp;
+
+    if (typeof rawMemberId === "string" && typeof rawCode === "string" && /^\d{6}$/.test(rawCode)) {
+      let counter: number;
+      if (typeof rawCounter === "number" && Number.isSafeInteger(rawCounter)) {
+        counter = rawCounter;
+      } else if (typeof rawTimestamp === "number" && Number.isSafeInteger(rawTimestamp)) {
+        counter = Math.floor(rawTimestamp > 1e11 ? rawTimestamp / (TOTP_PERIOD_SECONDS * 1000) : rawTimestamp / TOTP_PERIOD_SECONDS);
+      } else {
+        counter = currentTotpCounter();
+      }
+      return { memberId: rawMemberId, counter, code: rawCode };
+    }
     return null;
   }
+
+  if (typeof value !== "string" || value.length > 1024) return null;
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsedJson = JSON.parse(trimmed);
+      return parseQrPayload(parsedJson);
+    } catch {
+      // proceed to regex
+    }
+  }
+
+  const matchKfit1 = /^KFIT1\|([^|]+)\|(\d{1,12})\|(\d{6})$/.exec(trimmed);
+  if (matchKfit1) {
+    try {
+      const memberId = decodeURIComponent(matchKfit1[1]);
+      const counter = Number(matchKfit1[2]);
+      if (memberId && memberId.length <= 255 && Number.isSafeInteger(counter)) {
+        return { memberId, counter, code: matchKfit1[3] };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  const matchColon = /^KFIT:([^:]+):(\d{1,12}):(\d{6})$/.exec(trimmed);
+  if (matchColon) {
+    try {
+      const memberId = decodeURIComponent(matchColon[1]);
+      const counter = Number(matchColon[2]);
+      if (memberId && memberId.length <= 255 && Number.isSafeInteger(counter)) {
+        return { memberId, counter, code: matchColon[3] };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  return null;
 }

@@ -25,10 +25,32 @@ export type StaffAttendanceRecord = AttendanceRecord & {
 export type AttendanceScanResult = {
   outcome: "check_in" | "check_out" | "invalid" | "expired" | "replay" | "not_provisioned" | "subscription_denied";
   error?: string;
-  member?: { id: string; name: string };
+  code?: string;
+  member?: { id: string; name: string; email?: string; photo?: string | null };
   timestamp?: string;
+  message?: string;
 };
 export type AttendanceRole = "member" | "staff" | "admin";
+
+type AttendanceEventListener = () => void;
+const attendanceListeners = new Set<AttendanceEventListener>();
+
+export function subscribeToAttendanceUpdates(listener: AttendanceEventListener): () => void {
+  attendanceListeners.add(listener);
+  return () => {
+    attendanceListeners.delete(listener);
+  };
+}
+
+export function notifyAttendanceUpdated(): void {
+  for (const listener of attendanceListeners) {
+    try {
+      listener();
+    } catch (err) {
+      console.warn("[Attendance Event Listener Error]", err);
+    }
+  }
+}
 
 // Provisioning waits on Edge Function cold starts and AES-GCM key work, which
 // regularly exceeds the default request budget on a cold emulator.
@@ -283,8 +305,13 @@ export function useAttendance() {
 
   const provision = useCallback((secret: string) =>
     invoke<{ provisioned: boolean }>({ action: "provision", secret }, PROVISION_REQUEST_TIMEOUT_MS), [invoke]);
-  const scan = useCallback((payload: string) =>
-    invoke<AttendanceScanResult>({ action: "scan", payload }), [invoke]);
+  const scan = useCallback(async (payload: string) => {
+    const result = await invoke<AttendanceScanResult>({ action: "scan", payload });
+    if (result && (result.outcome === "check_in" || result.outcome === "check_out")) {
+      notifyAttendanceUpdated();
+    }
+    return result;
+  }, [invoke]);
   const history = useCallback(async (memberId?: string) => {
     try {
       const res = await invoke<{ records?: AttendanceRecord[]; history?: AttendanceRecord[] }>({
@@ -373,8 +400,12 @@ export function useStaffAttendanceHistory() {
     void Promise.resolve().then(async () => {
       if (active) await refetch({ silent: true });
     });
+    const unsubscribe = subscribeToAttendanceUpdates(() => {
+      if (active) void refetch({ silent: true });
+    });
     return () => {
       active = false;
+      unsubscribe();
       requestId.current += 1;
     };
   }, [refetch]);
@@ -438,8 +469,12 @@ export function useAttendanceHistory(memberId?: string) {
       if (!active) return;
       await refetch({ silent: true });
     });
+    const unsubscribe = subscribeToAttendanceUpdates(() => {
+      if (active) void refetch({ silent: true });
+    });
     return () => {
       active = false;
+      unsubscribe();
       requestId.current += 1;
     };
   }, [refetch]);

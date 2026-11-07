@@ -23,17 +23,72 @@ export function decodeBase32(secret: string): Uint8Array {
 export type AttendanceQr = { memberId: string; counter: number; code: string };
 
 export function parseAttendanceQr(value: unknown): AttendanceQr | null {
-  if (typeof value !== "string" || value.length > 512) return null;
-  const match = /^KFIT1\|([^|]+)\|(\d{1,12})\|(\d{6})$/.exec(value);
-  if (!match) return null;
-  try {
-    const memberId = decodeURIComponent(match[1]);
-    const counter = Number(match[2]);
-    if (!memberId || memberId.length > 255 || !Number.isSafeInteger(counter)) return null;
-    return { memberId, counter, code: match[3] };
-  } catch {
+  if (!value) return null;
+
+  // 1. If it's already an object
+  if (typeof value === "object" && value !== null) {
+    const obj = value as Record<string, unknown>;
+    const rawMemberId = obj.memberId ?? obj.member_id ?? obj.userId ?? obj.user_id;
+    const rawCode = obj.code ?? obj.totp ?? obj.token;
+    const rawCounter = obj.counter ?? obj.timeStep ?? obj.time_step;
+    const rawTimestamp = obj.timestamp;
+
+    if (typeof rawMemberId === "string" && typeof rawCode === "string" && /^\d{6}$/.test(rawCode)) {
+      let counter: number;
+      if (typeof rawCounter === "number" && Number.isSafeInteger(rawCounter)) {
+        counter = rawCounter;
+      } else if (typeof rawTimestamp === "number" && Number.isSafeInteger(rawTimestamp)) {
+        counter = Math.floor(rawTimestamp > 1e11 ? rawTimestamp / (PERIOD_SECONDS * 1000) : rawTimestamp / PERIOD_SECONDS);
+      } else {
+        counter = Math.floor(Date.now() / (PERIOD_SECONDS * 1000));
+      }
+      return { memberId: rawMemberId, counter, code: rawCode };
+    }
     return null;
   }
+
+  if (typeof value !== "string" || value.length > 1024) return null;
+  const trimmed = value.trim();
+
+  // 2. Try JSON parse if it looks like a JSON string
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsedJson = JSON.parse(trimmed);
+      return parseAttendanceQr(parsedJson);
+    } catch {
+      // not valid JSON, proceed to regex
+    }
+  }
+
+  // 3. Match KFIT1|memberId|counter|code
+  const matchKfit1 = /^KFIT1\|([^|]+)\|(\d{1,12})\|(\d{6})$/.exec(trimmed);
+  if (matchKfit1) {
+    try {
+      const memberId = decodeURIComponent(matchKfit1[1]);
+      const counter = Number(matchKfit1[2]);
+      if (memberId && memberId.length <= 255 && Number.isSafeInteger(counter)) {
+        return { memberId, counter, code: matchKfit1[3] };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // 4. Match KFIT:memberId:counter:code or colon format
+  const matchColon = /^KFIT:([^:]+):(\d{1,12}):(\d{6})$/.exec(trimmed);
+  if (matchColon) {
+    try {
+      const memberId = decodeURIComponent(matchColon[1]);
+      const counter = Number(matchColon[2]);
+      if (memberId && memberId.length <= 255 && Number.isSafeInteger(counter)) {
+        return { memberId, counter, code: matchColon[3] };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  return null;
 }
 
 export async function generateTotp(secret: string, counter: number): Promise<string> {
@@ -71,9 +126,30 @@ export async function verifyTotp(secret: string, code: string, counter: number):
   return difference === 0;
 }
 
-export function counterIsCurrent(counter: number, nowMs = Date.now()): boolean {
+export async function verifyTotpWithWindow(
+  secret: string,
+  code: string,
+  counter: number,
+  window = 2,
+): Promise<{ valid: boolean; matchedCounter: number }> {
+  if (!/^\d{6}$/.test(code)) return { valid: false, matchedCounter: counter };
+  if (await verifyTotp(secret, code, counter)) {
+    return { valid: true, matchedCounter: counter };
+  }
+  for (let offset = 1; offset <= window; offset++) {
+    if (counter - offset >= 0 && (await verifyTotp(secret, code, counter - offset))) {
+      return { valid: true, matchedCounter: counter - offset };
+    }
+    if (await verifyTotp(secret, code, counter + offset)) {
+      return { valid: true, matchedCounter: counter + offset };
+    }
+  }
+  return { valid: false, matchedCounter: counter };
+}
+
+export function counterIsCurrent(counter: number, nowMs = Date.now(), tolerance = 2): boolean {
   const current = Math.floor(nowMs / 1000 / PERIOD_SECONDS);
-  return Math.abs(current - counter) <= 1;
+  return Math.abs(current - counter) <= tolerance;
 }
 
 export function base32Encode(bytes: Uint8Array): string {
