@@ -1,13 +1,13 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
 import { KFitColors } from "@/constants/theme";
 import SubscriptionPaywall from "@/components/SubscriptionPaywall";
-import { useAttendance } from "@/hooks/use-attendance";
 import { hasActiveSubscription, useSubscriptionAccess } from "@/hooks/use-subscription-access";
-import { createQrPayload, currentTotpCounter, generateTotp, generateTotpSecret, TOTP_PERIOD_SECONDS } from "@/utils/totp";
+import { generateUserQRCode } from "@/lib/qr/generator";
+import { TOTP_PERIOD_SECONDS } from "@/utils/totp";
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
 import { Feather } from "@expo/vector-icons";
-import { useAuth, useUser } from "@clerk/expo";
+import { useUser } from "@clerk/expo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
@@ -19,7 +19,6 @@ import {
   View,
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
-import * as SecureStore from "expo-secure-store";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Clears the floating nav (dock + raised QR button + safe area).
@@ -105,26 +104,17 @@ function Step({ number, text }: { number: number; text: string }) {
 export default function MemberQRScreen() {
   const { isSigningOut, logout } = useLogout();
   const { profile, isLoading: profileLoading, error: profileError } = useMemberProfile();
-  const { provision } = useAttendance();
-  const { getToken } = useAuth();
   const { user } = useUser();
   const subscription = useSubscriptionAccess();
 
-  const [secret, setSecret] = useState<string | null>(null);
   const [token, setToken] = useState("");
   const [expiresAt, setExpiresAt] = useState(0);
   const [passError, setPassError] = useState<string | null>(null);
-  const [provisioningError, setProvisioningError] = useState<string | null>(null);
   const [isProvisioning, setIsProvisioning] = useState(false);
-  const [isSyncingProvisioning, setIsSyncingProvisioning] = useState(false);
   const [passMemberId, setPassMemberId] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(PASS_LIFETIME);
   const [hidden, setHidden] = useState(false);
   const passGenerationRef = useRef(0);
-  const generationInFlightRef = useRef<number | null>(null);
-  const provisioningAttemptedForMemberRef = useRef<string | null>(null);
-  const provisioningInFlightRef = useRef(false);
 
   const memberId = user?.id || profile?.id || "";
 
@@ -151,111 +141,20 @@ export default function MemberQRScreen() {
 
   const applyFallbackToken = useCallback((memberIdentifier: string) => {
     if (!memberIdentifier) return;
-    const timeStep = Math.floor(Date.now() / 30000);
-    const fallback = `KFIT:${memberIdentifier}:${timeStep}`;
-    const nextExpires = (timeStep + 1) * 30000;
+    const fallback = generateUserQRCode(memberIdentifier);
+    const nextExpires = Date.now() + PASS_LIFETIME * 1000;
     setToken(fallback);
     setExpiresAt(nextExpires);
-    setSecondsLeft(Math.max(1, Math.ceil((nextExpires - Date.now()) / 1000)));
+    setSecondsLeft(PASS_LIFETIME);
     setPassMemberId(memberIdentifier);
     setPassError(null);
     setIsProvisioning(false);
   }, []);
 
-  /* Generate the current time-step's code, ignoring work for stale sessions. */
-  const syncProvisioning = useCallback((
-    activeSecret: string,
-    targetMemberId: string,
-    generation: number,
-    isUserRetry = false,
-  ) => {
-    if (generation !== passGenerationRef.current || memberId !== targetMemberId) return;
-    if (provisioningInFlightRef.current) return;
-    if (!isUserRetry && provisioningAttemptedForMemberRef.current === targetMemberId) return;
-    provisioningAttemptedForMemberRef.current = targetMemberId;
-    provisioningInFlightRef.current = true;
-    setProvisioningError(null);
-    setIsSyncingProvisioning(true);
-
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const timeout = new Promise<never>((_resolve, reject) => {
-      timeoutId = setTimeout(
-        () => reject(new Error("Attendance service sync timed out. The local QR pass is still available.")),
-        PROVISION_TIMEOUT_MS,
-      );
-    });
-
-    void Promise.race([provision(activeSecret), timeout])
-      .catch((error: unknown) => {
-        // Console panels clip long lines, and a long label would hide the whole
-        // message, so keep the tag short and the cause first.
-        console.error(
-          `[TOTP Err] ${error instanceof Error ? error.message : String(error)}`,
-        );
-        if (generation === passGenerationRef.current && memberId === targetMemberId) {
-          setProvisioningError(error instanceof Error
-            ? error.message
-            : "Attendance service is unavailable. Check your connection and retry.");
-        }
-      })
-      .finally(() => {
-        clearTimeout(timeoutId);
-        provisioningInFlightRef.current = false;
-        if (generation === passGenerationRef.current && memberId === targetMemberId) {
-          setIsSyncingProvisioning(false);
-        }
-      });
-  }, [memberId, provision]);
-
-  const generate = useCallback(async (
-    activeSecret: string,
-    targetMemberId: string,
-    generation: number,
-  ): Promise<boolean> => {
-    if (generationInFlightRef.current === generation) return false;
-    generationInFlightRef.current = generation;
-    try {
-      let counter = currentTotpCounter();
-      let code = await generateTotp(activeSecret, counter);
-      const currentCounter = currentTotpCounter();
-      if (currentCounter !== counter) {
-        counter = currentCounter;
-        code = await generateTotp(activeSecret, counter);
-      }
-      if (generation !== passGenerationRef.current || memberId !== targetMemberId) return false;
-      const expires = (counter + 1) * PASS_LIFETIME * 1000;
-      setToken(createQrPayload(targetMemberId, counter, code));
-      setExpiresAt(expires);
-      setSecondsLeft(Math.max(1, Math.ceil((expires - Date.now()) / 1000)));
-      setPassMemberId(targetMemberId);
-      setPassError(null);
-      return true;
-    } catch {
-      if (generation === passGenerationRef.current && memberId === targetMemberId) {
-        applyFallbackToken(targetMemberId);
-      }
-      return false;
-    } finally {
-      if (generationInFlightRef.current === generation) generationInFlightRef.current = null;
-    }
-  }, [applyFallbackToken, memberId]);
-
-  // Keep the latest callbacks available without restarting initialization when
-  // a provider changes callback identity during a render.
-  const generateRef = useRef(generate);
-  const syncProvisioningRef = useRef(syncProvisioning);
-  const getTokenRef = useRef(getToken);
-  useEffect(() => {
-    generateRef.current = generate;
-    syncProvisioningRef.current = syncProvisioning;
-    getTokenRef.current = getToken;
-  }, [generate, getToken, syncProvisioning]);
-
-  // Early subscription guard: skip the TOTP Edge Function request entirely when
-  // the subscription is not active, so the function never receives a token
-  // and cannot return a 401 (invalid algorithm) or 403 (staff access). The user
-  // still sees a local banner instead of a crash or red LogBox toast.
+  // Early subscription guard: skip the pass entirely when the subscription is not active.
   const subscriptionActive =
+    subscription.data?.subscriptionStatus === "active" ||
+    hasActiveSubscription(subscription.data);
     subscription.data?.subscriptionStatus === "active" ||
     hasActiveSubscription(subscription.data);
 
@@ -268,20 +167,17 @@ export default function MemberQRScreen() {
     void Promise.resolve().then(() => {
       if (!isCurrent()) return;
       setToken("");
-      setSecret(null);
       setExpiresAt(0);
       setPassMemberId(null);
       setPassError(null);
-      setProvisioningError(null);
       setIsProvisioning(Boolean(memberId));
-      setIsSyncingProvisioning(false);
       setSecondsLeft(PASS_LIFETIME);
       if (!memberId) {
         setIsProvisioning(false);
         return;
       }
 
-      // The TOTP pass is only usable with an active subscription.
+      // The pass is only usable with an active subscription.
       if (!subscriptionActive) {
         setToken("");
         setPassError(
@@ -289,89 +185,43 @@ export default function MemberQRScreen() {
             ? "Active subscription required to access gate pass"
             : subscription.data === null
               ? "Subscription status is unavailable. Check your connection and retry."
-              : "Active subscription required to access gate pass")
-        ;
+              : "Active subscription required to access gate pass"
+        );
         setIsProvisioning(false);
         return;
       }
 
-      let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-      let didFallback = false;
-
-      // 2.5-second timeout around TOTP secret fetch and pass generation
-      fallbackTimer = setTimeout(() => {
-        if (!isCurrent()) return;
-        didFallback = true;
-        applyFallbackToken(memberId);
-      }, 2500);
-
-      void (async () => {
-        try {
-          const key = `kfit.attendance.totp.${memberId}`;
-          let stored = await SecureStore.getItemAsync(key);
-          if (!isCurrent()) return;
-          if (!stored) {
-            stored = await generateTotpSecret();
-            if (!isCurrent()) return;
-            await SecureStore.setItemAsync(key, stored);
-            if (!isCurrent()) return;
-          }
-
-          // Confirm the session can mint a token before starting the server
-          // sync. The attendance verifier checks the default Clerk session
-          // token against Clerk's JWKS; the HS256 `supabase` JWT template is
-          // only for PostgREST/RLS reads and fails that verifier.
-          const token = await getTokenRef.current();
-          if (!token && !didFallback) throw new Error("Could not load a valid session token.");
-
-          const generated = await generateRef.current(stored, memberId, generation);
-          if (!isCurrent()) return;
-          if (!generated && !didFallback) {
-            applyFallbackToken(memberId);
-            return;
-          }
-          setSecret(stored);
-          setIsProvisioning(false);
-
-          // The local pass is usable immediately; server provisioning is a
-          // bounded background sync and cannot gate or invalidate its display.
-          syncProvisioningRef.current(stored, memberId, generation);
-        } catch (error) {
-          console.warn("[TOTP Provisioning Notice]:", error);
-          if (isCurrent()) {
-            applyFallbackToken(memberId);
-          }
-        } finally {
-          if (fallbackTimer) clearTimeout(fallbackTimer);
-        }
-      })();
+      // Phase 22: Unencrypted QR Code format (instant plain-text without crypto delays)
+      const plain = generateUserQRCode(memberId);
+      const nextExpires = Date.now() + PASS_LIFETIME * 1000;
+      setToken(plain);
+      setExpiresAt(nextExpires);
+      setSecondsLeft(PASS_LIFETIME);
+      setPassMemberId(memberId);
+      setPassError(null);
+      setIsProvisioning(false);
     });
     
     return () => {
       cancelled = true;
       if (passGenerationRef.current === generation) passGenerationRef.current += 1;
     };
-  }, [applyFallbackToken, memberId, retryCount, subscriptionActive]);
+  }, [applyFallbackToken, memberId, subscription.data, subscriptionActive]);
 
   // Countdown based on the real clock, so it stays accurate after the app
   // has been in the background.
   useEffect(() => {
     if (!expiresAt || !memberId || hidden) return;
-    const generation = passGenerationRef.current;
     const id = setInterval(() => {
       const remaining = Math.ceil((expiresAt - Date.now()) / 1000);
       if (remaining <= 0) {
-        if (secret) {
-          void generate(secret, memberId, generation);
-        } else {
-          applyFallbackToken(memberId);
-        }
+        applyFallbackToken(memberId);
       } else {
         setSecondsLeft(remaining);
       }
     }, 1000);
     return () => clearInterval(id);
-  }, [applyFallbackToken, expiresAt, generate, hidden, memberId, secret]);
+  }, [applyFallbackToken, expiresAt, hidden, memberId]);
 
   // Hide the code whenever the app leaves the foreground (app switcher
   // screenshots, screen recording). The member taps to reveal it again.
@@ -384,29 +234,13 @@ export default function MemberQRScreen() {
     return () => sub.remove();
   }, []);
 
-  const reveal = async () => {
-    // Keep the old code concealed until a fresh time-step has been generated.
+  const reveal = () => {
     if (memberId && Date.now() >= expiresAt) {
-      if (secret) {
-        setToken("");
-        await generate(secret, memberId, passGenerationRef.current);
-      } else {
-        applyFallbackToken(memberId);
-      }
+      applyFallbackToken(memberId);
     }
     setHidden(false);
   };
 
-  const retryProvisioning = () => {
-    if (isProvisioning || isSyncingProvisioning || !memberId) return;
-    if (passError || !secret || passMemberId !== memberId) {
-      provisioningAttemptedForMemberRef.current = null;
-      setRetryCount((attempt) => attempt + 1);
-      return;
-    }
-
-    syncProvisioning(secret, memberId, passGenerationRef.current, true);
-  };
   const readyToken = token && token.trim().length > 0 && secondsLeft > 0 && !passError
     ? token
     : "";
@@ -501,7 +335,7 @@ export default function MemberQRScreen() {
             <View style={styles.countdownRow}>
               <Text style={styles.metaLabel}>Refreshes in</Text>
               <Text style={[styles.countdownValue, urgent && styles.urgent]}>
-                {secret && passMemberId === memberId && readyToken ? `${secondsLeft}s` : "—"}
+                {passMemberId === memberId && readyToken ? `${secondsLeft}s` : "—"}
               </Text>
             </View>
             <View style={styles.progressTrack}>
@@ -531,16 +365,11 @@ export default function MemberQRScreen() {
           {/* Actions */}
           <View style={styles.actions}>
             <GoldButton
-              label={passError || provisioningError ? "Retry pass setup" : "Generate new code"}
+              label={passError ? "Retry pass setup" : "Refresh pass"}
               icon="refresh-cw"
-              disabled={isProvisioning || isSyncingProvisioning || Boolean(profileError) || !memberId}
+              disabled={Boolean(profileError) || !memberId}
               onPress={() => {
-                if (passError || provisioningError) {
-                  retryProvisioning();
-                } else if (secret && memberId && passMemberId === memberId) {
-                  setToken("");
-                  void generate(secret, memberId, passGenerationRef.current);
-                } else if (memberId) {
+                if (memberId) {
                   applyFallbackToken(memberId);
                 }
               }}
@@ -597,17 +426,13 @@ export default function MemberQRScreen() {
                 <Text style={[styles.statusChipText, passError && styles.statusChipTextError]}>
                   {passError || profileError
                     ? "Pass unavailable"
-                    : provisioningError
-                      ? "Pass ready · sync failed"
-                      : isSyncingProvisioning
-                        ? "Pass ready · syncing"
-                        : readyToken
-                          ? "Ready to check in"
-                          : "Securing your pass"}
+                    : readyToken
+                      ? "Ready to check in"
+                      : "Preparing your pass"}
                 </Text>
               </View>
               <Text style={styles.statusTime}>
-                {passError ?? provisioningError ?? profileError ?? (profileLoading ? "Loading your member profile…" : isProvisioning ? "Preparing your local pass…" : isSyncingProvisioning ? "Syncing your pass with the attendance service…" : "Your QR is verified online at the gym entrance.")}
+                {passError ?? profileError ?? (profileLoading ? "Loading your member profile…" : isProvisioning ? "Preparing your pass…" : "Your unencrypted pass is ready for scanning at the gym entrance.")}
               </Text>
             </View>
           </Section>

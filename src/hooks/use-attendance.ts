@@ -6,11 +6,7 @@ import {
 } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
-import {
-  hasActiveSubscription,
-  useSubscriptionAccess,
-  type SubscriptionAccessData,
-} from "@/hooks/use-subscription-access";
+import { useSubscriptionAccess } from "@/hooks/use-subscription-access";
 import { createMemberSupabaseClient, resolveSupabaseUrl } from "@/utils/supabase";
 
 export type AttendanceRecord = {
@@ -60,18 +56,6 @@ const PROVISION_REQUEST_TIMEOUT_MS = 15_000;
 const ATTENDANCE_RETRY_DELAYS_MS = [500, 1_500];
 const SESSION_TOKEN_WAIT_ATTEMPTS = 3;
 const SESSION_TOKEN_WAIT_INTERVAL_MS = 300;
-const ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE =
-  "An active App subscription is required to load attendance history.";
-
-// Mirrors the paywall rule: access stays available while the plan is flagged
-// active or its paid period has not lapsed. The attendance Edge Function
-// rejects unpaid accounts with 401, so requests are skipped instead of being
-// allowed to fail.
-function hasActiveAppSubscription(
-  data: SubscriptionAccessData | null,
-): boolean {
-  return hasActiveSubscription(data);
-}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -348,32 +332,13 @@ export function useStaffAttendanceHistory() {
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
-  // Wait for the subscription check so an unpaid account never fires the
-  // request that would come back as a 401. If the subscription status cannot be
-  // loaded, the request still runs and fails with its own message.
-  const subscriptionPending = !access.isLoaded ||
-    (access.isSignedIn && access.isLoading);
-  // Admins are not billed through the member plans, so only member and coach
-  // accounts are gated on an active App subscription.
-  const subscriptionBlocked = access.isSignedIn && access.data !== null &&
-    (access.data.role === "member" || access.data.role === "coach") &&
-    !hasActiveAppSubscription(access.data);
-
   const refetch = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
     const currentRequest = ++requestId.current;
-    if (subscriptionPending) {
-      if (!silent) setIsLoading(true);
-      return;
-    }
-    if (!access.isSignedIn || subscriptionBlocked) {
+    if (!access.isSignedIn) {
       if (currentRequest === requestId.current) setIsLoading(false);
       if (!silent) {
-        setError(
-          access.isSignedIn
-            ? ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE
-            : "Sign in to view attendance history.",
-        );
+        setError("Sign in to view attendance history.");
       }
       return;
     }
@@ -393,7 +358,7 @@ export function useStaffAttendanceHistory() {
     } finally {
       if (currentRequest === requestId.current) setIsLoading(false);
     }
-  }, [access.isSignedIn, staffHistory, subscriptionBlocked, subscriptionPending]);
+  }, [access.isSignedIn, staffHistory]);
 
   useEffect(() => {
     let active = true;
@@ -421,27 +386,13 @@ export function useAttendanceHistory(memberId?: string) {
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
-  const subscriptionPending = !access.isLoaded ||
-    (access.isSignedIn && access.isLoading);
-  const subscriptionBlocked = access.isSignedIn && access.data !== null &&
-    (access.data.role === "member" || access.data.role === "coach") &&
-    !hasActiveAppSubscription(access.data);
-
   const refetch = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
     const currentRequest = ++requestId.current;
-    if (subscriptionPending) {
-      if (!silent) setIsLoading(true);
-      return;
-    }
-    if (!access.isSignedIn || subscriptionBlocked) {
+    if (!access.isSignedIn) {
       if (currentRequest === requestId.current) setIsLoading(false);
       if (!silent) {
-        setError(
-          access.isSignedIn
-            ? ATTENDANCE_SUBSCRIPTION_REQUIRED_MESSAGE
-            : "Sign in to view attendance history.",
-        );
+        setError("Sign in to view attendance history.");
       }
       return;
     }
@@ -461,7 +412,7 @@ export function useAttendanceHistory(memberId?: string) {
     } finally {
       if (currentRequest === requestId.current) setIsLoading(false);
     }
-  }, [access.isSignedIn, history, memberId, subscriptionBlocked, subscriptionPending]);
+  }, [access.isSignedIn, history, memberId]);
 
   useEffect(() => {
     let active = true;

@@ -1,5 +1,6 @@
 import QRCode from 'react-native-qrcode-svg';
 import { useLogout } from '@/hooks/use-logout';
+import { generateUserQRCode } from '@/lib/qr/generator';
 import { useEffect, useRef, useState } from 'react';
 import {
   AppState,
@@ -14,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const REFRESH_INTERVAL_SECONDS = 15;
 
 function generatePayload() {
-  return `test-user-123:${Math.floor(Date.now() / 1000)}`;
+  return generateUserQRCode('test-user-123');
 }
 
 export default function GeneratorScreen() {

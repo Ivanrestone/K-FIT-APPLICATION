@@ -89,7 +89,7 @@ export function createQrPayload(memberId: string, counter: number, code: string)
   return `KFIT1|${encodeURIComponent(memberId)}|${counter}|${code}`;
 }
 
-export function parseQrPayload(value: unknown): { memberId: string; counter: number; code: string } | null {
+export function parseQrPayload(value: unknown): { memberId: string; counter: number; code: string; isPlain?: boolean } | null {
   if (!value) return null;
 
   if (typeof value === "object" && value !== null) {
@@ -115,6 +115,14 @@ export function parseQrPayload(value: unknown): { memberId: string; counter: num
 
   if (typeof value !== "string" || value.length > 1024) return null;
   const trimmed = value.trim();
+
+  // Unencrypted USER_<userId> format (Phase 22 direct plain-text)
+  if (trimmed.startsWith("USER_")) {
+    const memberId = trimmed.slice(5).trim();
+    if (memberId && memberId.length <= 255) {
+      return { memberId, counter: 0, code: "", isPlain: true };
+    }
+  }
 
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
     try {
