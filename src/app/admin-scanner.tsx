@@ -1,5 +1,9 @@
 import Sidebar from '@/components/Sidebar';
-import { useAttendance, type AttendanceScanResult } from '@/hooks/use-attendance';
+import {
+  notifyAttendanceUpdated,
+  useAttendance,
+  type AttendanceScanResult,
+} from '@/hooks/use-attendance';
 import { processScannedCode } from '@/lib/qr/scanner';
 import { triggerDoorUnlock } from '@/utils/door-lock';
 import { Ionicons } from '@expo/vector-icons';
@@ -68,6 +72,7 @@ export default function AdminScannerScreen() {
     try {
       const result = await attendance.scan(data);
       setScanResult(result);
+      notifyAttendanceUpdated();
       if (result.outcome === 'check_in' || result.outcome === 'check_out') {
         // Trigger the Pi door lock asynchronously; never block the UI on it.
         void triggerDoorUnlock();
@@ -99,6 +104,7 @@ export default function AdminScannerScreen() {
           member: { id: memberId, name: memberId },
           message: 'Access granted. Disengaging magnetic lock.',
         });
+        notifyAttendanceUpdated();
       } else {
         const message = error instanceof Error ? error.message : 'Attendance service unavailable.';
         setScanResult({ outcome: 'error', error: message });

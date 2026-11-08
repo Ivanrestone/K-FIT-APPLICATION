@@ -1,6 +1,6 @@
-import { createAdminClient } from "../_shared/server-client.ts";
 import { verifyClerkToken } from "../_shared/attendance-auth.ts";
-import { counterIsCurrent, decodeBase32, parseAttendanceQr, verifyTotp, verifyTotpWithWindow } from "../_shared/attendance-totp.ts";
+import { counterIsCurrent, decodeBase32, parseAttendanceQr, verifyTotpWithWindow } from "../_shared/attendance-totp.ts";
+import { createAdminClient } from "../_shared/server-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -217,36 +217,71 @@ async function handle(request: Request): Promise<Response> {
             .select("id, full_name, first_name, last_name, email").eq("id", qr.memberId).maybeSingle();
           const name = member?.full_name || [member?.first_name, member?.last_name].filter(Boolean).join(" ") || `Member (${qr.memberId})`;
 
+          const attendanceRecord = {
+            id: attendanceId,
+            user_id: qr.memberId,
+            member_id: qr.memberId,
+            member_name: name,
+            scan_timestamp: now,
+            check_in_time: now,
+            checkout_timestamp: devOutcome === "check_out" ? now : null,
+            status: devOutcome === "check_in" ? "checked_in" : "checked_out",
+          };
+
           return json({
+            success: true,
             outcome: devOutcome,
             attendance_id: attendanceId,
             timestamp: now,
             message: devOutcome === "check_in" ? "Check-in recorded" : "Check-out recorded",
+            attendance: attendanceRecord,
+            record: attendanceRecord,
             member: { id: member?.id || qr.memberId, name, email: member?.email || "" },
-          });
+          }, 200);
         }
 
         const outcome = data.outcome;
         const errorMsg = typeof data.error === "string" ? data.error : (
           outcome === "subscription_denied" ? "Active App and Gym subscriptions are required for check-in." :
-          outcome === "expired" ? "QR code expired. Please refresh the pass." :
-          outcome === "replay" ? "This QR pass has already been scanned for this cycle." :
-          outcome === "not_provisioned" ? "Member pass is not provisioned." :
-          "Pass rejected"
+            outcome === "expired" ? "QR code expired. Please refresh the pass." :
+              outcome === "replay" ? "This QR pass has already been scanned for this cycle." :
+                outcome === "not_provisioned" ? "Member pass is not provisioned." :
+                  "Pass rejected"
         );
         const code = typeof data.code === "string" ? data.code : (
           outcome === "subscription_denied" ? "EXPIRED_MEMBERSHIP" :
-          outcome === "expired" ? "EXPIRED_TOTP" :
-          outcome === "replay" ? "REPLAY_DETECTED" :
-          outcome === "not_provisioned" ? "MEMBER_NOT_FOUND" :
-          "INVALID_TOTP"
+            outcome === "expired" ? "EXPIRED_TOTP" :
+              outcome === "replay" ? "REPLAY_DETECTED" :
+                outcome === "not_provisioned" ? "MEMBER_NOT_FOUND" :
+                  "INVALID_TOTP"
         );
         return json({ ...data, outcome, error: errorMsg, code });
       }
       const { data: member } = await admin.from("users")
         .select("id, full_name, first_name, last_name, email").eq("id", qr.memberId).maybeSingle();
       const name = member?.full_name || [member?.first_name, member?.last_name].filter(Boolean).join(" ") || `Member (${qr.memberId})`;
-      return json({ ...data, member: { id: member?.id || qr.memberId, name, email: member?.email || "" } });
+
+      const attendanceRecord = {
+        id: data.attendance_id || data.id,
+        user_id: qr.memberId,
+        member_id: qr.memberId,
+        member_name: name,
+        scan_timestamp: data.scan_timestamp || data.timestamp,
+        check_in_time: data.check_in_time || data.scan_timestamp || data.timestamp,
+        checkout_timestamp: data.checkout_timestamp || (data.outcome === "check_out" ? data.timestamp : null),
+        status: data.status || (data.outcome === "check_in" ? "checked_in" : "checked_out"),
+      };
+
+      return json({
+        success: true,
+        outcome: data.outcome,
+        attendance_id: data.attendance_id || data.id,
+        timestamp: data.timestamp,
+        message: data.message || (data.outcome === "check_in" ? "Check-in recorded" : "Check-out recorded"),
+        attendance: attendanceRecord,
+        record: attendanceRecord,
+        member: { id: member?.id || qr.memberId, name, email: member?.email || "" },
+      }, 200);
     }
 
     if (body.action === "history") {
