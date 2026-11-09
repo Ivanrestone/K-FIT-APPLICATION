@@ -34,6 +34,7 @@ const ALL_TABS: Tab[] = [
   { label: "Book a session", icon: "plus-square", route: R.book },
   { label: "Instructors", icon: "user-check", route: R.instructors },
   { label: "Challenges", icon: "flag", route: R.challenges },
+  { label: "Subscription & Billing", icon: "credit-card", route: R.membership },
 ];
 
 const QR_ROUTE: string = R.qr;

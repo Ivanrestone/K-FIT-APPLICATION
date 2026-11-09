@@ -3,11 +3,22 @@ import MemberPaymentOptions from "@/components/MemberPaymentOptions";
 import { KFitColors } from "@/constants/theme";
 import { useLogout } from "@/hooks/use-logout";
 import { useMemberProfile } from "@/hooks/use-member-profile";
-import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useMemo } from "react";
 import {
+  hasActiveSubscription,
+  useSubscriptionAccess,
+  type PricingPlan,
+  type SubscriptionPlanType,
+} from "@/hooks/use-subscription-access";
+import { useUser } from "@clerk/expo";
+import { Feather } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
   ImageBackground,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,14 +31,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const NAV_CLEARANCE = 140;
 
 type FeatherName = keyof typeof Feather.glyphMap;
-
-// Replace with real data from your membership API when available.
-const MEMBERSHIP = {
-  plan: "Performance",
-  renewalDate: "November 01, 2026",
-  sessionsUsed: 18,
-  sessionsTotal: 20,
-};
 
 /* ---------------------------- Small building blocks ---------------------------- */
 
@@ -112,12 +115,381 @@ function GoldButton({
   );
 }
 
+function formatPlanDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+    new Date(value),
+  );
+}
+
+function formatPlanPrice(plan: PricingPlan | null): string | null {
+  if (!plan) {
+    return null;
+  }
+  const locale = plan.displayCurrency === "PHP" ? "en-PH" : "en-US";
+  const amount = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(plan.displayAmount);
+  return `${plan.displayCurrency} ${amount} / month`;
+}
+
+function planLabel(type: SubscriptionPlanType) {
+  return type === "app" ? "App access" : "Gym access";
+}
+
+function MembershipPlanCard({
+  access,
+  onDevActivate,
+  isDevActivating,
+  onCancelSubscription,
+  cancellingPlan,
+}: {
+  access: ReturnType<typeof useSubscriptionAccess>;
+  onDevActivate: (planType?: "app" | "gym" | "both") => void;
+  isDevActivating: boolean;
+  onCancelSubscription: (type: SubscriptionPlanType) => void;
+  cancellingPlan: SubscriptionPlanType | null;
+}) {
+  const { data, error, isLoading, isRefreshing, isSignedIn, refresh } = access;
+
+  if (isLoading) {
+    return (
+      <View style={[styles.planCard, styles.planLoading]}>
+        <ActivityIndicator color={KFitColors.accent} />
+        <Text style={styles.planMetaText}>Checking your plan…</Text>
+      </View>
+    );
+  }
+
+  if (!data) {
+    return (
+      <View style={styles.planCard}>
+        <Text selectable style={styles.planError}>
+          {!isSignedIn
+            ? "Sign in to view your membership plan."
+            : error ?? "Membership details are unavailable right now."}
+        </Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={refresh}
+          disabled={isRefreshing}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading membership plan"
+        >
+          <Feather name="refresh-cw" size={14} color={KFitColors.accent} />
+          <Text style={styles.retryButtonText}>
+            {isRefreshing ? "Retrying…" : "Retry"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const planTypes: SubscriptionPlanType[] = data.role === "member"
+    ? ["app", "gym"]
+    : ["app"];
+  const rows = planTypes.map((type) => {
+    const subscription = type === "app"
+      ? data.appSubscription
+      : data.gymSubscription;
+    const isPlanActive = type === "app"
+      ? (data.app_subscription_status === "active" || hasActiveSubscription(subscription))
+      : (data.gym_membership_status === "active" || hasActiveSubscription(subscription));
+    return {
+      type,
+      subscription,
+      plan: data.plans.find((item) => item.planType === type) ?? null,
+      active: isPlanActive,
+    };
+  });
+  const activeRows = rows.filter((row) => row.active);
+  const isAnyActive =
+    activeRows.length > 0 ||
+    data.app_subscription_status === "active" ||
+    data.gym_membership_status === "active";
+  const planName = activeRows.length === 0
+    ? "No active plan"
+    : activeRows.length === rows.length
+      ? planTypes.map((type) => (type === "app" ? "App" : "Gym")).join(" + ")
+      : activeRows[0].type === "app"
+        ? "App plan"
+        : "Gym membership";
+  const nextExpiry = activeRows
+    .map((row) => row.subscription?.expiresAt)
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => Date.parse(a) - Date.parse(b))[0] ?? null;
+  const isCancelled = activeRows.some((row) => row.subscription?.cancelledAt);
+
+  return (
+    <View style={styles.planCard}>
+      <View style={styles.planTop}>
+        <View>
+          <Text style={styles.planLabel}>Current plan</Text>
+          <Text style={styles.planName}>{planName}</Text>
+        </View>
+        <View
+          style={[
+            styles.statusChip,
+            isAnyActive && !isCancelled && styles.statusChipGreen,
+            !isAnyActive && styles.statusChipInactive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.statusChipText,
+              isAnyActive && !isCancelled && styles.statusChipTextGreen,
+              !isAnyActive && styles.statusChipTextInactive,
+            ]}
+          >
+            {!isAnyActive ? "Inactive" : isCancelled ? "Canceled" : "Active"}
+          </Text>
+        </View>
+      </View>
+
+      {rows.map((row) => {
+        const price = formatPlanPrice(row.plan);
+        const expiry = row.subscription?.expiresAt
+          ? `${row.active ? "Paid through" : "Ended"} ${formatPlanDate(row.subscription.expiresAt)}`
+          : row.active
+            ? "No expiry on record"
+            : "Not started";
+        const isBusy = cancellingPlan === row.type;
+        return (
+          <View key={row.type} style={styles.planItemBlock}>
+            <View style={styles.planRow}>
+              <View style={styles.planRowCopy}>
+                <Text style={styles.planRowLabel}>{planLabel(row.type)}</Text>
+                <Text style={styles.planRowMeta}>
+                  {[price, expiry].filter(Boolean).join(" · ")}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.planBadge,
+                  row.active ? styles.planBadgeGreen : styles.planBadgeInactive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.planBadgeText,
+                    row.active ? styles.planBadgeTextGreen : styles.planBadgeTextInactive,
+                  ]}
+                >
+                  {row.active ? "Active" : "Inactive"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Cancel Subscription button under active plan */}
+            {row.active && !row.subscription?.cancelledAt && (
+              <TouchableOpacity
+                style={[styles.cancelPlanButton, isBusy && styles.btnDisabled]}
+                onPress={() => onCancelSubscription(row.type)}
+                disabled={isBusy}
+                accessibilityRole="button"
+                accessibilityLabel={`Cancel ${planLabel(row.type)}`}
+              >
+                <Feather name="x-circle" size={13} color={KFitColors.error} />
+                <Text style={styles.cancelPlanButtonText}>
+                  {isBusy ? "Cancelling…" : "Cancel Subscription"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+      })}
+
+      {activeRows.length === 0 ? (
+        <Text selectable style={styles.planNotice}>
+          Start or renew a plan under Payment Options below to use the gym and
+          the app.
+        </Text>
+      ) : null}
+      {error ? (
+        <Text selectable style={styles.planNotice}>
+          {error} Showing the last loaded status.
+        </Text>
+      ) : null}
+
+      <View style={[styles.divider, styles.planDivider]} />
+      <View style={styles.renewRow}>
+        <Feather
+          name="calendar"
+          size={14}
+          color={isAnyActive ? "#10B981" : KFitColors.mutedText}
+        />
+        <Text
+          style={[styles.renewText, isAnyActive && styles.renewTextActive]}
+        >
+          {nextExpiry
+            ? `${isCancelled ? "Access ends" : "Renews on"} ${formatPlanDate(nextExpiry)}`
+            : "No renewal scheduled"}
+        </Text>
+      </View>
+
+      {/* Dev / Test Mode: Invoke deployed Edge Function dev-activate-subscription */}
+      <View style={styles.devCard}>
+        <View style={styles.devHeader}>
+          <Feather name="terminal" size={14} color={KFitColors.accent} />
+          <Text style={styles.devCardTitle}>Dev / Test Activation</Text>
+        </View>
+        <Text style={styles.devCardSubtitle}>
+          Invokes deployed edge function to mark status active and invalidate cache:
+        </Text>
+        <View style={styles.devButtonRow}>
+          <TouchableOpacity
+            style={[styles.devActivateBtn, isDevActivating && styles.btnDisabled]}
+            onPress={() => onDevActivate("both")}
+            disabled={isDevActivating}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+          >
+            <Feather name="zap" size={14} color="#121212" />
+            <Text style={styles.devActivateBtnText}>
+              {isDevActivating ? "Activating…" : "Activate (App + Gym)"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.devActivateOutlineBtn, isDevActivating && styles.btnDisabled]}
+            onPress={() => onDevActivate("app")}
+            disabled={isDevActivating}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+          >
+            <Text style={styles.devActivateOutlineBtnText}>App Only</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 /* ---------------------------------- Screen ---------------------------------- */
 
 export default function MemberMembershipScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ payment?: string }>();
   const { isSigningOut, logout } = useLogout();
   const { profile } = useMemberProfile();
+  const { user } = useUser();
+  const subscription = useSubscriptionAccess();
+
+  const [isDevActivating, setIsDevActivating] = useState(false);
+  const [cancellingPlan, setCancellingPlan] = useState<SubscriptionPlanType | null>(null);
+
+  // Upon WebBrowser redirect completion:
+  // immediately trigger refetch on subscription query
+  useEffect(() => {
+    if (params.payment) {
+      void WebBrowser.dismissBrowser();
+      void subscription.refresh();
+    }
+  }, [params.payment, subscription]);
+
+  // Also listen for incoming deep link URLs
+  useEffect(() => {
+    const sub = Linking.addEventListener("url", (event) => {
+      if (event.url.includes("payment=") || event.url.includes("member-membership")) {
+        void WebBrowser.dismissBrowser();
+        void subscription.refresh();
+      }
+    });
+    return () => sub.remove();
+  }, [subscription]);
+
+  // Dev / Test activation calling deployed edge function dev-activate-subscription
+  const handleDevActivate = async (planType: "app" | "gym" | "both" = "both") => {
+    if (!subscription.supabase) {
+      Alert.alert("Error", "Payment / Supabase service is unavailable.");
+      return;
+    }
+    setIsDevActivating(true);
+    try {
+      const { data, error } = await subscription.supabase.functions.invoke(
+        "dev-activate-subscription",
+        { body: { plan_type: planType } },
+      );
+      if (error) {
+        Alert.alert("Activation Error", error.message || "Failed to invoke dev-activate-subscription.");
+        return;
+      }
+      // Immediately call refetch() and invalidate ['subscription', user.id] cache
+      await subscription.refetch();
+      const activeUserId = user?.id || subscription.data?.userId;
+      if (typeof (globalThis as any).queryClient?.invalidateQueries === "function") {
+        (globalThis as any).queryClient.invalidateQueries({
+          queryKey: ["subscription", activeUserId],
+        });
+      }
+      Alert.alert(
+        "Activated Successfully",
+        "Your subscription has been activated! Gate pass and digital features are now unlocked.",
+      );
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Dev activation failed.");
+    } finally {
+      setIsDevActivating(false);
+    }
+  };
+
+  // Subscription cancellation with confirmation modal
+  const handleCancelSubscription = (type: SubscriptionPlanType) => {
+    const label = type === "app" ? "App access" : "Gym access";
+    Alert.alert(
+      "Cancel Subscription",
+      `Are you sure you want to cancel your ${label}? Your access will remain active until the end of the paid period.`,
+      [
+        { text: "Keep Subscription", style: "cancel" },
+        {
+          text: "Yes, Cancel",
+          style: "destructive",
+          onPress: async () => {
+            if (!subscription.supabase) return;
+            setCancellingPlan(type);
+            try {
+              // 1. Invoke cancel-subscription Edge Function
+              const { error: fnErr } = await subscription.supabase.functions.invoke(
+                "cancel-subscription",
+                { body: { feeType: type } },
+              );
+              if (fnErr) {
+                console.warn("cancel-subscription error:", fnErr.message);
+              }
+
+              // 2. Also update public.subscriptions if present
+              const activeUserId = user?.id || subscription.data?.userId;
+              if (activeUserId) {
+                try {
+                  await subscription.supabase
+                    .from("subscriptions")
+                    .update({ status: "cancelled", auto_renew: false })
+                    .eq("user_id", activeUserId);
+                } catch (subErr) {
+                  console.warn("Notice: public.subscriptions update ignored:", subErr);
+                }
+              }
+
+              Alert.alert(
+                "Subscription Cancelled",
+                `Your ${label} has been cancelled. It will remain active until the current period expires.`,
+              );
+              await subscription.refetch();
+              if (typeof (globalThis as any).queryClient?.invalidateQueries === "function") {
+                (globalThis as any).queryClient.invalidateQueries({
+                  queryKey: ["subscription", activeUserId],
+                });
+              }
+            } catch (err: any) {
+              Alert.alert("Error", err.message || "Failed to cancel subscription.");
+            } finally {
+              setCancellingPlan(null);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const today = useMemo(
     () =>
@@ -139,9 +511,6 @@ export default function MemberMembershipScreen() {
       .map((n) => n.trim().charAt(0).toUpperCase())
       .join("")
       .slice(0, 2) || "KF";
-
-  const usage = Math.min(MEMBERSHIP.sessionsUsed / MEMBERSHIP.sessionsTotal, 1);
-  const sessionsLeft = MEMBERSHIP.sessionsTotal - MEMBERSHIP.sessionsUsed;
 
   const go = (route: string) => router.replace(route as any);
 
@@ -200,39 +569,14 @@ export default function MemberMembershipScreen() {
             </Text>
           </View>
 
-          {/* Plan summary */}
-          <View style={styles.planCard}>
-            <View style={styles.planTop}>
-              <View>
-                <Text style={styles.planLabel}>Current plan</Text>
-                <Text style={styles.planName}>{MEMBERSHIP.plan}</Text>
-              </View>
-              <View style={styles.statusChip}>
-                <Text style={styles.statusChipText}>Active</Text>
-              </View>
-            </View>
-
-            <View style={styles.progressTrack}>
-              <View
-                style={[styles.progressFill, { width: `${usage * 100}%` }]}
-              />
-            </View>
-            <View style={styles.planMeta}>
-              <Text style={styles.planMetaText}>
-                {MEMBERSHIP.sessionsUsed} / {MEMBERSHIP.sessionsTotal} sessions
-                used
-              </Text>
-              <Text style={styles.planMetaText}>{sessionsLeft} left</Text>
-            </View>
-
-            <View style={styles.divider} />
-            <View style={styles.renewRow}>
-              <Feather name="calendar" size={14} color={KFitColors.mutedText} />
-              <Text style={styles.renewText}>
-                Renews {MEMBERSHIP.renewalDate}
-              </Text>
-            </View>
-          </View>
+          {/* Plan summary: real App/Gym subscription records */}
+          <MembershipPlanCard
+            access={subscription}
+            onDevActivate={handleDevActivate}
+            isDevActivating={isDevActivating}
+            onCancelSubscription={handleCancelSubscription}
+            cancellingPlan={cancellingPlan}
+          />
 
           {/* Manage */}
           <Section title="Membership & Payments" icon="credit-card">
@@ -403,24 +747,101 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.accent + "40",
   },
   statusChipText: { fontSize: 12, fontWeight: "800", color: KFitColors.accent },
-  progressTrack: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: KFitColors.border,
-    overflow: "hidden",
+  statusChipInactive: {
+    backgroundColor: KFitColors.warning + "1A",
+    borderColor: KFitColors.warning + "40",
   },
-  progressFill: {
-    height: "100%",
-    borderRadius: 4,
-    backgroundColor: KFitColors.accent,
+  statusChipTextInactive: { color: KFitColors.warning },
+  statusChipGreen: {
+    backgroundColor: "#10B98126",
+    borderColor: "#10B981",
   },
-  planMeta: {
+  statusChipTextGreen: { color: "#10B981" },
+  planItemBlock: {
+    marginTop: 12,
+    paddingBottom: 4,
+  },
+  planBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  planBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  planBadgeGreen: {
+    backgroundColor: "#10B98126",
+    borderColor: "#10B981",
+  },
+  planBadgeTextGreen: {
+    color: "#10B981",
+    fontWeight: "800",
+    fontSize: 11,
+  },
+  planBadgeInactive: {
+    backgroundColor: KFitColors.warning + "1A",
+    borderColor: KFitColors.warning + "40",
+  },
+  planBadgeTextInactive: {
+    color: KFitColors.warning,
+    fontWeight: "800",
+    fontSize: 11,
+  },
+  cancelPlanButton: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-    marginBottom: 14,
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    marginTop: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: KFitColors.error + "15",
+    borderWidth: 1,
+    borderColor: KFitColors.error + "30",
+  },
+  cancelPlanButtonText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: KFitColors.error,
   },
   planMetaText: { fontSize: 12, color: KFitColors.mutedText },
+  planLoading: { flexDirection: "row", alignItems: "center", gap: 10 },
+  planError: { fontSize: 13, lineHeight: 19, color: KFitColors.error },
+  planNotice: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: KFitColors.warning,
+    marginTop: 12,
+  },
+  planRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  planRowCopy: { flex: 1, gap: 2 },
+  planRowLabel: { fontSize: 14, fontWeight: "700", color: KFitColors.text },
+  planRowMeta: { fontSize: 12, color: KFitColors.mutedText },
+  planRowStatus: { fontSize: 12, fontWeight: "800" },
+  planRowStatusActive: { color: KFitColors.accent },
+  planRowStatusInactive: { color: KFitColors.warning },
+  planDivider: { marginVertical: 14 },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.accent,
+  },
+  retryButtonText: { fontSize: 13, fontWeight: "800", color: KFitColors.accent },
   renewRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -428,6 +849,76 @@ const styles = StyleSheet.create({
     paddingTop: 14,
   },
   renewText: { fontSize: 13, fontWeight: "600", color: KFitColors.text },
+  renewTextActive: {
+    color: "#10B981",
+    fontWeight: "700",
+  },
+
+  /* Dev Card */
+  devCard: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "40",
+  },
+  devHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  devCardTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: KFitColors.accent,
+  },
+  devCardSubtitle: {
+    fontSize: 11,
+    color: KFitColors.mutedText,
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  devButtonRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  devActivateBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: KFitColors.accent,
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  devActivateBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#121212",
+  },
+  devActivateOutlineBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: KFitColors.accent,
+    backgroundColor: KFitColors.accent + "15",
+    paddingVertical: 9,
+    paddingHorizontal: 8,
+  },
+  devActivateOutlineBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: KFitColors.accent,
+  },
+  btnDisabled: {
+    opacity: 0.5,
+  },
 
   /* Sections & cards */
   section: { paddingHorizontal: 20, marginBottom: 24 },
