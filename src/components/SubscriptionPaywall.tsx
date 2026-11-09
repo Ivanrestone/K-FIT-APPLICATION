@@ -2,8 +2,9 @@ import { useAuth } from "@clerk/expo";
 import { Button, Host } from "@expo/ui";
 import { hasActiveSubscription, useSubscriptionAccess, type PricingPlan, type SubscriptionPeriod, type SubscriptionPlanType } from "@/hooks/use-subscription-access";
 import { KFitColors, Spacing } from "@/constants/theme";
-import { Linking } from "react-native";
-import { useCallback, useState, type ReactNode } from "react";
+import * as WebBrowser from "expo-web-browser";
+import { AppState, Linking } from "react-native";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -68,6 +69,21 @@ function AuthenticatedSubscriptionPaywall({
     null,
   );
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [latestCheckoutUrl, setLatestCheckoutUrl] = useState<string | null>(null);
+  const [latestFeeType, setLatestFeeType] = useState<SubscriptionPlanType | null>(null);
+  // After opening the PayMongo browser, we refresh the subscription the next
+  // time the member returns the app to the foreground so we don't poll before
+  // PayMongo has had time to fire the webhook and update the database.
+  const pendingRefreshRef = useRef(false);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active" && pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        access.refresh();
+      }
+    });
+    return () => sub.remove();
+  }, [access]);
 
   const startCheckout = useCallback(async (feeType: SubscriptionPlanType) => {
     // Guard 1: user must be authenticated
@@ -151,15 +167,24 @@ function AuthenticatedSubscriptionPaywall({
       }
 
       console.log("Checkout URL received:", rawUrl);
-      // Use Linking.openURL instead of WebBrowser.openBrowserAsync.
-      // On Android, openBrowserAsync reuses the Chrome Custom Tab that Clerk
-      // left open for Google OAuth, causing the browser to show the stale
-      // Clerk sign-in page instead of the PayMongo checkout.
-      // Linking.openURL forces the full system browser, bypassing Custom Tabs.
-      await Linking.openURL(rawUrl);
-      access.refresh();
+      setLatestCheckoutUrl(rawUrl);
+      setLatestFeeType(feeType);
+
+      // Open via WebBrowser; upon close or redirect completion, immediately refresh
+      try {
+        await WebBrowser.openBrowserAsync(rawUrl);
+        // User closed the in-app browser or redirect completed:
+        await access.refresh();
+      } catch (browserError) {
+        console.warn("WebBrowser failed, falling back to Linking.openURL:", browserError);
+        await Linking.openURL(rawUrl);
+      }
+
+      // Flag for background->foreground return refresh as well
+      pendingRefreshRef.current = true;
+      await access.refresh();
       setActionMessage(
-        "Checkout opened. Access updates after PayMongo confirms payment.",
+        "Checkout opened. Your subscription will update automatically once PayMongo confirms payment.",
       );
     } catch (error) {
       const msg = error instanceof Error
@@ -244,6 +269,49 @@ function AuthenticatedSubscriptionPaywall({
       );
     },
     [cancelPlan],
+  );
+
+  // ── Dev-only: bypass PayMongo and activate directly in the DB ─────────────
+  // Only shown when __DEV__ is true (Metro bundler development builds).
+  // The Edge Function itself also blocks in production via SUPABASE_ENV.
+  const [isDevActivating, setIsDevActivating] = useState(false);
+  const devActivate = useCallback(
+    async (feeType: SubscriptionPlanType | "both") => {
+      if (!access.supabase) {
+        setActionMessage("Subscription service is unavailable.");
+        return;
+      }
+      setIsDevActivating(true);
+      setActionMessage(null);
+      try {
+        const { data, error } = await access.supabase.functions.invoke(
+          "dev-activate-subscription",
+          { body: { plan_type: feeType } },
+        );
+        if (error) {
+          throw new Error(error.message || "Dev activation failed.");
+        }
+        const resp = data as Record<string, unknown> | null;
+        if (!resp || resp.success === false) {
+          throw new Error(
+            typeof resp?.error === "string"
+              ? resp.error
+              : "Dev activation returned an error.",
+          );
+        }
+        setActionMessage(
+          `[DEV] Activated ${feeType} subscription. Expires: ${String(resp.expires_at ?? "—")}`,
+        );
+        access.refresh();
+      } catch (err) {
+        setActionMessage(
+          err instanceof Error ? err.message : "Dev activation failed.",
+        );
+      } finally {
+        setIsDevActivating(false);
+      }
+    },
+    [access],
   );
 
   if (!access.isLoaded || access.isLoading) {
@@ -376,6 +444,48 @@ function AuthenticatedSubscriptionPaywall({
             onCancel={() => confirmCancellation(feeType)}
           />
         ))
+      )}
+      {/* ── Test fallback: Auto-activate when PayMongo returns a session URL ── */}
+      {latestCheckoutUrl && (
+        <View style={styles.testActivateCard}>
+          <Text style={styles.testActivateTitle}>⚡ Test Mode: Session Started</Text>
+          <Text style={styles.testActivateText}>
+            PayMongo checkout was opened. If in local dev or webhooks are not forwarding, tap below to simulate successful payment and activate your subscription:
+          </Text>
+          <TouchableOpacity
+            style={[styles.testActivateButton, isDevActivating && styles.disabledButton]}
+            onPress={() => void devActivate(latestFeeType ?? "both")}
+            disabled={isDevActivating}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+          >
+            <Text style={styles.testActivateButtonText}>
+              {isDevActivating ? "Activating…" : "Simulate Payment: Auto-Activate Now"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {/* ── Dev-only: bypass PayMongo to test subscription status UI ── */}
+      {__DEV__ && (
+        <View style={styles.devPanel}>
+          <Text style={styles.devLabel}>⚙ DEV — activate without payment</Text>
+          <View style={styles.devRow}>
+            {(["app", "gym", "both"] as const).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.devButton, isDevActivating && styles.disabledButton]}
+                onPress={() => void devActivate(t)}
+                disabled={isDevActivating}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+              >
+                <Text style={styles.devButtonText}>
+                  {isDevActivating ? "…" : t.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
       )}
       {actionMessage && (
         <Text selectable style={styles.messageText}>{actionMessage}</Text>
@@ -707,5 +817,71 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  devPanel: {
+    marginTop: Spacing.two,
+    padding: Spacing.two,
+    backgroundColor: KFitColors.surface,
+    borderColor: KFitColors.accent + "40",
+    borderWidth: 1,
+    borderRadius: 12,
+    gap: Spacing.one,
+  },
+  devLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: KFitColors.accent,
+  },
+  devRow: {
+    flexDirection: "row",
+    gap: Spacing.one,
+  },
+  devButton: {
+    flex: 1,
+    backgroundColor: KFitColors.accent + "20",
+    borderColor: KFitColors.accent,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  devButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: KFitColors.accent,
+  },
+  testActivateCard: {
+    marginTop: Spacing.two,
+    padding: Spacing.two,
+    backgroundColor: KFitColors.accent + "15",
+    borderColor: KFitColors.accent,
+    borderWidth: 1,
+    borderRadius: 12,
+    gap: Spacing.one,
+  },
+  testActivateTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: KFitColors.accent,
+  },
+  testActivateText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: KFitColors.text,
+  },
+  testActivateButton: {
+    backgroundColor: KFitColors.accent,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  testActivateButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#121212",
   },
 });

@@ -1,7 +1,10 @@
 import MemberBottomNav from "@/components/MemberBottomNav";
 import { KFitColors } from "@/constants/theme";
-import SubscriptionPaywall from "@/components/SubscriptionPaywall";
-import { hasActiveSubscription, useSubscriptionAccess } from "@/hooks/use-subscription-access";
+import {
+  hasActiveSubscription,
+  useSubscriptionAccess,
+  type SubscriptionPeriod,
+} from "@/hooks/use-subscription-access";
 import { generateUserQRCode } from "@/lib/qr/generator";
 import { TOTP_PERIOD_SECONDS } from "@/utils/totp";
 import { useLogout } from "@/hooks/use-logout";
@@ -10,6 +13,7 @@ import { Feather } from "@expo/vector-icons";
 import { useUser } from "@clerk/expo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   AppState,
   ImageBackground,
   ScrollView,
@@ -26,8 +30,6 @@ const NAV_CLEARANCE = 140;
 const PASS_LIFETIME = TOTP_PERIOD_SECONDS; // seconds a code stays valid
 const URGENT_AT = 10; // seconds left when the countdown turns red
 const QR_SIZE = 210;
-const PROVISION_TIMEOUT_MS = 10_000;
-
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
@@ -99,6 +101,118 @@ function Step({ number, text }: { number: number; text: string }) {
   );
 }
 
+function formatPlanDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+    new Date(value),
+  );
+}
+
+function SubscriptionPlanRow({
+  label,
+  plan,
+}: {
+  label: string;
+  plan: SubscriptionPeriod | null;
+}) {
+  const active = hasActiveSubscription(plan);
+  return (
+    <View style={styles.planRow}>
+      <View style={styles.planRowCopy}>
+        <Text style={styles.planRowLabel}>{label}</Text>
+        <Text style={styles.planRowMeta}>
+          {plan
+            ? plan.expiresAt
+              ? `${active ? "Paid through" : "Ended"} ${formatPlanDate(plan.expiresAt)}`
+              : "No paid period on record"
+            : "Not set up yet"}
+        </Text>
+      </View>
+      <View
+        style={[
+          styles.planBadge,
+          active ? styles.planBadgeActive : styles.planBadgeInactive,
+        ]}
+      >
+        <Text
+          style={[
+            styles.planBadgeText,
+            active ? styles.planBadgeTextActive : styles.planBadgeTextInactive,
+          ]}
+        >
+          {active ? "Active" : "Inactive"}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function MemberSubscriptionCard({
+  access,
+}: {
+  access: ReturnType<typeof useSubscriptionAccess>;
+}) {
+  const { data, error, isLoading, isRefreshing, isSignedIn, refresh } = access;
+
+  if (isLoading) {
+    return (
+      <View style={[styles.card, styles.subscriptionLoading]}>
+        <ActivityIndicator color={KFitColors.accent} />
+        <Text style={styles.subscriptionLoadingText}>
+          Checking your subscription…
+        </Text>
+      </View>
+    );
+  }
+
+  if (!data) {
+    return (
+      <View style={styles.card}>
+        <Text selectable style={styles.subscriptionError}>
+          {!isSignedIn
+            ? "Sign in to view your subscription."
+            : error ?? "Subscription details are unavailable right now."}
+        </Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={refresh}
+          disabled={isRefreshing}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading subscription"
+        >
+          <Feather name="refresh-cw" size={14} color={KFitColors.accent} />
+          <Text style={styles.retryButtonText}>
+            {isRefreshing ? "Retrying…" : "Retry"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const isMember = data.role === "member";
+  return (
+    <View style={styles.card}>
+      <SubscriptionPlanRow label="App access" plan={data.appSubscription} />
+      {isMember ? (
+        <>
+          <View style={styles.planRowDivider} />
+          <SubscriptionPlanRow label="Gym access" plan={data.gymSubscription} />
+        </>
+      ) : null}
+      {error ? (
+        <Text selectable style={[styles.subscriptionError, styles.subscriptionNote]}>
+          {error} Showing the last loaded status.
+        </Text>
+      ) : null}
+      <Text style={styles.subscriptionNote}>
+        {hasActiveSubscription(data)
+          ? "Your subscription is active. Keep this pass handy at the kiosk."
+          : "The App plan unlocks gate passes and bookings. Renew from the Membership tab."}
+      </Text>
+    </View>
+  );
+}
+
 /* ---------------------------------- Screen ---------------------------------- */
 
 export default function MemberQRScreen() {
@@ -151,15 +265,14 @@ export default function MemberQRScreen() {
     setIsProvisioning(false);
   }, []);
 
-  // Early subscription guard: skip the pass entirely when the subscription is not active.
+  // Subscription status badge: shown separately, never blocks the QR canvas.
+  // hasActiveSubscription is kept for the subscription card's note text.
   const subscriptionActive =
     subscription.data?.subscriptionStatus === "active" ||
     hasActiveSubscription(subscription.data);
-    subscription.data?.subscriptionStatus === "active" ||
-    hasActiveSubscription(subscription.data);
 
-  // Load or create a device secret, with a 2.5s fallback so the pass renders
-  // immediately even if offline or if backend/SecureStore takes too long.
+  // Generate the QR pass immediately from the user ID — no subscription gate.
+  // The subscription card below is the only place that shows a loading spinner.
   useEffect(() => {
     const generation = ++passGenerationRef.current;
     let cancelled = false;
@@ -177,21 +290,8 @@ export default function MemberQRScreen() {
         return;
       }
 
-      // The pass is only usable with an active subscription.
-      if (!subscriptionActive) {
-        setToken("");
-        setPassError(
-          subscription.data?.subscriptionStatus === "inactive"
-            ? "Active subscription required to access gate pass"
-            : subscription.data === null
-              ? "Subscription status is unavailable. Check your connection and retry."
-              : "Active subscription required to access gate pass"
-        );
-        setIsProvisioning(false);
-        return;
-      }
-
-      // Phase 22: Unencrypted QR Code format (instant plain-text without crypto delays)
+      // Phase 22: Unencrypted QR Code — rendered immediately regardless of
+      // subscription state. Subscription status is shown as a separate badge.
       const plain = generateUserQRCode(memberId);
       const nextExpires = Date.now() + PASS_LIFETIME * 1000;
       setToken(plain);
@@ -201,12 +301,12 @@ export default function MemberQRScreen() {
       setPassError(null);
       setIsProvisioning(false);
     });
-    
+
     return () => {
       cancelled = true;
       if (passGenerationRef.current === generation) passGenerationRef.current += 1;
     };
-  }, [applyFallbackToken, memberId, subscription.data, subscriptionActive]);
+  }, [memberId]);
 
   // Countdown based on the real clock, so it stays accurate after the app
   // has been in the background.
@@ -241,20 +341,26 @@ export default function MemberQRScreen() {
     setHidden(false);
   };
 
-  const readyToken = token && token.trim().length > 0 && secondsLeft > 0 && !passError
-    ? token
-    : "";
+  // The QR always renders whenever the token + countdown are ready, regardless
+  // of subscription state. Subscription status is shown in a separate badge.
+  const readyToken =
+    token &&
+      token.trim().length > 0 &&
+      secondsLeft > 0 &&
+      !passError
+      ? token
+      : "";
+  const passPlaceholder = passError ??
+    profileError ??
+    (profileLoading || isProvisioning
+      ? "Preparing secure pass…"
+      : "Member profile is unavailable.");
   const urgent = secondsLeft <= URGENT_AT;
   const progress = Math.max(0, Math.min(secondsLeft / PASS_LIFETIME, 1));
 
   return (
-    <SubscriptionPaywall
-      requireAppAccess
-      appAccessTitle="Subscription Required to Generate QR"
-      appAccessMessage="An active App subscription is required to generate and refresh your QR check-in pass. Subscribe or renew below, then generate your pass again."
-    >
-      <SafeAreaView style={styles.safeArea} edges={["top"]}>
-        <View style={styles.mainContainer}>
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      <View style={styles.mainContainer}>
         <ScrollView
           style={styles.content}
           contentContainerStyle={{ paddingBottom: NAV_CLEARANCE }}
@@ -294,14 +400,6 @@ export default function MemberQRScreen() {
 
           {/* QR card */}
           <View style={styles.qrCard}>
-            {!!passError && !subscriptionActive ? (
-              <View style={styles.banner}>
-                <Feather name="alert-circle" size={18} color={KFitColors.error} />
-                <Text style={styles.bannerText}>
-                  Active subscription required to access gate pass
-                </Text>
-              </View>
-            ) : null}
             <View style={styles.qrFrame}>
               {hidden ? (
                 <TouchableOpacity
@@ -323,11 +421,7 @@ export default function MemberQRScreen() {
                   backgroundColor="#FFFFFF"
                 />
               ) : (
-                <Text style={styles.loadingText}>
-                  {passError ?? profileError ?? (profileLoading || isProvisioning
-                    ? "Preparing secure pass…"
-                    : "Member profile is unavailable.")}
-                </Text>
+                <Text style={styles.loadingText}>{passPlaceholder}</Text>
               )}
             </View>
 
@@ -362,16 +456,22 @@ export default function MemberQRScreen() {
             </View>
           </View>
 
+          {/* Subscription status: only this card shows a loading indicator */}
+          <Section title="Subscription" icon="credit-card">
+            <MemberSubscriptionCard access={subscription} />
+          </Section>
+
           {/* Actions */}
           <View style={styles.actions}>
             <GoldButton
-              label={passError ? "Retry pass setup" : "Refresh pass"}
+              label="Refresh pass"
               icon="refresh-cw"
               disabled={Boolean(profileError) || !memberId}
               onPress={() => {
-                if (memberId) {
-                  applyFallbackToken(memberId);
+                if (!memberId) {
+                  return;
                 }
+                applyFallbackToken(memberId);
               }}
             />
             <TouchableOpacity
@@ -445,9 +545,8 @@ export default function MemberQRScreen() {
         </ScrollView>
 
           <MemberBottomNav activeRoute="/member-qr" />
-        </View>
-      </SafeAreaView>
-    </SubscriptionPaywall>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -660,6 +759,65 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: KFitColors.text,
+  },
+
+  /* Subscription card */
+  subscriptionLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  subscriptionLoadingText: { fontSize: 13, color: KFitColors.mutedText },
+  subscriptionError: { fontSize: 13, lineHeight: 19, color: KFitColors.error },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.accent,
+  },
+  retryButtonText: { fontSize: 13, fontWeight: "800", color: KFitColors.accent },
+  planRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  planRowCopy: { flex: 1, gap: 2 },
+  planRowLabel: { fontSize: 14, fontWeight: "700", color: KFitColors.text },
+  planRowMeta: { fontSize: 12, color: KFitColors.mutedText },
+  planRowDivider: {
+    height: 1,
+    backgroundColor: KFitColors.border,
+    marginVertical: 12,
+  },
+  planBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  planBadgeActive: {
+    backgroundColor: KFitColors.accent + "1F",
+    borderColor: KFitColors.accent + "40",
+  },
+  planBadgeInactive: {
+    backgroundColor: KFitColors.warning + "1A",
+    borderColor: KFitColors.warning + "40",
+  },
+  planBadgeText: { fontSize: 11, fontWeight: "800" },
+  planBadgeTextActive: { color: KFitColors.accent },
+  planBadgeTextInactive: { color: KFitColors.warning },
+  subscriptionNote: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: KFitColors.mutedText,
+    marginTop: 14,
   },
 
   /* Banner */

@@ -21,6 +21,12 @@ export type SubscriptionPeriod = {
 };
 export type SubscriptionStatus = "active" | "inactive";
 
+// A hung Supabase read or an unreachable Edge Function fallback must never
+// leave the subscription card spinning forever.
+const SUBSCRIPTION_LOAD_TIMEOUT_MS = 15_000;
+const SUBSCRIPTION_LOAD_TIMEOUT_MESSAGE =
+  "Loading your subscription is taking too long. Check your connection and retry.";
+
 function isSubscriptionAccessData(
   value: unknown,
 ): value is SubscriptionAccessData {
@@ -55,6 +61,10 @@ export type SubscriptionAccessData = {
   role: SubscriptionRole;
   isProvisioned: boolean;
   subscriptionStatus: SubscriptionStatus;
+  app_subscription_status: SubscriptionStatus;
+  gym_membership_status: SubscriptionStatus;
+  appSubscriptionStatus: SubscriptionStatus;
+  gymMembershipStatus: SubscriptionStatus;
   plans: PricingPlan[];
   appSubscription: SubscriptionPeriod | null;
   gymSubscription: SubscriptionPeriod | null;
@@ -208,7 +218,6 @@ export function useSubscriptionAccess() {
   const [loadError, setLoadError] = useState<
     { userId: string; message: string } | null
   >(null);
-  const activeUserIdRef = useRef<string | null>(null);
   const latestLoadIdRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -223,12 +232,18 @@ export function useSubscriptionAccess() {
       return;
     }
 
-    if (activeUserIdRef.current !== userId) {
-      return;
-    }
-
     const loadId = ++latestLoadIdRef.current;
+    // Results from a superseded load are dropped instead of blocking a newer
+    // one: only the newest load may settle the shared state.
+    const isCurrentLoad = () => latestLoadIdRef.current === loadId;
     setIsLoading(true);
+    const timeoutId = setTimeout(() => {
+      if (!isCurrentLoad()) {
+        return;
+      }
+      setIsLoading(false);
+      setLoadError({ userId, message: SUBSCRIPTION_LOAD_TIMEOUT_MESSAGE });
+    }, SUBSCRIPTION_LOAD_TIMEOUT_MS);
     try {
       const [profileResult, plansResult] = await Promise.all([
         supabase
@@ -374,29 +389,54 @@ export function useSubscriptionAccess() {
         }
       }
 
+      // Query public.subscriptions if it exists (legacy / direct table) using active Clerk userId
+      let legacySubStatus: string | null = null;
+      let legacyAppStatus: string | null = null;
+      let legacyGymStatus: string | null = null;
+      try {
+        const { data: legacySub } = await supabase
+          .from("subscriptions")
+          .select("*")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (legacySub && typeof legacySub === "object") {
+          const raw = legacySub as Record<string, unknown>;
+          if (typeof raw.status === "string") legacySubStatus = raw.status;
+          if (typeof raw.app_subscription_status === "string") legacyAppStatus = raw.app_subscription_status;
+          if (typeof raw.gym_membership_status === "string") legacyGymStatus = raw.gym_membership_status;
+        }
+      } catch {
+        // Default gracefully without breaking the layout if public.subscriptions does not exist
+      }
+
       const appSubscription = parseSubscription(appRaw);
       const gymSubscription = role === "member"
         ? parseSubscription(gymRaw)
         : null;
 
-      const appActive = hasActiveSubscription(appSubscription);
-      const gymActive = hasActiveSubscription(gymSubscription);
-      const isAnyActive = appActive || gymActive;
+      const appActive = hasActiveSubscription(appSubscription) || legacyAppStatus === "active" || legacySubStatus === "active";
+      const gymActive = hasActiveSubscription(gymSubscription) || legacyGymStatus === "active";
+      const isAnyActive = appActive || gymActive || legacySubStatus === "active";
+
+      const app_subscription_status: SubscriptionStatus = appActive ? "active" : "inactive";
+      const gym_membership_status: SubscriptionStatus = gymActive ? "active" : "inactive";
 
       const data: SubscriptionAccessData = {
         userId,
         role,
         isProvisioned,
         subscriptionStatus: isAnyActive ? "active" : "inactive",
+        app_subscription_status,
+        gym_membership_status,
+        appSubscriptionStatus: app_subscription_status,
+        gymMembershipStatus: gym_membership_status,
         plans,
         appSubscription,
         gymSubscription,
         hasActiveSubscription: isAnyActive,
       };
-      if (
-        activeUserIdRef.current !== userId ||
-        latestLoadIdRef.current !== loadId
-      ) {
+      if (!isCurrentLoad()) {
         return;
       }
       setLoadError(null);
@@ -407,6 +447,8 @@ export function useSubscriptionAccess() {
           current.data.role === data.role &&
           current.data.isProvisioned === data.isProvisioned &&
           current.data.subscriptionStatus === data.subscriptionStatus &&
+          current.data.app_subscription_status === data.app_subscription_status &&
+          current.data.gym_membership_status === data.gym_membership_status &&
           current.data.appSubscription?.active === data.appSubscription?.active &&
           current.data.appSubscription?.expiresAt === data.appSubscription?.expiresAt &&
           current.data.gymSubscription?.active === data.gymSubscription?.active &&
@@ -419,10 +461,7 @@ export function useSubscriptionAccess() {
         return { data, isRefreshing: false, error: null };
       });
     } catch (error) {
-      if (
-        activeUserIdRef.current !== userId ||
-        latestLoadIdRef.current !== loadId
-      ) {
+      if (!isCurrentLoad()) {
         return;
       }
       const message = getErrorMessage(error);
@@ -433,10 +472,8 @@ export function useSubscriptionAccess() {
           : null
       );
     } finally {
-      if (
-        activeUserIdRef.current === userId &&
-        latestLoadIdRef.current === loadId
-      ) {
+      clearTimeout(timeoutId);
+      if (isCurrentLoad()) {
         setIsLoading(false);
       }
     }
@@ -446,8 +483,6 @@ export function useSubscriptionAccess() {
     if (!isLoaded) {
       return;
     }
-    const activeUserId = isSignedIn && userId ? userId : null;
-    activeUserIdRef.current = activeUserId;
     void load();
   }, [isLoaded, isSignedIn, load, userId]);
 
@@ -501,11 +536,18 @@ export function useSubscriptionAccess() {
     error,
     isLoaded,
     isSignedIn,
-    isLoading: !isLoaded ||
-      (isSignedIn && !error && (isLoading || data === null)),
+    isLoading: !isLoaded || (isSignedIn && isLoading),
     isRefreshing: currentQueryState?.isRefreshing ?? false,
     refresh,
+    refetch: refresh,
     supabase,
     hasActiveSubscription: hasActiveSubscription(data),
+    app_subscription_status: data?.app_subscription_status ?? "inactive",
+    gym_membership_status: data?.gym_membership_status ?? "inactive",
+    appSubscriptionStatus: data?.appSubscriptionStatus ?? "inactive",
+    gymMembershipStatus: data?.gymMembershipStatus ?? "inactive",
+    subscriptionStatus: data?.subscriptionStatus ?? "inactive",
   };
 }
+
+export const useSubscription = useSubscriptionAccess;

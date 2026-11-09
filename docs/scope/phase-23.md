@@ -118,8 +118,13 @@ eas build -p android --profile preview
 
 ## 6. Verification Checklist
 
-- [ ] `app.json` has `"orientation": "default"`.
-- [ ] `npx expo-doctor` passes all 21 checks without errors.
-- [ ] `eas.json` contains `preview.android.buildType = "apk"`.
-- [ ] Mobile device auto-rotates into landscape mode on tilt.
-- [ ] App correctly sends HTTP POST requests to `http://192.168.254.109:5000/unlock` when connected to local Wi-Fi (`192.168.254.x`).
+- [x] `app.json` has `"orientation": "default"`.
+- [x] `npx expo-doctor` passes all 21 checks without errors.
+- [x] `eas.json` contains `preview.android.buildType = "apk"`.
+- [x] Release build allows the LAN unlock POST (`expo-build-properties` sets `android.usesCleartextTraffic: true`; prebuild manifest verified).
+- [ ] Mobile device auto-rotates into landscape mode on tilt (needs a device; prebuild emits `screenOrientation="unspecified"`).
+- [ ] App correctly sends HTTP POST requests to `http://192.168.254.109:5000/unlock` when connected to local Wi-Fi (`192.168.254.x`) (needs a device on the gym LAN).
+
+## 7. Result
+
+Built. `orientation` was already `default`, `expo-asset` was installed, `react-native-screens` was already deduped to a single `4.26.2`, and `eas.json` already had the `preview` APK profile, so the only open item was the LAN unlock POST: the generated release manifest had no `usesCleartextTraffic`, which Android 9+ blocks. Added `expo-build-properties` (`~57.0.23`) with `android.usesCleartextTraffic: true` in `app.json`. `npx expo-doctor` 21/21 and `npx tsc --noEmit` pass; a fresh prebuild emits `android:usesCleartextTraffic="true"` and `android:screenOrientation="unspecified"`. The cloud APK build was intentionally not triggered.
