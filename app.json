@@ -3,7 +3,7 @@
     "name": "K-Fit",
     "slug": "k-fit",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/kfit-app-icon.png",
     "scheme": "kfit",
     "userInterfaceStyle": "automatic",
