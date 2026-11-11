@@ -372,11 +372,16 @@ function AuthenticatedSubscriptionPaywall({
   );
 
   if (!access.isLoaded || access.isLoading) {
-    return (
+    // On the billing surface, hold the section's footprint with a plan-shaped
+    // skeleton instead of a short spinner panel that then expands into the
+    // full plan list. Gated screens keep their compact spinner.
+    return requireAppAccess ? (
       <View style={styles.statePanel}>
         <ActivityIndicator color={KFitColors.accent} />
         <Text style={styles.helperText}>Loading subscription status…</Text>
       </View>
+    ) : (
+      <PaywallSkeleton />
     );
   }
 
@@ -734,6 +739,39 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
+// Mirrors the loaded plan panel's structure so the Payment Options section
+// keeps its footprint while the first subscription read is in flight and the
+// sections below it do not jump.
+function PaywallSkeleton() {
+  return (
+    <View
+      style={styles.panel}
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading subscription plans"
+      accessibilityLiveRegion="polite"
+    >
+      <View style={styles.skeletonTitleRow}>
+        <View style={[styles.skeletonBlock, styles.skeletonTitle]} />
+        <ActivityIndicator size="small" color={KFitColors.accent} />
+      </View>
+      {[0, 1].map((index) => (
+        <View key={index} style={styles.planCard}>
+          <View style={styles.planHeader}>
+            <View style={styles.planCopy}>
+              <View style={[styles.skeletonBlock, styles.skeletonCardTitle]} />
+              <View style={[styles.skeletonBlock, styles.skeletonHelper]} />
+            </View>
+            <View style={[styles.skeletonBlock, styles.skeletonStatus]} />
+          </View>
+          <View style={[styles.skeletonBlock, styles.skeletonPrice]} />
+          <View style={[styles.skeletonBlock, styles.skeletonHelper]} />
+          <View style={[styles.skeletonBlock, styles.skeletonButton]} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function MessagePanel({ message }: { message: string }) {
   return (
     <View style={styles.statePanel}>
@@ -833,6 +871,23 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     marginTop: Spacing.one,
   },
+  skeletonTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  skeletonBlock: {
+    backgroundColor: KFitColors.border,
+    borderRadius: 6,
+    opacity: 0.7,
+  },
+  skeletonTitle: { height: 24, width: 172 },
+  skeletonCardTitle: { height: 16, width: "55%" },
+  skeletonHelper: { height: 14, width: "75%" },
+  skeletonStatus: { borderRadius: 999, height: 14, width: 64 },
+  skeletonPrice: { height: 18, width: 120 },
+  skeletonButton: { borderRadius: 12, height: 43, marginTop: Spacing.one },
+
   goldButtonWrapper: {
     borderRadius: 12,
     overflow: "hidden",

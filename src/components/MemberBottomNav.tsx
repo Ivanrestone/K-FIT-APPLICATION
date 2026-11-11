@@ -17,7 +17,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  initialWindowMetrics,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 type Tab = {
   label: string;
@@ -133,6 +136,14 @@ export default function MemberBottomNav({
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Android edge-to-edge can report a smaller bottom inset for a frame when the
+  // app resumes (which is also when subscription data refetches), dropping the
+  // dock and bouncing it back. Pin it to the startup inset so the bar cannot
+  // move after first layout.
+  const bottomInset = Math.max(
+    insets.bottom,
+    initialWindowMetrics?.insets.bottom ?? 0,
+  );
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
   const challengeStore = useChallengeStore();
@@ -194,7 +205,7 @@ export default function MemberBottomNav({
   return (
     <>
       <View
-        style={[styles.wrapper, { bottom: Math.max(insets.bottom, 8) + 4 }]}
+        style={[styles.wrapper, { bottom: Math.max(bottomInset, 8) + 4 }]}
         pointerEvents="box-none"
       >
         <View style={styles.qrWrap} pointerEvents="box-none">

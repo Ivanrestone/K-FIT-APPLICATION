@@ -140,6 +140,43 @@ function planLabel(type: SubscriptionPlanType) {
   return type === "app" ? "App access" : "Gym access";
 }
 
+// Placeholder shaped like the loaded plan card so the sections below it stay
+// put. Loading is rendered inside the card, never instead of the screen.
+function PlanCardSkeleton({ label }: { label: string }) {
+  return (
+    <View
+      style={styles.planCard}
+      accessibilityRole="progressbar"
+      accessibilityLabel={label}
+      accessibilityLiveRegion="polite"
+    >
+      <View style={styles.planTop}>
+        <View style={styles.skeletonCopy}>
+          <View style={[styles.skeletonBlock, styles.skeletonLabel]} />
+          <View style={[styles.skeletonBlock, styles.skeletonTitle]} />
+        </View>
+        <View style={[styles.skeletonBlock, styles.skeletonChip]} />
+      </View>
+
+      {[0, 1].map((index) => (
+        <View key={index} style={[styles.planItemBlock, styles.skeletonRow]}>
+          <View style={styles.skeletonCopy}>
+            <View style={[styles.skeletonBlock, styles.skeletonRowLabel]} />
+            <View style={[styles.skeletonBlock, styles.skeletonRowMeta]} />
+          </View>
+          <View style={[styles.skeletonBlock, styles.skeletonBadge]} />
+        </View>
+      ))}
+
+      <View style={[styles.divider, styles.planDivider]} />
+      <View style={styles.renewRow}>
+        <ActivityIndicator size="small" color={KFitColors.accent} />
+        <Text style={styles.planMetaText}>{label}</Text>
+      </View>
+    </View>
+  );
+}
+
 function MembershipPlanCard({
   access,
   onCancelSubscription,
@@ -153,14 +190,20 @@ function MembershipPlanCard({
 }) {
   const { data, error, isLoading, isRefreshing, isSignedIn, refresh } = access;
 
-  if (isLoading || isVerifyingPayment) {
+  // Only the very first read replaces the card body. Refetches keep the plan
+  // (or the error card and its Retrying… label) on screen with a small inline
+  // indicator, so nothing outside the card moves.
+  const isFirstLoad = !data && !error && (isLoading || isVerifyingPayment);
+  const isRefreshingPlan = Boolean(data) &&
+    (isLoading || isRefreshing || isVerifyingPayment);
+
+  if (isFirstLoad) {
     return (
-      <View style={[styles.planCard, styles.planLoading]}>
-        <ActivityIndicator color={KFitColors.accent} />
-        <Text style={styles.planMetaText}>
-          {isVerifyingPayment ? "Verifying payment with PayMongo…" : "Checking your plan…"}
-        </Text>
-      </View>
+      <PlanCardSkeleton
+        label={isVerifyingPayment
+          ? "Verifying payment with PayMongo…"
+          : "Checking your plan…"}
+      />
     );
   }
 
@@ -231,22 +274,34 @@ function MembershipPlanCard({
           <Text style={styles.planLabel}>Current plan</Text>
           <Text style={styles.planName}>{planName}</Text>
         </View>
-        <View
-          style={[
-            styles.statusChip,
-            isAnyActive && !isCancelled && styles.statusChipGreen,
-            !isAnyActive && styles.statusChipInactive,
-          ]}
-        >
-          <Text
+        <View style={styles.planTopRight}>
+          {/* Fixed slot: showing or hiding the refresh spinner must not shift
+              the status chip or anything below the header row. */}
+          <View style={styles.refreshSlot}>
+            <ActivityIndicator
+              size="small"
+              color={KFitColors.accent}
+              animating={isRefreshingPlan}
+              style={{ opacity: isRefreshingPlan ? 1 : 0 }}
+            />
+          </View>
+          <View
             style={[
-              styles.statusChipText,
-              isAnyActive && !isCancelled && styles.statusChipTextGreen,
-              !isAnyActive && styles.statusChipTextInactive,
+              styles.statusChip,
+              isAnyActive && !isCancelled && styles.statusChipGreen,
+              !isAnyActive && styles.statusChipInactive,
             ]}
           >
-            {!isAnyActive ? "Inactive" : isCancelled ? "Canceled" : "Active"}
-          </Text>
+            <Text
+              style={[
+                styles.statusChipText,
+                isAnyActive && !isCancelled && styles.statusChipTextGreen,
+                !isAnyActive && styles.statusChipTextInactive,
+              ]}
+            >
+              {!isAnyActive ? "Inactive" : isCancelled ? "Canceled" : "Active"}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -996,8 +1051,27 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: KFitColors.error,
   },
+  planTopRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  refreshSlot: { width: 20, alignItems: "center" },
   planMetaText: { fontSize: 12, color: KFitColors.mutedText },
-  planLoading: { flexDirection: "row", alignItems: "center", gap: 10 },
+  skeletonBlock: {
+    backgroundColor: KFitColors.border,
+    borderRadius: 6,
+    opacity: 0.7,
+  },
+  skeletonCopy: { flex: 1, gap: 6 },
+  skeletonLabel: { width: 84, height: 12 },
+  skeletonTitle: { width: 152, height: 22 },
+  skeletonChip: { width: 64, height: 22, borderRadius: 999 },
+  skeletonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  skeletonRowLabel: { width: "45%", height: 14 },
+  skeletonRowMeta: { width: "70%", height: 12 },
+  skeletonBadge: { width: 56, height: 20, borderRadius: 999 },
   planError: { fontSize: 13, lineHeight: 19, color: KFitColors.error },
   planNotice: {
     fontSize: 12,

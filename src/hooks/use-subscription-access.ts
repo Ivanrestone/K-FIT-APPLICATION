@@ -219,6 +219,10 @@ export function useSubscriptionAccess() {
     { userId: string; message: string } | null
   >(null);
   const latestLoadIdRef = useRef(0);
+  // A reload only counts as "loading" until the first successful read for the
+  // signed-in user. After that the screens keep the settled card on screen and
+  // show their own refresh indicator instead of collapsing to a spinner.
+  const settledUserIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (
@@ -228,6 +232,7 @@ export function useSubscriptionAccess() {
     ) {
       setQueryState(null);
       setLoadError(null);
+      settledUserIdRef.current = null;
       setIsLoading(false);
       return;
     }
@@ -236,7 +241,9 @@ export function useSubscriptionAccess() {
     // Results from a superseded load are dropped instead of blocking a newer
     // one: only the newest load may settle the shared state.
     const isCurrentLoad = () => latestLoadIdRef.current === loadId;
-    setIsLoading(true);
+    if (settledUserIdRef.current !== userId) {
+      setIsLoading(true);
+    }
     const timeoutId = setTimeout(() => {
       if (!isCurrentLoad()) {
         return;
@@ -439,6 +446,7 @@ export function useSubscriptionAccess() {
       if (!isCurrentLoad()) {
         return;
       }
+      settledUserIdRef.current = userId;
       setLoadError(null);
       setQueryState((current) => {
         if (

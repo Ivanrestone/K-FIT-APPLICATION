@@ -49,7 +49,7 @@ Each tool has one job. Ask before moving a responsibility to a different tool.
 - **Offline States:** The Member app generates TOTP locally (like Google Authenticator) and can do so offline. The Kiosk *must* have an internet connection to validate tokens; implement strict error UI if the Kiosk drops offline.
 - **Database Schema:** Let the backend generate document IDs. Decouple `users`, `subscriptions_app`, `subscriptions_gym`, `attendance_logs`, and `bookings` strictly.
 - Login and dashboard surfaces use the K-Fit colors in `src/constants/theme.ts`. Keep other routes on their existing theme unless asked.
-- Member screens never block the whole page on subscription loading: header, nav, and content render immediately, and the spinner/error lives inside the subscription card (`useSubscriptionAccess` always settles `isLoading`, with a 15s timeout).
+- Member screens never block the whole page on subscription loading: header, nav, and content render immediately, and the spinner/error lives inside the subscription card (`useSubscriptionAccess` always settles `isLoading`, with a 15s timeout). `isLoading` covers only the first read per user; later refetches keep the settled card mounted and surface `isRefreshing` inline, so nothing on or below the card shifts.
 - Ask before adding a dependency, changing the database schema once content exists, or deleting data. Prefer Expo modules over third-party libraries.
 - Whenever you need input from the user, ask through your tool's built-in question panel so they pick from options instead of typing. 
 
