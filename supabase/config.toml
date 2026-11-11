@@ -431,3 +431,17 @@ verify_jwt = false
 
 [functions.paymongo-webhook]
 verify_jwt = false
+
+# Confirms a checkout session straight from the app when the member returns
+# from the PayMongo browser. The gateway cannot demand a Supabase JWT because
+# the caller carries a Clerk token, so the function authorises itself: the
+# session's K-Fit metadata user_id must match the requested user_id, and the
+# session is always re-read from the PayMongo API with the secret key.
+[functions.verify-paymongo-payment]
+verify_jwt = false
+
+# Dev-only activation helper. It verifies the Clerk session against Clerk's
+# JWKS like the other user-facing functions, so the gateway must not require a
+# Supabase-issued JWT (a Clerk token would be rejected as UNAUTHORIZED).
+[functions.dev-activate-subscription]
+verify_jwt = false

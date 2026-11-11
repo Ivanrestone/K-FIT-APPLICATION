@@ -9,14 +9,17 @@ import {
   type PricingPlan,
   type SubscriptionPlanType,
 } from "@/hooks/use-subscription-access";
+import { invokeDevSubscriptionAction } from "@/utils/supabase";
+import { readPendingCheckout, verifyPendingPaymongoCheckout } from "@/utils/paymongo";
 import { useUser } from "@clerk/expo";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   ImageBackground,
   Linking,
   ScrollView,
@@ -139,24 +142,24 @@ function planLabel(type: SubscriptionPlanType) {
 
 function MembershipPlanCard({
   access,
-  onDevActivate,
-  isDevActivating,
   onCancelSubscription,
   cancellingPlan,
+  isVerifyingPayment,
 }: {
   access: ReturnType<typeof useSubscriptionAccess>;
-  onDevActivate: (planType?: "app" | "gym" | "both") => void;
-  isDevActivating: boolean;
   onCancelSubscription: (type: SubscriptionPlanType) => void;
   cancellingPlan: SubscriptionPlanType | null;
+  isVerifyingPayment?: boolean;
 }) {
   const { data, error, isLoading, isRefreshing, isSignedIn, refresh } = access;
 
-  if (isLoading) {
+  if (isLoading || isVerifyingPayment) {
     return (
       <View style={[styles.planCard, styles.planLoading]}>
         <ActivityIndicator color={KFitColors.accent} />
-        <Text style={styles.planMetaText}>Checking your plan…</Text>
+        <Text style={styles.planMetaText}>
+          {isVerifyingPayment ? "Verifying payment with PayMongo…" : "Checking your plan…"}
+        </Text>
       </View>
     );
   }
@@ -328,39 +331,71 @@ function MembershipPlanCard({
         </Text>
       </View>
 
-      {/* Dev / Test Mode: Invoke deployed Edge Function dev-activate-subscription */}
-      <View style={styles.devCard}>
-        <View style={styles.devHeader}>
-          <Feather name="terminal" size={14} color={KFitColors.accent} />
-          <Text style={styles.devCardTitle}>Dev / Test Activation</Text>
-        </View>
-        <Text style={styles.devCardSubtitle}>
-          Invokes deployed edge function to mark status active and invalidate cache:
-        </Text>
-        <View style={styles.devButtonRow}>
-          <TouchableOpacity
-            style={[styles.devActivateBtn, isDevActivating && styles.btnDisabled]}
-            onPress={() => onDevActivate("both")}
-            disabled={isDevActivating}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-          >
-            <Feather name="zap" size={14} color="#121212" />
-            <Text style={styles.devActivateBtnText}>
-              {isDevActivating ? "Activating…" : "Activate (App + Gym)"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.devActivateOutlineBtn, isDevActivating && styles.btnDisabled]}
-            onPress={() => onDevActivate("app")}
-            disabled={isDevActivating}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-          >
-            <Text style={styles.devActivateOutlineBtnText}>App Only</Text>
-          </TouchableOpacity>
-        </View>
+    </View>
+  );
+}
+
+/* ------------------------------- Dev panel ---------------------------------- */
+
+// Kept out of MembershipPlanCard so it still renders while the plan is loading
+// or when the subscription fetch failed — the states where testing needs it.
+function DevActivationPanel({
+  onDevActivate,
+  isDevActivating,
+  onDevReset,
+  isDevResetting,
+}: {
+  onDevActivate: (planType?: "app" | "gym" | "all_access") => void;
+  isDevActivating: boolean;
+  onDevReset: () => void;
+  isDevResetting: boolean;
+}) {
+  const busy = isDevActivating || isDevResetting;
+
+  return (
+    <View style={styles.devCard}>
+      <View style={styles.devHeader}>
+        <Feather name="terminal" size={14} color={KFitColors.accent} />
+        <Text style={styles.devCardTitle}>Dev / Test Activation</Text>
       </View>
+      <Text style={styles.devCardSubtitle}>
+        Invokes deployed edge function to mark status active / inactive and invalidate cache:
+      </Text>
+      <View style={styles.devButtonRow}>
+        <TouchableOpacity
+          style={[styles.devActivateBtn, busy && styles.btnDisabled]}
+          onPress={() => onDevActivate("all_access")}
+          disabled={busy}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+        >
+          <Feather name="zap" size={14} color="#121212" />
+          <Text style={styles.devActivateBtnText}>
+            {isDevActivating ? "Activating…" : "Activate (App + Gym)"}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.devActivateOutlineBtn, busy && styles.btnDisabled]}
+          onPress={() => onDevActivate("app")}
+          disabled={busy}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+        >
+          <Text style={styles.devActivateOutlineBtnText}>App Only</Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity
+        style={[styles.devResetBtn, busy && styles.btnDisabled]}
+        onPress={onDevReset}
+        disabled={busy}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+      >
+        <Feather name="rotate-ccw" size={14} color={KFitColors.error} />
+        <Text style={styles.devResetBtnText}>
+          {isDevResetting ? "Resetting…" : "Reset / Expire Subscriptions"}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -376,42 +411,145 @@ export default function MemberMembershipScreen() {
   const subscription = useSubscriptionAccess();
 
   const [isDevActivating, setIsDevActivating] = useState(false);
+  const [isDevResetting, setIsDevResetting] = useState(false);
   const [cancellingPlan, setCancellingPlan] = useState<SubscriptionPlanType | null>(null);
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
 
-  // Upon WebBrowser redirect completion:
-  // immediately trigger refetch on subscription query
-  useEffect(() => {
-    if (params.payment) {
-      void WebBrowser.dismissBrowser();
-      void subscription.refresh();
+  const { refetch: refetchSubscription } = subscription;
+  const subscriptionUserId = subscription.data?.userId;
+  const paymentVerificationRef = useRef(false);
+
+  // When PayMongo sends the member back, confirm the checkout with PayMongo
+  // before refreshing. The webhook can be late or not forwarding at all, and
+  // the plan must flip to Active without the manual simulation button.
+  const confirmReturnedPayment = useCallback(async () => {
+    if (paymentVerificationRef.current) {
+      return;
     }
-  }, [params.payment, subscription]);
+    const pending = await readPendingCheckout();
+    const targetUserId = user?.id ?? subscriptionUserId ?? pending?.userId;
+    if (!targetUserId) {
+      return;
+    }
+    // If no checkout was pending on this device, refresh the subscription state directly
+    if (!pending) {
+      await refetchSubscription();
+      return;
+    }
+
+    paymentVerificationRef.current = true;
+    setIsVerifyingPayment(true);
+    try {
+      const result = await verifyPendingPaymongoCheckout({
+        userId: targetUserId,
+      });
+      // Nothing started on this device (or another account did): just refresh.
+      if (result.idle) {
+        await refetchSubscription();
+        return;
+      }
+      if (!result.success) {
+        console.warn("[PayMongo] Payment verification failed:", result.error);
+        await refetchSubscription();
+        return;
+      }
+
+      if (result.paid) {
+        await refetchSubscription();
+        const activeUserId = user?.id || subscriptionUserId || targetUserId;
+        if (typeof (globalThis as any).queryClient?.invalidateQueries === "function") {
+          (globalThis as any).queryClient.invalidateQueries({
+            queryKey: ["subscription", activeUserId],
+          });
+        }
+        // The webhook may have already applied this exact session.
+        if (!result.duplicate) {
+          Alert.alert(
+            "Payment Confirmed",
+            result.planType === "gym"
+              ? "Your gym membership is active! Your plan has been extended by 30 days."
+              : "Your app subscription is active! Digital features and gate pass are now unlocked.",
+          );
+        }
+      } else {
+        // Cancelled, or the payment is still being settled
+        await refetchSubscription();
+      }
+    } catch (error) {
+      console.warn(
+        "[PayMongo] Payment verification error:",
+        error instanceof Error ? error.message : String(error),
+      );
+      await refetchSubscription();
+    } finally {
+      setIsVerifyingPayment(false);
+      paymentVerificationRef.current = false;
+    }
+  }, [refetchSubscription, subscriptionUserId, user]);
+
+  // PayMongo success/cancel redirect: k-fit://member-membership?payment=success
+  useEffect(() => {
+    if (!params.payment) {
+      return;
+    }
+    void WebBrowser.dismissBrowser();
+    const timer = setTimeout(() => {
+      void confirmReturnedPayment();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [confirmReturnedPayment, params.payment]);
 
   // Also listen for incoming deep link URLs
   useEffect(() => {
     const sub = Linking.addEventListener("url", (event) => {
       if (event.url.includes("payment=") || event.url.includes("member-membership")) {
         void WebBrowser.dismissBrowser();
-        void subscription.refresh();
+        void confirmReturnedPayment();
       }
     });
     return () => sub.remove();
-  }, [subscription]);
+  }, [confirmReturnedPayment]);
+
+  // The member can also close the browser manually. Verify again whenever the
+  // app returns to the foreground so the plan still activates without a deep
+  // link; a paid session is cleared, so this is a cheap no-op afterwards.
+  useEffect(() => {
+    let previousState = AppState.currentState;
+    const listener = AppState.addEventListener("change", (nextState) => {
+      const returnedToForeground = nextState === "active" &&
+        previousState !== "active";
+      previousState = nextState;
+      if (returnedToForeground) {
+        void confirmReturnedPayment();
+      }
+    });
+    return () => listener.remove();
+  }, [confirmReturnedPayment]);
 
   // Dev / Test activation calling deployed edge function dev-activate-subscription
-  const handleDevActivate = async (planType: "app" | "gym" | "both" = "both") => {
+  const handleDevActivate = async (planType: "app" | "gym" | "all_access" = "all_access") => {
     if (!subscription.supabase) {
       Alert.alert("Error", "Payment / Supabase service is unavailable.");
       return;
     }
+    const targetUserId = user?.id ?? subscription.data?.userId;
+    if (!targetUserId) {
+      Alert.alert("Activation Error", "Your account is not ready yet. Try again in a moment.");
+      return;
+    }
     setIsDevActivating(true);
     try {
-      const { data, error } = await subscription.supabase.functions.invoke(
-        "dev-activate-subscription",
-        { body: { plan_type: planType } },
-      );
-      if (error) {
-        Alert.alert("Activation Error", error.message || "Failed to invoke dev-activate-subscription.");
+      // Posts the member id straight to the function, so activation works even
+      // when this device has no session token for the Supabase client.
+      const result = await invokeDevSubscriptionAction({
+        userId: targetUserId,
+        planType,
+      });
+      if (!result.success) {
+        Alert.alert(
+          "Activation Error",
+          result.error ?? "Dev activation returned an error.",
+        );
         return;
       }
       // Immediately call refetch() and invalidate ['subscription', user.id] cache
@@ -430,6 +568,51 @@ export default function MemberMembershipScreen() {
       Alert.alert("Error", err.message || "Dev activation failed.");
     } finally {
       setIsDevActivating(false);
+    }
+  };
+
+  // Dev / Test reset: expire both plans through the same edge function.
+  // The client is granted SELECT only on the subscription tables, so the write
+  // has to happen server-side with the service role.
+  const handleDevReset = async () => {
+    if (!subscription.supabase) {
+      Alert.alert("Error", "Payment / Supabase service is unavailable.");
+      return;
+    }
+    const targetUserId = user?.id ?? subscription.data?.userId;
+    if (!targetUserId) {
+      Alert.alert("Reset Error", "Your account is not ready yet. Try again in a moment.");
+      return;
+    }
+    setIsDevResetting(true);
+    try {
+      const result = await invokeDevSubscriptionAction({
+        userId: targetUserId,
+        action: "reset",
+      });
+      if (!result.success) {
+        Alert.alert(
+          "Reset Error",
+          result.error ?? "Subscriptions could not be reset.",
+        );
+        return;
+      }
+      // Same refresh path as activation: refetch, then drop the cached query.
+      await subscription.refetch();
+      const activeUserId = user?.id || subscription.data?.userId;
+      if (typeof (globalThis as any).queryClient?.invalidateQueries === "function") {
+        (globalThis as any).queryClient.invalidateQueries({
+          queryKey: ["subscription", activeUserId],
+        });
+      }
+      Alert.alert(
+        "Subscriptions Reset",
+        "App and Gym access are now inactive and expired, and the screen has been refreshed.",
+      );
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Reset failed.");
+    } finally {
+      setIsDevResetting(false);
     }
   };
 
@@ -572,10 +755,16 @@ export default function MemberMembershipScreen() {
           {/* Plan summary: real App/Gym subscription records */}
           <MembershipPlanCard
             access={subscription}
-            onDevActivate={handleDevActivate}
-            isDevActivating={isDevActivating}
             onCancelSubscription={handleCancelSubscription}
             cancellingPlan={cancellingPlan}
+            isVerifyingPayment={isVerifyingPayment}
+          />
+
+          <DevActivationPanel
+            onDevActivate={handleDevActivate}
+            isDevActivating={isDevActivating}
+            onDevReset={handleDevReset}
+            isDevResetting={isDevResetting}
           />
 
           {/* Manage */}
@@ -599,7 +788,7 @@ export default function MemberMembershipScreen() {
 
           {/* Payment options */}
           <Section title="Payment Options" icon="dollar-sign">
-            <MemberPaymentOptions />
+            <MemberPaymentOptions onCheckoutComplete={confirmReturnedPayment} />
           </Section>
 
           {/* Help */}
@@ -856,7 +1045,8 @@ const styles = StyleSheet.create({
 
   /* Dev Card */
   devCard: {
-    marginTop: 14,
+    marginHorizontal: 20,
+    marginBottom: 24,
     padding: 12,
     borderRadius: 12,
     backgroundColor: KFitColors.background,
@@ -915,6 +1105,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     color: KFitColors.accent,
+  },
+  devResetBtn: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: KFitColors.error + "50",
+    backgroundColor: KFitColors.error + "15",
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  devResetBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: KFitColors.error,
   },
   btnDisabled: {
     opacity: 0.5,

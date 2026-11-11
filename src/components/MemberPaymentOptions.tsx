@@ -1,5 +1,9 @@
 import SubscriptionPaywall from "@/components/SubscriptionPaywall";
 
-export default function MemberPaymentOptions() {
-  return <SubscriptionPaywall />;
+type Props = {
+  onCheckoutComplete?: () => Promise<void> | void;
+};
+
+export default function MemberPaymentOptions({ onCheckoutComplete }: Props = {}) {
+  return <SubscriptionPaywall onCheckoutComplete={onCheckoutComplete} />;
 }

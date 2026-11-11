@@ -486,7 +486,7 @@ export function useSubscriptionAccess() {
     void load();
   }, [isLoaded, isSignedIn, load, userId]);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     if (!supabase || !isSignedIn || !userId) {
       return;
     }
@@ -495,7 +495,7 @@ export function useSubscriptionAccess() {
         ? { ...current, isRefreshing: true }
         : current
     );
-    void load();
+    await load();
   }, [isSignedIn, load, supabase, userId]);
 
   // PayMongo confirms payment in the system browser while the app is

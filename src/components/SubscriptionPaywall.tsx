@@ -1,14 +1,17 @@
 import { useAuth } from "@clerk/expo";
 import { Button, Host } from "@expo/ui";
 import { hasActiveSubscription, useSubscriptionAccess, type PricingPlan, type SubscriptionPeriod, type SubscriptionPlanType } from "@/hooks/use-subscription-access";
+import { readFunctionErrorMessage } from "@/utils/supabase";
+import { rememberPendingCheckout, verifyPendingPaymongoCheckout } from "@/utils/paymongo";
 import { KFitColors, Spacing } from "@/constants/theme";
 import * as WebBrowser from "expo-web-browser";
-import { AppState, Linking } from "react-native";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   ImageBackground,
+  Linking,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -22,6 +25,7 @@ type Props = {
   // required and the subscription is not active.
   appAccessTitle?: string;
   appAccessMessage?: string;
+  onCheckoutComplete?: () => Promise<void> | void;
 };
 
 const clerkConfigured = Boolean(process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -35,6 +39,7 @@ export default function SubscriptionPaywall({
   requireAppAccess = false,
   appAccessTitle,
   appAccessMessage,
+  onCheckoutComplete,
 }: Props) {
   if (!clerkConfigured) {
     return <MessagePanel message="Subscription access requires configured Clerk sign-in." />;
@@ -48,6 +53,7 @@ export default function SubscriptionPaywall({
       requireAppAccess={requireAppAccess}
       appAccessTitle={appAccessTitle}
       appAccessMessage={appAccessMessage}
+      onCheckoutComplete={onCheckoutComplete}
     >
       {children}
     </AuthenticatedSubscriptionPaywall>
@@ -59,6 +65,7 @@ function AuthenticatedSubscriptionPaywall({
   requireAppAccess,
   appAccessTitle,
   appAccessMessage,
+  onCheckoutComplete,
 }: Props) {
   const { userId } = useAuth();
   const access = useSubscriptionAccess();
@@ -74,16 +81,25 @@ function AuthenticatedSubscriptionPaywall({
   // After opening the PayMongo browser, we refresh the subscription the next
   // time the member returns the app to the foreground so we don't poll before
   // PayMongo has had time to fire the webhook and update the database.
-  const pendingRefreshRef = useRef(false);
+  // State rather than a ref: the React compiler lint rejects passing a
+  // callback that touches a ref into a render-time event prop.
+  const [pendingRefresh, setPendingRefresh] = useState(false);
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active" && pendingRefreshRef.current) {
-        pendingRefreshRef.current = false;
-        access.refresh();
+    const sub = AppState.addEventListener("change", async (state) => {
+      if (state === "active" && pendingRefresh) {
+        setPendingRefresh(false);
+        if (onCheckoutComplete) {
+          await onCheckoutComplete();
+        } else {
+          if (access.data?.userId) {
+            await verifyPendingPaymongoCheckout({ userId: access.data.userId });
+          }
+          await access.refresh();
+        }
       }
     });
     return () => sub.remove();
-  }, [access]);
+  }, [access, onCheckoutComplete, pendingRefresh]);
 
   const startCheckout = useCallback(async (feeType: SubscriptionPlanType) => {
     // Guard 1: user must be authenticated
@@ -91,6 +107,7 @@ function AuthenticatedSubscriptionPaywall({
       Alert.alert("Error", "You must be logged in to subscribe.");
       return;
     }
+    const checkoutUserId = access.data.userId;
 
     // Guard 2: Supabase client must be available
     if (!access.supabase) {
@@ -166,22 +183,55 @@ function AuthenticatedSubscriptionPaywall({
         return;
       }
 
+      // Keep the session id so the membership screen can ask PayMongo whether
+      // this checkout was paid when the browser returns to the app.
+      const sessionId = typeof responseData.sessionId === "string"
+        ? responseData.sessionId
+        : typeof responseData.session_id === "string"
+          ? responseData.session_id
+          : null;
+      if (sessionId) {
+        await rememberPendingCheckout({
+          sessionId,
+          planType: feeType,
+          userId: checkoutUserId,
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        console.warn("[Checkout] PayMongo did not return a checkout session id.");
+      }
+
       console.log("Checkout URL received:", rawUrl);
       setLatestCheckoutUrl(rawUrl);
       setLatestFeeType(feeType);
 
-      // Open via WebBrowser; upon close or redirect completion, immediately refresh
+      // Open via WebBrowser; upon close or redirect completion, immediately verify and refresh
       try {
         await WebBrowser.openBrowserAsync(rawUrl);
-        // User closed the in-app browser or redirect completed:
-        await access.refresh();
       } catch (browserError) {
         console.warn("WebBrowser failed, falling back to Linking.openURL:", browserError);
         await Linking.openURL(rawUrl);
       }
 
+      // Browser closed: verify payment immediately and refresh
+      if (onCheckoutComplete) {
+        await onCheckoutComplete();
+      } else {
+        const verifyResult = await verifyPendingPaymongoCheckout({
+          userId: checkoutUserId,
+        });
+        if (verifyResult.paid) {
+          setActionMessage(
+            verifyResult.planType === "gym"
+              ? "Payment confirmed! Gym membership activated."
+              : "Payment confirmed! App subscription activated.",
+          );
+        }
+        await access.refresh();
+      }
+
       // Flag for background->foreground return refresh as well
-      pendingRefreshRef.current = true;
+      setPendingRefresh(true);
       await access.refresh();
       setActionMessage(
         "Checkout opened. Your subscription will update automatically once PayMongo confirms payment.",
@@ -196,7 +246,7 @@ function AuthenticatedSubscriptionPaywall({
     } finally {
       setStartingFee(null);
     }
-  }, [access]);
+  }, [access, onCheckoutComplete]);
 
   const cancelPlan = useCallback(async (feeType: SubscriptionPlanType) => {
     if (!access.supabase) {
@@ -284,24 +334,31 @@ function AuthenticatedSubscriptionPaywall({
       setIsDevActivating(true);
       setActionMessage(null);
       try {
+        // The member id travels in the body so activation still works when the
+        // Clerk token on this device cannot be verified by the function.
         const { data, error } = await access.supabase.functions.invoke(
           "dev-activate-subscription",
-          { body: { plan_type: feeType } },
+          {
+            body: {
+              user_id: userId ?? access.data?.userId,
+              plan_type: feeType,
+            },
+          },
         );
         if (error) {
-          throw new Error(error.message || "Dev activation failed.");
+          throw new Error(
+            await readFunctionErrorMessage(error, "Dev activation failed."),
+          );
         }
         const resp = data as Record<string, unknown> | null;
-        if (!resp || resp.success === false) {
+        if (!resp || resp.success !== true) {
           throw new Error(
             typeof resp?.error === "string"
               ? resp.error
               : "Dev activation returned an error.",
           );
         }
-        setActionMessage(
-          `[DEV] Activated ${feeType} subscription. Expires: ${String(resp.expires_at ?? "—")}`,
-        );
+        setActionMessage(`[DEV] Activated ${feeType} subscription.`);
         access.refresh();
       } catch (err) {
         setActionMessage(
@@ -311,7 +368,7 @@ function AuthenticatedSubscriptionPaywall({
         setIsDevActivating(false);
       }
     },
-    [access],
+    [access, userId],
   );
 
   if (!access.isLoaded || access.isLoading) {
