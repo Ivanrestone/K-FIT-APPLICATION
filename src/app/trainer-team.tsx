@@ -1,5 +1,7 @@
 import TrainerScreenShell from "@/components/TrainerScreenShell";
 import { KFitColors } from "@/constants/theme";
+import { useCoachTeam } from "@/hooks/use-coach-team";
+import { initials } from "@/lib/coach";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useMemo, useState } from "react";
@@ -28,52 +30,14 @@ type Coach = {
 const WARNING = "#F59E0B";
 const PURPLE = "#8B5CF6";
 
-const COACHES: Coach[] = [
-  {
-    id: "TR-101",
-    name: "Marcus Vance",
-    specialty: "Strength & Conditioning",
-    status: "On Floor",
-    rating: 4.9,
-    reviews: 48,
-    rate: "$45/hr",
-    bio: "Ex-Olympic lifting coach specializing in compound biomechanics.",
-    avatar: "MV",
-  },
-  {
-    id: "TR-102",
-    name: "Elena Rostova",
-    specialty: "Functional HIIT",
-    status: "In Session",
-    rating: 5.0,
-    reviews: 62,
-    rate: "$50/hr",
-    bio: "High intensity conditioning & endurance athlete specialist.",
-    avatar: "ER",
-  },
-  {
-    id: "TR-103",
-    name: "Jaxson Reed",
-    specialty: "Powerlifting",
-    status: "On Floor",
-    rating: 4.8,
-    reviews: 35,
-    rate: "$40/hr",
-    bio: "State record holder. Maximize your deadlift & squat technique.",
-    avatar: "JR",
-  },
-  {
-    id: "TR-104",
-    name: "Aria Chen",
-    specialty: "Mobility & Rehab",
-    status: "On Break",
-    rating: 4.9,
-    reviews: 51,
-    rate: "$48/hr",
-    bio: "Physical therapy background focused on joint health & recovery.",
-    avatar: "AC",
-  },
-];
+type StoredDutyStatus = "on_floor" | "in_session" | "on_break" | "off_duty";
+
+const DUTY_LABELS: Record<StoredDutyStatus, DutyStatus> = {
+  on_floor: "On Floor",
+  in_session: "In Session",
+  on_break: "On Break",
+  off_duty: "Off Duty",
+};
 
 const FILTERS = [
   { label: "All", value: "all" },
@@ -92,26 +56,42 @@ function tone(status: DutyStatus) {
 
 export default function TrainerTeamScreen() {
   const [filter, setFilter] = useState("all");
+  const { coaches, isLoading, error } = useCoachTeam();
+
+  const coachList = useMemo<Coach[]>(() =>
+    coaches.map((coach) => ({
+      id: coach.id,
+      name: coach.name,
+      specialty: coach.specialty || "General coaching",
+      status: DUTY_LABELS[coach.dutyStatus],
+      rating: 0,
+      reviews: 0,
+      rate:
+        coach.hourlyRate > 0 ? `₱${coach.hourlyRate.toFixed(0)}/hr` : "—",
+      bio: coach.bio || "No bio added yet.",
+      avatar: initials(coach.name),
+    })),
+  [coaches]);
 
   const list = useMemo(
     () =>
       filter === "all"
-        ? COACHES
-        : COACHES.filter((c) => c.specialty === filter),
-    [filter],
+        ? coachList
+        : coachList.filter((c) => c.specialty === filter),
+    [coachList, filter],
   );
 
   const stats = useMemo(() => {
-    const onFloor = COACHES.filter((c) => c.status === "On Floor").length;
-    const inSession = COACHES.filter((c) => c.status === "In Session").length;
-    const onBreak = COACHES.filter((c) => c.status === "On Break").length;
+    const onFloor = coachList.filter((c) => c.status === "On Floor").length;
+    const inSession = coachList.filter((c) => c.status === "In Session").length;
+    const onBreak = coachList.filter((c) => c.status === "On Break").length;
     return { onFloor, inSession, onBreak };
-  }, []);
+  }, [coachList]);
 
   const countFor = (value: string) =>
     value === "all"
-      ? COACHES.length
-      : COACHES.filter((c) => c.specialty === value).length;
+      ? coachList.length
+      : coachList.filter((c) => c.specialty === value).length;
 
   return (
     <TrainerScreenShell
@@ -145,10 +125,20 @@ export default function TrainerTeamScreen() {
         <StatInline
           icon="users"
           label="Total"
-          value={COACHES.length}
+          value={coachList.length}
           tone={KFitColors.text}
         />
       </View>
+
+      {(isLoading || error) && (
+        <View style={styles.emptyCard}>
+          <Text style={[styles.emptyText, error && { color: KFitColors.error }]}>
+            {error
+              ? `Could not load the coach directory: ${error}`
+              : "Loading coaches…"}
+          </Text>
+        </View>
+      )}
 
       {/* ── Filter chips ──────────────────────── */}
       <ScrollView

@@ -1,6 +1,9 @@
 import TrainerBottomNav from "@/components/TrainerBottomNav";
 import TrainerHeader from "@/components/TrainerHeader";
 import { KFitColors } from "@/constants/theme";
+import { useCoachSessions } from "@/hooks/use-coach-sessions";
+import { useReminderSender } from "@/hooks/use-reminders";
+import { combineDateAndTime, sessionToBooking } from "@/lib/coach";
 import {
   Booking,
   pickPending,
@@ -317,6 +320,9 @@ function DetailModal({
   onAskAction,
   onSaveNotes,
   onReschedule,
+  onSendReminder,
+  reminderSending,
+  reminderSent,
 }: {
   booking: Booking | null;
   visible: boolean;
@@ -324,23 +330,16 @@ function DetailModal({
   onAskAction: (action: Exclude<ConfirmAction, null>) => void;
   onSaveNotes: (notes: string) => void;
   onReschedule: (date: string, start: string, end: string) => void;
+  onSendReminder: () => void;
+  reminderSending: boolean;
+  reminderSent: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const [notesDraft, setNotesDraft] = useState("");
+  const [notesDraft, setNotesDraft] = useState(() => booking?.notes ?? "");
   const [mode, setMode] = useState<"view" | "reschedule">("view");
-  const [newDate, setNewDate] = useState("");
-  const [newStart, setNewStart] = useState("");
-  const [newEnd, setNewEnd] = useState("");
-
-  useEffect(() => {
-    if (booking) {
-      setNotesDraft(booking.notes ?? "");
-      setNewDate(booking.date);
-      setNewStart(booking.start);
-      setNewEnd(booking.end);
-      setMode("view");
-    }
-  }, [booking]);
+  const [newDate, setNewDate] = useState(() => booking?.date ?? "");
+  const [newStart, setNewStart] = useState(() => booking?.start ?? "");
+  const [newEnd, setNewEnd] = useState(() => booking?.end ?? "");
 
   if (!booking) return null;
 
@@ -633,6 +632,24 @@ function DetailModal({
                 {isPending && (
                   <>
                     <TouchableOpacity
+                      style={[styles.actionBtn, styles.secondaryBtn]}
+                      onPress={() => setMode("reschedule")}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityLabel="Reschedule this pending request"
+                    >
+                      <Feather
+                        name="calendar"
+                        size={13}
+                        color={KFitColors.text}
+                      />
+                      <Text
+                        style={[styles.actionText, { color: KFitColors.text }]}
+                      >
+                        Reschedule
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={[styles.actionBtn, styles.declineBtn]}
                       onPress={() => onAskAction("decline")}
                       activeOpacity={0.85}
@@ -667,6 +684,42 @@ function DetailModal({
                 )}
                 {isConfirmed && (
                   <>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.secondaryBtn]}
+                      onPress={onSendReminder}
+                      disabled={reminderSending}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        reminderSent
+                          ? "Reminder already sent"
+                          : "Send reminder to this member"
+                      }
+                    >
+                      <Feather
+                        name={reminderSent ? "bell-off" : "bell"}
+                        size={13}
+                        color={
+                          reminderSent ? KFitColors.accent : KFitColors.text
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.actionText,
+                          {
+                            color: reminderSent
+                              ? KFitColors.accent
+                              : KFitColors.text,
+                          },
+                        ]}
+                      >
+                        {reminderSending
+                          ? "Sending…"
+                          : reminderSent
+                            ? "Sent"
+                            : "Remind"}
+                      </Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.secondaryBtn]}
                       onPress={() => setMode("reschedule")}
@@ -848,6 +901,25 @@ export default function TrainerBookingsScreen() {
   const markNoShow = useBookingsStore((s) => s.markNoShow);
   const saveNotes = useBookingsStore((s) => s.saveNotes);
   const reschedule = useBookingsStore((s) => s.reschedule);
+  const replaceBookings = useBookingsStore((s) => s.replaceBookings);
+
+  const {
+    sessions,
+    isLoading: sessionsLoading,
+    error: sessionsError,
+    updateStatus: updateSessionStatus,
+    reschedule: rescheduleSession,
+    saveNotes: saveSessionNotes,
+  } = useCoachSessions();
+  const { sendReminder, isSending: reminderSending } = useReminderSender();
+  const [reminderSentId, setReminderSentId] = useState<string | null>(null);
+
+  // Coach Sessions render the live `training_sessions` rows. The list is only
+  // replaced once the first fetch settles, so the UI never flashes empty.
+  useEffect(() => {
+    if (sessionsLoading) return;
+    replaceBookings(sessions.map((session) => sessionToBooking(session, "K-Fit Coach")));
+  }, [replaceBookings, sessions, sessionsLoading]);
 
   const [filter, setFilter] = useState<Filter>("requests");
   const [sort, setSort] = useState<SortMode>("date");
@@ -966,6 +1038,18 @@ export default function TrainerBookingsScreen() {
     else if (confirmAction === "complete") complete(confirmTargetId);
     else if (confirmAction === "noshow") markNoShow(confirmTargetId);
 
+    const remoteStatus =
+      confirmAction === "accept"
+        ? "confirmed"
+        : confirmAction === "decline"
+          ? "cancelled"
+          : confirmAction === "complete"
+            ? "completed"
+            : "no_show";
+    void updateSessionStatus(confirmTargetId, remoteStatus).catch((error) => {
+      console.warn("[Session update failed]", error);
+    });
+
     setConfirmAction(null);
     setConfirmTargetId(null);
     setDetailId(null);
@@ -999,21 +1083,22 @@ export default function TrainerBookingsScreen() {
   const bulkAccept = () => {
     if (selectedArray.length === 0) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    selectedArray.forEach((b) => accept(b.id));
+    selectedArray.forEach((b) => {
+      accept(b.id);
+      void updateSessionStatus(b.id, "confirmed").catch(() => {});
+    });
     exitSelectMode();
   };
 
   const bulkDecline = () => {
     if (selectedArray.length === 0) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    selectedArray.forEach((b) => decline(b.id));
+    selectedArray.forEach((b) => {
+      decline(b.id);
+      void updateSessionStatus(b.id, "cancelled").catch(() => {});
+    });
     exitSelectMode();
   };
-
-  useEffect(() => {
-    if (selectMode) exitSelectMode();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1057,6 +1142,21 @@ export default function TrainerBookingsScreen() {
           <StatInline label="Done" value={completedCount} tone="#3B82F6" />
         </View>
 
+        {(sessionsError || sessionsLoading) && (
+          <View style={styles.emptyCard}>
+            <Text
+              style={[
+                styles.emptyText,
+                sessionsError && { color: KFitColors.error },
+              ]}
+            >
+              {sessionsError
+                ? `Could not load sessions: ${sessionsError}`
+                : "Loading sessions…"}
+            </Text>
+          </View>
+        )}
+
         <View style={styles.searchWrap}>
           <Feather name="search" size={14} color={KFitColors.mutedText} />
           <TextInput
@@ -1092,6 +1192,7 @@ export default function TrainerBookingsScreen() {
                 onPress={() => {
                   void Haptics.selectionAsync();
                   setFilter(f.key);
+                  if (selectMode) exitSelectMode();
                 }}
                 activeOpacity={0.85}
                 accessibilityRole="button"
@@ -1302,6 +1403,7 @@ export default function TrainerBookingsScreen() {
       <TrainerBottomNav activeRoute="/trainer-bookings" />
 
       <DetailModal
+        key={detailBooking?.id ?? "none"}
         booking={detailBooking}
         visible={!!detailBooking}
         onClose={() => setDetailId(null)}
@@ -1309,11 +1411,45 @@ export default function TrainerBookingsScreen() {
           if (detailBooking) askConfirm(action, detailBooking.id);
         }}
         onSaveNotes={(notes) => {
-          if (detailBooking) saveNotes(detailBooking.id, notes);
+          if (!detailBooking) return;
+          saveNotes(detailBooking.id, notes);
+          void saveSessionNotes(detailBooking.id, notes).catch((error) => {
+            console.warn("[Session notes failed]", error);
+          });
         }}
         onReschedule={(date, start, end) => {
-          if (detailBooking) reschedule(detailBooking.id, date, start, end);
+          if (!detailBooking) return;
+          reschedule(detailBooking.id, date, start, end);
+          const startsAt = combineDateAndTime(date, start);
+          if (startsAt) {
+            void rescheduleSession(
+              detailBooking.id,
+              startsAt,
+              durationMin(start, end),
+            ).catch((error) => {
+              console.warn("[Session reschedule failed]", error);
+            });
+          }
         }}
+        onSendReminder={() => {
+          if (!detailBooking) return;
+          void sendReminder({
+            memberId: detailBooking.memberId,
+            kind: "session",
+            message: `Reminder: your ${detailBooking.focus} session is booked for ${toRelativeDay(detailBooking.date)} at ${to12h(detailBooking.start)}. Reply to your coach if you need to reschedule.`,
+          })
+            .then(() => {
+              setReminderSentId(detailBooking.id);
+              void Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Success,
+              );
+            })
+            .catch((error) => {
+              console.warn("[Session reminder failed]", error);
+            });
+        }}
+        reminderSending={reminderSending}
+        reminderSent={reminderSentId === detailBooking?.id}
       />
 
       <ConfirmDialog

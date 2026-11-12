@@ -1,5 +1,6 @@
 import TrainerBottomNav from "@/components/TrainerBottomNav";
 import TrainerHeader from "@/components/TrainerHeader";
+import AvailabilityCard from "@/components/coach/AvailabilityEditor";
 import { KFitColors } from "@/constants/theme";
 import {
   Booking,
@@ -265,6 +266,9 @@ export default function TrainerScheduleScreen() {
             <Text style={styles.calendarBtnText}>{headerDate}</Text>
           </TouchableOpacity>
         </View>
+
+        {/* ── Weekly availability ───────────────────────── */}
+        <AvailabilityCard />
 
         {/* ── Stats ──────────────────────────────────────── */}
         <View style={styles.statCard}>

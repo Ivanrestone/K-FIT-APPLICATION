@@ -1,6 +1,7 @@
 import TrainerBottomNav from "@/components/TrainerBottomNav";
 import TrainerHeader from "@/components/TrainerHeader";
 import { KFitColors } from "@/constants/theme";
+import { useMyDutyStatus } from "@/hooks/use-coach-team";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { ReactNode, useEffect, useRef, useState } from "react";
@@ -24,6 +25,22 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 /* ─────────────── Types & data ─────────────── */
 type DutyStatus = "On Floor" | "In Session" | "On Break" | "Off Duty";
+
+type StoredDutyStatus = "on_floor" | "in_session" | "on_break" | "off_duty";
+
+const DUTY_TO_DB: Record<DutyStatus, StoredDutyStatus> = {
+  "On Floor": "on_floor",
+  "In Session": "in_session",
+  "On Break": "on_break",
+  "Off Duty": "off_duty",
+};
+
+const DUTY_FROM_DB: Record<StoredDutyStatus, DutyStatus> = {
+  on_floor: "On Floor",
+  in_session: "In Session",
+  on_break: "On Break",
+  off_duty: "Off Duty",
+};
 
 type ClientSession = {
   id: string;
@@ -264,7 +281,7 @@ function PulseDot({
   color?: string;
   size?: number;
 }) {
-  const pulse = useRef(new Animated.Value(0)).current;
+  const [pulse] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (!active) {
@@ -341,7 +358,7 @@ function FlashValue({
   value: string | number;
   style: object;
 }) {
-  const flash = useRef(new Animated.Value(0)).current;
+  const [flash] = useState(() => new Animated.Value(0));
   const first = useRef(true);
 
   useEffect(() => {
@@ -368,11 +385,10 @@ function FlashValue({
 
 /* ─────────────── Shift clock ─────────────── */
 function ShiftClock({ clock }: { clock: ShiftClockState }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (clock.mode !== "work") return; // frozen on break / off
-    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [clock.mode]);
@@ -390,7 +406,7 @@ function ShiftClock({ clock }: { clock: ShiftClockState }) {
 
 /* ─────────────── Access row ─────────────── */
 function AccessRow({ event }: { event: AccessEvent }) {
-  const flash = useRef(new Animated.Value(1)).current;
+  const [flash] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     Animated.timing(flash, {
@@ -491,16 +507,21 @@ function SectionHeading({
 
 /* ─────────────── Screen ─────────────── */
 export default function TrainerDashboardScreen() {
-  const [duty, setDuty] = useState<DutyStatus>("On Floor");
+  const { dutyStatus: storedDuty, setDutyStatus: persistDutyStatus } =
+    useMyDutyStatus();
+  // A local pick wins over the stored status so the switcher reacts instantly;
+  // until the coach picks one, the saved profile status drives the screen.
+  const [pickedDuty, setPickedDuty] = useState<DutyStatus | null>(null);
+  const duty = pickedDuty ?? DUTY_FROM_DB[storedDuty];
   const [team, setTeam] = useState<Trainer[]>(INITIAL_TEAM);
   const [sessions, setSessions] = useState<ClientSession[]>(INITIAL_SESSIONS);
 
-  const [clock, setClock] = useState<ShiftClockState>({
+  const [clock, setClock] = useState<ShiftClockState>(() => ({
     workMs: (4 * 60 + 12) * 60000, // demo: already 4h12m in
     breakMs: 0,
     since: Date.now(),
     mode: "work",
-  });
+  }));
 
   // Derived, so picking "Off Duty" from the selector also clocks you out
   const shiftActive = duty !== "Off Duty";
@@ -631,7 +652,11 @@ export default function TrainerDashboardScreen() {
       return { ...banked, mode: nextMode };
     });
 
-    setDuty(next);
+    setPickedDuty(next);
+    void persistDutyStatus(DUTY_TO_DB[next]).catch((error) => {
+      console.warn("[Duty status not saved]", error);
+      showToast("Could not save your floor status. Try again.");
+    });
     setTeam((prev) =>
       prev.map((t) => (t.id === "TR-101" ? { ...t, status: next } : t)),
     );
@@ -664,7 +689,7 @@ export default function TrainerDashboardScreen() {
   const startShift = () => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setClock({ workMs: 0, breakMs: 0, since: Date.now(), mode: "work" });
-    setDuty("On Floor");
+    setPickedDuty("On Floor");
     setTeam((prev) =>
       prev.map((t) => (t.id === "TR-101" ? { ...t, status: "On Floor" } : t)),
     );
@@ -730,7 +755,7 @@ export default function TrainerDashboardScreen() {
     (s) => s.status === "In Progress",
   ).length;
 
-  const barAnim = useRef(new Animated.Value(occupancyPercent)).current;
+  const [barAnim] = useState(() => new Animated.Value(occupancyPercent));
   useEffect(() => {
     Animated.timing(barAnim, {
       toValue: occupancyPercent,

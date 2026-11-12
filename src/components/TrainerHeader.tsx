@@ -1,5 +1,6 @@
 import { KFitColors } from "@/constants/theme";
 import { useLogout } from "@/hooks/use-logout";
+import { useCoachNotifications } from "@/hooks/use-reminders";
 import {
   markAllNoticesRead,
   markNoticeRead,
@@ -9,7 +10,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Animated,
   Easing,
@@ -66,7 +67,7 @@ function AccordionSection({
   onToggle: () => void;
   children: React.ReactNode;
 }) {
-  const rotate = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+  const [rotate] = useState(() => new Animated.Value(expanded ? 1 : 0));
 
   useEffect(() => {
     Animated.timing(rotate, {
@@ -160,7 +161,35 @@ export default function TrainerHeader({
   /** Logout confirmation dialog state */
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
-  const { notices: notifications, unread } = useNotices("trainer");
+  const { notices: challengeNotices, unread: challengeUnread } =
+    useNotices("trainer");
+  const {
+    notifications: storedNotifications,
+    unread: storedUnread,
+    markRead: markStoredRead,
+    markAllRead: markAllStoredRead,
+  } = useCoachNotifications();
+
+  // Reminders written by the send-reminder Edge Function come first, then the
+  // in-app challenge notices.
+  const notifications = useMemo(() => {
+    return [
+      ...storedNotifications.map((item) => ({
+        id: item.id,
+        title: item.title,
+        body: item.body,
+        icon: "bell" as const,
+        read: Boolean(item.readAt),
+        createdAt: Date.parse(item.createdAt) || 0,
+      })),
+      ...challengeNotices,
+    ].sort((a, b) => b.createdAt - a.createdAt);
+  }, [challengeNotices, storedNotifications]);
+
+  const unread = storedUnread + challengeUnread;
+
+  const isStoredNotification = (id: string) =>
+    storedNotifications.some((item) => item.id === id);
 
   const closePanel = () => {
     setPanel(null);
@@ -174,6 +203,10 @@ export default function TrainerHeader({
   };
 
   const markRead = (id: string) => {
+    if (isStoredNotification(id)) {
+      void markStoredRead(id);
+      return;
+    }
     markNoticeRead("trainer", id);
   };
 
@@ -181,6 +214,7 @@ export default function TrainerHeader({
     if (unread === 0) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     markAllNoticesRead("trainer");
+    void markAllStoredRead();
   };
 
   const toggleAccordion = (
@@ -386,7 +420,8 @@ export default function TrainerHeader({
                     />
                     <Text style={styles.emptyTitle}>No notifications yet</Text>
                     <Text style={styles.emptyBody}>
-                      New challenge announcements will appear here.
+                      Session reminders and challenge announcements will appear
+                      here.
                     </Text>
                   </View>
                 ) : (

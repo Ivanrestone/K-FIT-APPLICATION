@@ -1,12 +1,14 @@
 import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
+import AddTrainerModal from "@/components/coach/AddTrainerModal";
 import { KFitColors } from "@/constants/theme";
+import { useCoachTeam } from "@/hooks/use-coach-team";
+import type { DutyStatus } from "@/lib/coach";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -33,63 +35,14 @@ interface Trainer {
   status: Status;
 }
 
-const mockTrainers: Trainer[] = [
-  {
-    id: "1",
-    name: "Marcus Reed",
-    specialization: "Strength & conditioning",
-    certification: "NASM-CPT",
-    clients: 18,
-    capacity: 22,
-    hours: "Mon–Fri · 6 AM–8 PM",
-    nextAvailable: "Today",
-    status: "Available",
-  },
-  {
-    id: "2",
-    name: "Sofia Chen",
-    specialization: "Mobility & functional fitness",
-    certification: "ACE",
-    clients: 16,
-    capacity: 20,
-    hours: "Tue–Sat · 7 AM–6 PM",
-    nextAvailable: "Today",
-    status: "Available",
-  },
-  {
-    id: "3",
-    name: "Daniel Brooks",
-    specialization: "Endurance & athletic performance",
-    certification: "CSCS",
-    clients: 20,
-    capacity: 24,
-    hours: "Mon–Fri · 8 AM–9 PM",
-    nextAvailable: "Today",
-    status: "Available",
-  },
-  {
-    id: "4",
-    name: "Olivia James",
-    specialization: "Pilates & recovery",
-    certification: "ACE",
-    clients: 14,
-    capacity: 18,
-    hours: "Wed–Sun · 9 AM–5 PM",
-    nextAvailable: "Wed, Oct 21 · 9 AM",
-    status: "In session",
-  },
-  {
-    id: "5",
-    name: "James Carter",
-    specialization: "Strength & hypertrophy",
-    certification: "NASM",
-    clients: 24,
-    capacity: 24,
-    hours: "Mon–Fri · 10 AM–8 PM",
-    nextAvailable: "Thu, Oct 22 · 2 PM",
-    status: "Fully booked",
-  },
-];
+const COACH_CLIENT_CAPACITY = 20;
+
+const STATUS_FROM_DUTY: Record<DutyStatus, Status> = {
+  on_floor: "Available",
+  in_session: "In session",
+  on_break: "Available",
+  off_duty: "Fully booked",
+};
 
 const STATUS_FILTERS: {
   key: StatusFilter;
@@ -132,21 +85,42 @@ export default function TrainersScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<StatusFilter>("All");
+  const [isAddOpen, setIsAddOpen] = useState(false);
+
+  const { coaches, isLoading, error, refresh } = useCoachTeam();
+
+  const trainers = useMemo<Trainer[]>(() =>
+    coaches.map((coach) => ({
+      id: coach.id,
+      name: coach.name,
+      specialization: coach.specialty || "General coaching",
+      certification:
+        coach.hourlyRate > 0
+          ? `₱${coach.hourlyRate.toFixed(0)}/hr`
+          : coach.email || "K-Fit coach",
+      clients: 0,
+      capacity: COACH_CLIENT_CAPACITY,
+      hours: "Mon–Sun · schedule set in Availability",
+      nextAvailable:
+        coach.dutyStatus === "on_floor" ? "Today" : "Off the floor",
+      status: STATUS_FROM_DUTY[coach.dutyStatus],
+    })),
+  [coaches]);
 
   const counts = useMemo(() => {
     const base: Record<StatusFilter, number> = {
-      All: mockTrainers.length,
+      All: trainers.length,
       Available: 0,
       "In session": 0,
       "Fully booked": 0,
     };
-    mockTrainers.forEach((t) => (base[t.status] += 1));
+    trainers.forEach((t) => (base[t.status] += 1));
     return base;
-  }, []);
+  }, [trainers]);
 
   const filteredTrainers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return mockTrainers.filter((t) => {
+    return trainers.filter((t) => {
       const matchesSearch =
         q.length === 0 ||
         t.name.toLowerCase().includes(q) ||
@@ -156,20 +130,21 @@ export default function TrainersScreen() {
         selectedFilter === "All" || t.status === selectedFilter;
       return matchesSearch && matchesFilter;
     });
-  }, [searchQuery, selectedFilter]);
+  }, [searchQuery, selectedFilter, trainers]);
 
   const summary = useMemo(() => {
-    const clients = mockTrainers.reduce((s, t) => s + t.clients, 0);
-    const capacity = mockTrainers.reduce((s, t) => s + t.capacity, 0);
+    const clients = trainers.reduce((s, t) => s + t.clients, 0);
+    const capacity = trainers.reduce((s, t) => s + t.capacity, 0);
     return {
-      total: mockTrainers.length,
-      available: mockTrainers.filter((t) => t.status === "Available").length,
-      inSession: mockTrainers.filter((t) => t.status === "In session").length,
+      total: trainers.length,
+      available: trainers.filter((t) => t.status === "Available").length,
+      inSession: trainers.filter((t) => t.status === "In session").length,
       clients,
       openSpots: capacity - clients,
-      avgLoad: (clients / mockTrainers.length).toFixed(1),
+      avgLoad:
+        trainers.length > 0 ? (clients / trainers.length).toFixed(1) : "0.0",
     };
-  }, []);
+  }, [trainers]);
 
   const openProfile = (id: string) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -235,10 +210,7 @@ export default function TrainersScreen() {
               <Pressable
                 onPress={() => {
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  Alert.alert(
-                    "Not available yet",
-                    "Adding trainers isn't connected to the database yet.",
-                  );
+                  setIsAddOpen(true);
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Add trainer"
@@ -251,6 +223,29 @@ export default function TrainersScreen() {
                 <Text style={styles.addButtonText}>Add trainer</Text>
               </Pressable>
             </View>
+
+            {(isLoading || error) && (
+              <View
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: error ? KFitColors.error + "55" : KFitColors.border,
+                  backgroundColor: KFitColors.surface,
+                }}
+              >
+                <Text
+                  style={{
+                    color: error ? KFitColors.error : KFitColors.mutedText,
+                    fontSize: 12,
+                  }}
+                >
+                  {error
+                    ? `Could not load the coaching team: ${error}`
+                    : "Loading coaching team…"}
+                </Text>
+              </View>
+            )}
 
             {/* Stats */}
             <View style={styles.statsGrid}>
@@ -633,7 +628,7 @@ export default function TrainersScreen() {
               </View>
 
               <Text style={styles.footerText}>
-                Showing {filteredTrainers.length} of {mockTrainers.length}{" "}
+                Showing {filteredTrainers.length} of {trainers.length}{" "}
                 trainers
               </Text>
             </View>
@@ -644,6 +639,13 @@ export default function TrainersScreen() {
           </ScrollView>
         </View>
       </View>
+      <AddTrainerModal
+        visible={isAddOpen}
+        onClose={() => setIsAddOpen(false)}
+        onPromoted={() => {
+          void refresh();
+        }}
+      />
     </SafeAreaView>
   );
 }

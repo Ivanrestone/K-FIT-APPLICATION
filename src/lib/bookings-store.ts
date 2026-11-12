@@ -47,6 +47,8 @@ type State = {
   saveNotes: (id: string, notes: string) => void;
   /** NEW: member creates a booking request. Returns the new booking id. */
   createBooking: (input: CreateBookingInput) => string;
+  /** Replace the whole list, e.g. after loading training_sessions. */
+  replaceBookings: (list: Booking[]) => void;
 };
 
 /* ---------------- Date helpers (no deps) ---------------- */
@@ -248,6 +250,8 @@ export const useBookingsStore = create<State>((set) => ({
     set((s) => ({
       bookings: s.bookings.map((b) => (b.id === id ? { ...b, notes } : b)),
     })),
+
+  replaceBookings: (list) => set({ bookings: list }),
 
   /** NEW: create a pending booking request. Returns the new booking id. */
   createBooking: (input) => {

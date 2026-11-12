@@ -40,6 +40,8 @@ Each tool has one job. Ask before moving a responsibility to a different tool.
 - **Dynamic Access (TOTP):** The Member app generates a Time-Based One-Time Password (TOTP) QR code (30s period). The backend accepts either canonical `KFIT1|{memberId}|{counter}|{code}` or JSON `{ memberId, code, timestamp/counter }` payloads, supporting both `TOTP_ENCRYPTION_KEY` and `ATTENDANCE_ENCRYPTION_KEY`.
 - **Validation Logic:** The backend owns validation with a $\pm 2$ time-step window tolerance ($\pm 60$s drift). When the Kiosk scans a QR, the backend validates the token, checks dual-subscription status, marks the token as consumed to prevent replay attacks, logs the attendance, and returns specific error codes (`EXPIRED_MEMBERSHIP`, `INVALID_TOTP`, `MEMBER_NOT_FOUND`, `REPLAY_DETECTED`, `EXPIRED_TOTP`).
 - **Bookings:** Capacity-limited slots and waitlists. Only Members with active App access can reserve slots.
+- **Coaching operations:** Admin promotes members to coaches from `trainers.tsx` via the `promote_member_to_coach` RPC (role + `coach_profiles` in one transaction). Coaches own `coach_availability`, `training_sessions`, `fitness_classes` (+`class_reservations`) and `workout_routines`/`workout_exercises`; all staff tables use `public.is_staff()` for RLS, and staff read member rows through `users_select_staff`.
+- **Reminders:** `send-reminder` verifies the caller is staff, writes a `notifications` row with the service role, then emails through Resend when `RESEND_API_KEY` is set. Reminders never block the scan or booking flow, and the key lives only in Supabase secrets.
 
 ## Rules
 

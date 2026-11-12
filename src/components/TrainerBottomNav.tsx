@@ -4,7 +4,7 @@ import { unseenCount, useChallengeStore } from "@/lib/challenges-store";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Animated,
   Easing,
@@ -29,6 +29,7 @@ type Tab = {
 const ALL_TABS: Tab[] = [
   { label: "Home", icon: "trending-up", route: "/trainer-dashboard" },
   { label: "Sessions", icon: "calendar", route: "/trainer-bookings" },
+  { label: "Classes", icon: "grid", route: "/trainer-classes" },
   { label: "Roster", icon: "users", route: "/trainer-roster" },
   { label: "Trainers", icon: "user-check", route: "/trainer-team" },
   { label: "Ranks", icon: "award", route: "/trainer-ranks" },
@@ -79,7 +80,7 @@ function TabButton({
   active: boolean;
   onPress: () => void;
 }) {
-  const lift = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const [lift] = useState(() => new Animated.Value(active ? 1 : 0));
 
   useEffect(() => {
     Animated.spring(lift, {
@@ -162,7 +163,7 @@ export default function TrainerBottomNav({
   else if (moreIsActive) activeSlot = MORE_SLOT;
 
   const [tabWidth, setTabWidth] = useState(0);
-  const position = useRef(new Animated.Value(lastActiveSlot)).current;
+  const [position] = useState(() => new Animated.Value(lastActiveSlot));
 
   useEffect(() => {
     if (activeSlot < 0) return;
@@ -321,7 +322,7 @@ export default function TrainerBottomNav({
               <View style={{ flex: 1 }}>
                 <Text style={styles.qrOptionTitle}>Scan Member</Text>
                 <Text style={styles.qrOptionSub}>
-                  Open camera to scan a member's pass
+                  Open camera to scan a member&apos;s pass
                 </Text>
               </View>
               <Feather

@@ -1,7 +1,11 @@
 import TrainerScreenShell from "@/components/TrainerScreenShell";
 import { KFitColors } from "@/constants/theme";
+import { useRosterMembers } from "@/hooks/use-coach-team";
+import { useReminderSender } from "@/hooks/use-reminders";
+import { initials } from "@/lib/coach";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ScrollView,
@@ -21,56 +25,6 @@ type Client = {
   next: string;
 };
 
-const CLIENTS: Client[] = [
-  {
-    id: "KF-8801",
-    name: "Alex Mercer",
-    plan: "VIP Cyber Elite",
-    status: "Active",
-    visits: 42,
-    next: "Today 4:30 PM",
-  },
-  {
-    id: "KF-8802",
-    name: "Sarah Jenkins",
-    plan: "Monthly Standard",
-    status: "Active",
-    visits: 18,
-    next: "Today 11:00 AM",
-  },
-  {
-    id: "KF-8803",
-    name: "Devon Miles",
-    plan: "VIP Cyber Elite",
-    status: "Active",
-    visits: 89,
-    next: "Today 2:00 PM",
-  },
-  {
-    id: "KF-8804",
-    name: "Kira Nerys",
-    plan: "Day Pass",
-    status: "Expired",
-    visits: 4,
-    next: "None booked",
-  },
-  {
-    id: "KF-8805",
-    name: "Priya Patel",
-    plan: "Monthly Standard",
-    status: "Active",
-    visits: 27,
-    next: "Tomorrow 9:00 AM",
-  },
-  {
-    id: "KF-8806",
-    name: "Liam Brooks",
-    plan: "VIP Cyber Elite",
-    status: "Active",
-    visits: 61,
-    next: "Tomorrow 1:00 PM",
-  },
-];
 
 const FILTERS = ["All", "Active", "Expired", "Has session"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -83,14 +37,45 @@ function isScheduled(next: string) {
   return next !== "None booked";
 }
 
+function formatNextSession(iso: string | null): string {
+  if (!iso) return "None booked";
+  const date = new Date(iso);
+  const today = new Date();
+  const time = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (date.toDateString() === today.toDateString()) return `Today ${time}`;
+  return `${date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  })} ${time}`;
+}
+
 export default function TrainerRosterScreen() {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("All");
+  const [remindedId, setRemindedId] = useState<string | null>(null);
+
+  const { members, isLoading, error } = useRosterMembers();
+  const { sendReminder, isSending } = useReminderSender();
+
+  const clients = useMemo<Client[]>(() =>
+    members.map((member) => ({
+      id: member.id,
+      name: member.name,
+      plan: member.plan,
+      status: member.status,
+      visits: member.visits,
+      next: formatNextSession(member.nextSession),
+    })),
+  [members]);
 
   const q = query.trim().toLowerCase();
 
   const filtered = useMemo(() => {
-    return CLIENTS.filter((c) => {
+    return clients.filter((c) => {
       const matchesQuery =
         q.length === 0 ||
         c.name.toLowerCase().includes(q) ||
@@ -102,18 +87,18 @@ export default function TrainerRosterScreen() {
         (filter === "Has session" && isScheduled(c.next));
       return matchesQuery && matchesFilter;
     });
-  }, [q, filter]);
+  }, [clients, q, filter]);
 
   const stats = useMemo(() => {
-    const active = CLIENTS.filter((c) => c.status === "Active").length;
-    const expired = CLIENTS.filter((c) => c.status === "Expired").length;
-    const scheduled = CLIENTS.filter((c) => isScheduled(c.next)).length;
-    return { total: CLIENTS.length, active, expired, scheduled };
-  }, []);
+    const active = clients.filter((c) => c.status === "Active").length;
+    const expired = clients.filter((c) => c.status === "Expired").length;
+    const scheduled = clients.filter((c) => isScheduled(c.next)).length;
+    return { total: clients.length, active, expired, scheduled };
+  }, [clients]);
 
   const countFor = (f: Filter) =>
     f === "All"
-      ? CLIENTS.length
+      ? clients.length
       : f === "Active"
         ? stats.active
         : f === "Expired"
@@ -226,6 +211,16 @@ export default function TrainerRosterScreen() {
         })}
       </ScrollView>
 
+      {(error || isLoading) && (
+        <View style={styles.emptyCard}>
+          <Text style={[styles.emptyText, error && { color: KFitColors.error }]}>
+            {error
+              ? `Could not load the roster: ${error}`
+              : "Loading roster…"}
+          </Text>
+        </View>
+      )}
+
       {/* ── Member list ─────────────────────── */}
       {filtered.length === 0 ? (
         <View style={styles.emptyCard}>
@@ -248,18 +243,24 @@ export default function TrainerRosterScreen() {
             const tone = active ? KFitColors.accent : KFitColors.error;
             const today = isToday(c.next);
             const scheduled = isScheduled(c.next);
-            const memberNum = c.id.split("-")[1];
+            const shortId = c.id.slice(-6).toUpperCase();
 
             return (
               <TouchableOpacity
                 key={c.id}
                 style={styles.row}
                 activeOpacity={0.85}
+                onPress={() => {
+                  void Haptics.impactAsync(
+                    Haptics.ImpactFeedbackStyle.Light,
+                  );
+                  router.push(`/trainer-member/${c.id}` as any);
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={`${c.name}, ${c.plan}, ${c.status}, ${c.visits} visits, next session ${c.next}`}
               >
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{memberNum}</Text>
+                  <Text style={styles.avatarText}>{initials(c.name)}</Text>
                 </View>
 
                 <View style={styles.flex}>
@@ -267,7 +268,7 @@ export default function TrainerRosterScreen() {
                     <Text style={styles.name} numberOfLines={1}>
                       {c.name}
                     </Text>
-                    <Text style={styles.memberId}>#{memberNum}</Text>
+                    <Text style={styles.memberId}>#{shortId}</Text>
                   </View>
                   <Text style={styles.meta} numberOfLines={1}>
                     {c.plan} · {c.visits} visits
@@ -293,19 +294,67 @@ export default function TrainerRosterScreen() {
                   </View>
                 </View>
 
-                <View
-                  style={[
-                    styles.badge,
-                    {
-                      backgroundColor: tone + "1A",
-                      borderColor: tone + "44",
-                    },
-                  ]}
-                >
-                  <View style={[styles.badgeDot, { backgroundColor: tone }]} />
-                  <Text style={[styles.badgeText, { color: tone }]}>
-                    {c.status.toUpperCase()}
-                  </Text>
+                <View style={styles.rowEnd}>
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor: tone + "1A",
+                        borderColor: tone + "44",
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[styles.badgeDot, { backgroundColor: tone }]}
+                    />
+                    <Text style={[styles.badgeText, { color: tone }]}>
+                      {c.status.toUpperCase()}
+                    </Text>
+                  </View>
+
+                  {!active && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (isSending) return;
+                        void sendReminder({
+                          memberId: c.id,
+                          kind: "membership_expiry",
+                          message:
+                            "Your K-Fit gym membership has expired. Renew at the front desk to unlock the facility and keep training with us.",
+                        })
+                          .then(() => {
+                            setRemindedId(c.id);
+                            void Haptics.notificationAsync(
+                              Haptics.NotificationFeedbackType.Success,
+                            );
+                          })
+                          .catch((sendError) => {
+                            console.warn("[Reminder failed]", sendError);
+                          });
+                      }}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        remindedId === c.id
+                          ? `Reminder already sent to ${c.name}`
+                          : `Send reminder to ${c.name}`
+                      }
+                      style={[
+                        styles.remindBtn,
+                        remindedId === c.id && styles.remindBtnSent,
+                      ]}
+                    >
+                      <Feather
+                        name={remindedId === c.id ? "bell-off" : "bell"}
+                        size={10}
+                        color={
+                          remindedId === c.id
+                            ? KFitColors.accent
+                            : KFitColors.onAccent
+                        }
+                      />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </TouchableOpacity>
             );
@@ -557,6 +606,20 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
+  rowEnd: { alignItems: "flex-end", gap: 6 },
+  remindBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: KFitColors.accent,
+  },
+  remindBtnSent: {
+    backgroundColor: KFitColors.accent + "14",
+    borderWidth: 1,
+    borderColor: KFitColors.accent + "55",
+  },
   badge: {
     flexDirection: "row",
     alignItems: "center",
