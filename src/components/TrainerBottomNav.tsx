@@ -30,7 +30,7 @@ const ALL_TABS: Tab[] = [
   { label: "Home", icon: "trending-up", route: "/trainer-dashboard" },
   { label: "Sessions", icon: "calendar", route: "/trainer-bookings" },
   { label: "Classes", icon: "grid", route: "/trainer-classes" },
-  { label: "Roster", icon: "users", route: "/trainer-roster" },
+  { label: "Members", icon: "users", route: "/trainer-roster" },
   { label: "Trainers", icon: "user-check", route: "/trainer-team" },
   { label: "Ranks", icon: "award", route: "/trainer-ranks" },
   { label: "POS", icon: "shopping-cart", route: "/trainer-pos" },

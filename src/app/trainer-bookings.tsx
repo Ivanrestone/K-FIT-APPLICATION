@@ -3,7 +3,6 @@ import TrainerHeader from "@/components/TrainerHeader";
 import { KFitColors } from "@/constants/theme";
 import { useCoachSessions } from "@/hooks/use-coach-sessions";
 import { useReminderSender } from "@/hooks/use-reminders";
-import { combineDateAndTime, sessionToBooking } from "@/lib/coach";
 import {
   Booking,
   pickPending,
@@ -12,6 +11,15 @@ import {
   toRelativeDay,
   useBookingsStore,
 } from "@/lib/bookings-store";
+import {
+  CheckInStatus,
+  ClassReservation,
+  FitnessClass,
+  useClassesStore,
+  type ClassLevel,
+  type ClassStatus,
+} from "@/lib/classes-store";
+import { combineDateAndTime, sessionToBooking } from "@/lib/coach";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
@@ -34,7 +42,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
-type Filter = "requests" | "confirmed" | "history" | "all";
+type Filter = "requests" | "confirmed" | "history" | "all" | "classes";
 type SortMode = "date" | "requested";
 type ConfirmAction = "accept" | "decline" | "complete" | "noshow" | null;
 
@@ -47,6 +55,7 @@ const FILTERS: {
   { key: "confirmed", label: "Confirmed", icon: "check-circle" },
   { key: "history", label: "History", icon: "clock" },
   { key: "all", label: "All", icon: "layers" },
+  { key: "classes", label: "Classes", icon: "users" },
 ];
 
 const EMPTY_COPY: Record<
@@ -72,6 +81,11 @@ const EMPTY_COPY: Record<
     title: "No bookings yet",
     body: "New bookings from members will appear here.",
     icon: "inbox",
+  },
+  classes: {
+    title: "No classes scheduled",
+    body: "Create a group fitness class to start filling your studio calendar.",
+    icon: "users",
   },
 };
 
@@ -125,6 +139,7 @@ function durationMin(start: string, end: string) {
 }
 
 function matchesFilter(b: Booking, f: Filter) {
+  if (f === "classes") return false;
   if (f === "all") return true;
   if (f === "requests") return b.status === "pending";
   if (f === "confirmed") return b.status === "confirmed";
@@ -312,6 +327,1047 @@ function BookingCard({
   );
 }
 
+/* ─────────────── Class Card ─────────────── */
+const CLASS_TONE: Record<ClassStatus, string> = {
+  scheduled: KFitColors.accent,
+  cancelled: KFitColors.error,
+  completed: "#3B82F6",
+};
+
+const LEVEL_LABEL: Record<ClassLevel, string> = {
+  all: "All levels",
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+};
+
+function ClassCard({
+  cls,
+  reservationCount,
+  onEdit,
+  onCancel,
+  onComplete,
+  onViewReservations,
+}: {
+  cls: FitnessClass;
+  reservationCount: number;
+  onEdit: () => void;
+  onCancel: () => void;
+  onComplete: () => void;
+  onViewReservations: () => void;
+}) {
+  const tone = CLASS_TONE[cls.status];
+  const mins = durationMin(cls.start, cls.end);
+  const fill = cls.capacity > 0 ? reservationCount / cls.capacity : 0;
+  const isFull = reservationCount >= cls.capacity;
+
+  return (
+    <View style={[styles.card, { borderColor: tone + "33" }]}>
+      <View style={styles.cardTop}>
+        <View
+          style={[
+            styles.timeBox,
+            { borderColor: tone + "44", backgroundColor: tone + "12" },
+          ]}
+        >
+          <Text style={[styles.timeStart, { color: tone }]}>
+            {to12h(cls.start)}
+          </Text>
+          <Text style={styles.timeEnd}>{to12h(cls.end)}</Text>
+          <Text style={styles.timeDuration}>{mins} min</Text>
+        </View>
+
+        <View style={styles.flex}>
+          <View style={styles.nameRow}>
+            <Text style={styles.memberName} numberOfLines={1}>
+              {cls.title}
+            </Text>
+            <View
+              style={[
+                styles.pill,
+                { backgroundColor: tone + "1A", borderColor: tone + "44" },
+              ]}
+            >
+              <View style={[styles.pillDot, { backgroundColor: tone }]} />
+              <Text style={[styles.pillText, { color: tone }]}>
+                {cls.status.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.focus} numberOfLines={1}>
+            {cls.focus} · {LEVEL_LABEL[cls.level]}
+          </Text>
+          <View style={styles.metaRow}>
+            <Feather name="map-pin" size={10} color={KFitColors.mutedText} />
+            <Text style={styles.metaText}>{cls.location}</Text>
+            <Text style={styles.metaText}>· {toRelativeDay(cls.date)}</Text>
+          </View>
+        </View>
+      </View>
+
+      <Pressable
+        onPress={onViewReservations}
+        style={styles.classCapacityRow}
+        accessibilityRole="button"
+        accessibilityLabel={`View reservations, ${reservationCount} of ${cls.capacity} booked`}
+      >
+        <View style={styles.classCapacityTrack}>
+          <View
+            style={[
+              styles.classCapacityFill,
+              {
+                width: `${Math.min(100, Math.round(fill * 100))}%`,
+                backgroundColor: isFull ? KFitColors.error : KFitColors.accent,
+              },
+            ]}
+          />
+        </View>
+        <Text style={styles.classCapacityText}>
+          {reservationCount}/{cls.capacity} booked{isFull ? " · FULL" : ""}
+        </Text>
+        <Feather
+          name="users"
+          size={11}
+          color={isFull ? KFitColors.error : KFitColors.accent}
+        />
+      </Pressable>
+
+      {!!cls.notes && (
+        <View style={styles.noteRow}>
+          <View style={styles.noteLabelWrap}>
+            <Text style={styles.noteLabel}>NOTE</Text>
+          </View>
+          <Text style={styles.noteText} numberOfLines={2}>
+            {cls.notes}
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.secondaryBtn]}
+          onPress={onViewReservations}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={`View reservations for ${cls.title}`}
+        >
+          <Feather name="list" size={12} color={KFitColors.accent} />
+          <Text style={[styles.actionText, { color: KFitColors.accent }]}>
+            Reservations
+          </Text>
+        </TouchableOpacity>
+        {cls.status === "scheduled" && (
+          <>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.secondaryBtn]}
+              onPress={onEdit}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${cls.title}`}
+            >
+              <Feather name="edit-2" size={12} color={KFitColors.text} />
+              <Text style={[styles.actionText, { color: KFitColors.text }]}>
+                Edit
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.declineBtn]}
+              onPress={onCancel}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Cancel ${cls.title}`}
+            >
+              <Feather name="x" size={12} color={KFitColors.error} />
+              <Text style={[styles.actionText, { color: KFitColors.error }]}>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
+      {cls.status === "scheduled" && (
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.acceptBtn]}
+          onPress={onComplete}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={`Mark ${cls.title} complete`}
+        >
+          <Feather name="check-circle" size={12} color={KFitColors.onAccent} />
+          <Text style={[styles.actionText, { color: KFitColors.onAccent }]}>
+            Complete class
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+/* ─────────────── Availability View ─────────────── */
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+type DayOfWeek = (typeof DAYS)[number];
+const AVAILABILITY_TIMES = [
+  "06:00",
+  "07:00",
+  "08:00",
+  "09:00",
+  "10:00",
+  "11:00",
+  "12:00",
+  "13:00",
+  "14:00",
+  "15:00",
+  "16:00",
+  "17:00",
+  "18:00",
+  "19:00",
+  "20:00",
+  "21:00",
+];
+
+function AvailabilityView() {
+  const [slots, setSlots] = useState<
+    { id: string; day: DayOfWeek; start: string; end: string }[]
+  >([]);
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek>("Mon");
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("10:00");
+
+  const addSlot = () => {
+    if (end <= start) return;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setSlots([
+      ...slots,
+      { id: Math.random().toString(), day: selectedDay, start, end },
+    ]);
+  };
+
+  return (
+    <View style={{ gap: 12 }}>
+      {/* Day Picker */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 6 }}
+      >
+        {DAYS.map((d) => (
+          <TouchableOpacity
+            key={d}
+            onPress={() => {
+              void Haptics.selectionAsync();
+              setSelectedDay(d);
+            }}
+            style={[
+              styles.timeChip,
+              selectedDay === d && styles.timeChipActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.timeChipText,
+                selectedDay === d && styles.timeChipTextActive,
+              ]}
+            >
+              {d}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Time Picker */}
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.fieldLabel}>START</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 6 }}
+          >
+            {AVAILABILITY_TIMES.map((t) => (
+              <TouchableOpacity
+                key={`s-${t}`}
+                onPress={() => setStart(t)}
+                style={[styles.timeChip, start === t && styles.timeChipActive]}
+              >
+                <Text
+                  style={[
+                    styles.timeChipText,
+                    start === t && styles.timeChipTextActive,
+                  ]}
+                >
+                  {to12h(t)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.fieldLabel}>END</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 6 }}
+          >
+            {AVAILABILITY_TIMES.map((t) => (
+              <TouchableOpacity
+                key={`e-${t}`}
+                onPress={() => setEnd(t)}
+                style={[styles.timeChip, end === t && styles.timeChipActive]}
+              >
+                <Text
+                  style={[
+                    styles.timeChipText,
+                    end === t && styles.timeChipTextActive,
+                  ]}
+                >
+                  {to12h(t)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.createClassBtn, end <= start && styles.actionDisabled]}
+        onPress={addSlot}
+      >
+        <Feather name="plus" size={14} color={KFitColors.onAccent} />
+        <Text style={styles.createClassText}>Add {selectedDay} slot</Text>
+      </TouchableOpacity>
+
+      {/* Current Slots List */}
+      <View style={{ gap: 8, marginTop: 8 }}>
+        {slots.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No hours set</Text>
+            <Text style={styles.emptyText}>
+              Add your bookable time slots above.
+            </Text>
+          </View>
+        ) : (
+          slots
+            .sort(
+              (a, b) =>
+                DAYS.indexOf(a.day) - DAYS.indexOf(b.day) ||
+                a.start.localeCompare(b.start),
+            )
+            .map((s) => (
+              <View key={s.id} style={styles.resRow}>
+                <View
+                  style={[
+                    styles.resAvatar,
+                    {
+                      backgroundColor: KFitColors.accent + "1A",
+                      borderColor: KFitColors.accent + "44",
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[styles.resAvatarText, { color: KFitColors.accent }]}
+                  >
+                    {s.day}
+                  </Text>
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.resName}>
+                    {to12h(s.start)} – {to12h(s.end)}
+                  </Text>
+                  <Text style={styles.resMeta}>Bookable</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSlots(slots.filter((x) => x.id !== s.id))}
+                  style={[
+                    styles.resActionBtn,
+                    { borderColor: KFitColors.error + "55" },
+                  ]}
+                >
+                  <Feather name="trash-2" size={12} color={KFitColors.error} />
+                </TouchableOpacity>
+              </View>
+            ))
+        )}
+      </View>
+    </View>
+  );
+}
+
+/* ─────────────── Class Editor Modal ─────────────── */
+const CLASS_TIME_OPTIONS = [
+  "06:00",
+  "07:00",
+  "08:00",
+  "09:00",
+  "10:00",
+  "11:00",
+  "12:00",
+  "13:00",
+  "14:00",
+  "15:00",
+  "16:00",
+  "17:00",
+  "18:00",
+  "19:00",
+  "20:00",
+  "21:00",
+];
+
+const CLASS_LEVELS: ClassLevel[] = [
+  "all",
+  "beginner",
+  "intermediate",
+  "advanced",
+];
+
+function ClassEditorModal({
+  visible,
+  editing,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  editing: FitnessClass | null;
+  onClose: () => void;
+  onSave: (draft: any) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [title, setTitle] = useState("");
+  const [focus, setFocus] = useState("");
+  const [location, setLocation] = useState("");
+  const [date, setDate] = useState("");
+  const [start, setStart] = useState("07:00");
+  const [end, setEnd] = useState("08:00");
+  const [capacity, setCapacity] = useState("12");
+  const [level, setLevel] = useState<ClassLevel>("all");
+  const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    if (!visible) return;
+    if (editing) {
+      setTitle(editing.title);
+      setFocus(editing.focus);
+      setLocation(editing.location);
+      setDate(editing.date);
+      setStart(editing.start);
+      setEnd(editing.end);
+      setCapacity(String(editing.capacity));
+      setLevel(editing.level);
+      setNotes(editing.notes ?? "");
+    } else {
+      setTitle("");
+      setFocus("");
+      setLocation("");
+      setDate(toIso(new Date()));
+      setStart("07:00");
+      setEnd("08:00");
+      setCapacity("12");
+      setLevel("all");
+      setNotes("");
+    }
+  }, [visible, editing]);
+
+  const dateChips = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    return { iso: toIso(d), label: toRelativeDay(toIso(d)), sub: d.getDate() };
+  });
+
+  const capNum = parseInt(capacity, 10);
+  const valid =
+    title.trim().length > 0 &&
+    focus.trim().length > 0 &&
+    location.trim().length > 0 &&
+    date.length > 0 &&
+    start < end &&
+    Number.isFinite(capNum) &&
+    capNum > 0 &&
+    capNum <= 60;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ width: "100%" }}
+        >
+          <Pressable
+            style={[
+              styles.detailSheet,
+              { paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.sheetHandle} />
+
+            <View style={styles.detailHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.detailEyebrow}>
+                  {editing ? "EDIT CLASS" : "NEW CLASS"}
+                </Text>
+                <Text style={styles.detailName}>
+                  {editing ? editing.title : "Schedule a group class"}
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView
+              style={{ maxHeight: 460 }}
+              contentContainerStyle={{ gap: 10 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.fieldLabel}>CLASS TITLE</Text>
+              <TextInput
+                style={styles.notesInput}
+                value={title}
+                onChangeText={setTitle}
+                placeholder="e.g. Sunset Yoga Flow"
+                placeholderTextColor={KFitColors.mutedText}
+              />
+
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>FOCUS</Text>
+                  <TextInput
+                    style={styles.notesInput}
+                    value={focus}
+                    onChangeText={setFocus}
+                    placeholder="Yoga"
+                    placeholderTextColor={KFitColors.mutedText}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>LOCATION</Text>
+                  <TextInput
+                    style={styles.notesInput}
+                    value={location}
+                    onChangeText={setLocation}
+                    placeholder="Studio A"
+                    placeholderTextColor={KFitColors.mutedText}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.fieldLabel}>DATE</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.dateChipsRow}
+              >
+                {dateChips.map((d) => {
+                  const active = d.iso === date;
+                  return (
+                    <TouchableOpacity
+                      key={d.iso}
+                      onPress={() => {
+                        void Haptics.selectionAsync();
+                        setDate(d.iso);
+                      }}
+                      style={[styles.dateChip, active && styles.dateChipActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.dateChipLabel,
+                          active && styles.dateChipLabelActive,
+                        ]}
+                      >
+                        {d.label}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.dateChipNum,
+                          active && styles.dateChipNumActive,
+                        ]}
+                      >
+                        {d.sub}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.fieldLabel}>START</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 6 }}
+              >
+                {CLASS_TIME_OPTIONS.map((t) => {
+                  const active = t === start;
+                  return (
+                    <TouchableOpacity
+                      key={`cs-${t}`}
+                      onPress={() => {
+                        void Haptics.selectionAsync();
+                        setStart(t);
+                        if (t >= end) {
+                          const idx = CLASS_TIME_OPTIONS.indexOf(t);
+                          setEnd(
+                            CLASS_TIME_OPTIONS[
+                              Math.min(idx + 1, CLASS_TIME_OPTIONS.length - 1)
+                            ],
+                          );
+                        }
+                      }}
+                      style={[styles.timeChip, active && styles.timeChipActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.timeChipText,
+                          active && styles.timeChipTextActive,
+                        ]}
+                      >
+                        {to12h(t)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.fieldLabel}>END</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 6 }}
+              >
+                {CLASS_TIME_OPTIONS.map((t) => {
+                  const active = t === end;
+                  const disabled = t <= start;
+                  return (
+                    <TouchableOpacity
+                      key={`ce-${t}`}
+                      onPress={() => {
+                        if (disabled) return;
+                        void Haptics.selectionAsync();
+                        setEnd(t);
+                      }}
+                      style={[
+                        styles.timeChip,
+                        active && styles.timeChipActive,
+                        disabled && styles.timeChipDisabled,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.timeChipText,
+                          active && styles.timeChipTextActive,
+                          disabled && styles.timeChipTextDisabled,
+                        ]}
+                      >
+                        {to12h(t)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>CAPACITY</Text>
+                  <TextInput
+                    style={styles.notesInput}
+                    value={capacity}
+                    onChangeText={setCapacity}
+                    placeholder="12"
+                    placeholderTextColor={KFitColors.mutedText}
+                    keyboardType="number-pad"
+                  />
+                </View>
+                <View style={{ flex: 2 }}>
+                  <Text style={styles.fieldLabel}>LEVEL</Text>
+                  <View
+                    style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}
+                  >
+                    {CLASS_LEVELS.map((l) => {
+                      const active = l === level;
+                      return (
+                        <TouchableOpacity
+                          key={l}
+                          onPress={() => {
+                            void Haptics.selectionAsync();
+                            setLevel(l);
+                          }}
+                          style={[
+                            styles.timeChip,
+                            active && styles.timeChipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.timeChipText,
+                              active && styles.timeChipTextActive,
+                            ]}
+                          >
+                            {LEVEL_LABEL[l]}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+
+              <Text style={styles.fieldLabel}>NOTES</Text>
+              <TextInput
+                style={styles.notesInput}
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Equipment, warm-up, member prep…"
+                placeholderTextColor={KFitColors.mutedText}
+                multiline
+                textAlignVertical="top"
+              />
+            </ScrollView>
+
+            <View style={styles.rescheduleActions}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.secondaryBtn]}
+                onPress={onClose}
+              >
+                <Text
+                  style={[styles.actionText, { color: KFitColors.mutedText }]}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  styles.acceptBtn,
+                  !valid && styles.actionDisabled,
+                ]}
+                onPress={() => {
+                  if (!valid) return;
+                  void Haptics.notificationAsync(
+                    Haptics.NotificationFeedbackType.Success,
+                  );
+                  onSave({
+                    title: title.trim(),
+                    focus: focus.trim(),
+                    location: location.trim(),
+                    date,
+                    start,
+                    end,
+                    capacity: capNum,
+                    level,
+                    notes: notes.trim(),
+                  });
+                }}
+              >
+                <Feather name="check" size={13} color={KFitColors.onAccent} />
+                <Text
+                  style={[styles.actionText, { color: KFitColors.onAccent }]}
+                >
+                  {editing ? "Save changes" : "Create class"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/* ─────────────── Reservations Modal ─────────────── */
+const CHECK_IN_TONE: Record<CheckInStatus, string> = {
+  reserved: "#F59E0B",
+  "checked-in": "#22C55E",
+  "no-show": KFitColors.error,
+};
+
+const CHECK_IN_LABEL: Record<CheckInStatus, string> = {
+  reserved: "Reserved",
+  "checked-in": "Checked in",
+  "no-show": "No-show",
+};
+
+function ReservationsModal({
+  cls,
+  visible,
+  reservations,
+  onClose,
+  onSetStatus,
+  onCheckInAll,
+}: {
+  cls: FitnessClass | null;
+  visible: boolean;
+  reservations: ClassReservation[];
+  onClose: () => void;
+  onSetStatus: (reservationId: string, status: CheckInStatus) => void;
+  onCheckInAll: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  if (!cls) return null;
+
+  const list = reservations.filter((r) => r.classId === cls.id);
+  const checkedIn = list.filter((r) => r.status === "checked-in").length;
+  const noShow = list.filter((r) => r.status === "no-show").length;
+  const reserved = list.filter((r) => r.status === "reserved").length;
+  const fill = cls.capacity > 0 ? list.length / cls.capacity : 0;
+  const isFull = list.length >= cls.capacity;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ width: "100%" }}
+        >
+          <Pressable
+            style={[
+              styles.detailSheet,
+              { paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.sheetHandle} />
+
+            <View style={styles.detailHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.detailEyebrow}>CLASS RESERVATIONS</Text>
+                <Text style={styles.detailName}>{cls.title}</Text>
+                <Text style={styles.detailSub} numberOfLines={1}>
+                  {toRelativeDay(cls.date)} · {to12h(cls.start)} –{" "}
+                  {to12h(cls.end)} · {cls.location}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.detailPill,
+                  {
+                    backgroundColor:
+                      (isFull ? KFitColors.error : KFitColors.accent) + "1A",
+                    borderColor:
+                      (isFull ? KFitColors.error : KFitColors.accent) + "44",
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.pillDot,
+                    {
+                      backgroundColor: isFull
+                        ? KFitColors.error
+                        : KFitColors.accent,
+                    },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.pillText,
+                    { color: isFull ? KFitColors.error : KFitColors.accent },
+                  ]}
+                >
+                  {list.length}/{cls.capacity}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.classCapacityRow}>
+              <View style={styles.classCapacityTrack}>
+                <View
+                  style={[
+                    styles.classCapacityFill,
+                    {
+                      width: `${Math.min(100, Math.round(fill * 100))}%`,
+                      backgroundColor: isFull
+                        ? KFitColors.error
+                        : KFitColors.accent,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.classCapacityText}>
+                {list.length}/{cls.capacity} {isFull ? "· FULL" : "booked"}
+              </Text>
+            </View>
+
+            <View style={styles.resSummaryRow}>
+              <View
+                style={[
+                  styles.resSummaryChip,
+                  { borderColor: CHECK_IN_TONE.reserved + "55" },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.resSummaryValue,
+                    { color: CHECK_IN_TONE.reserved },
+                  ]}
+                >
+                  {reserved}
+                </Text>
+                <Text style={styles.resSummaryLabel}>Reserved</Text>
+              </View>
+              <View
+                style={[
+                  styles.resSummaryChip,
+                  { borderColor: CHECK_IN_TONE["checked-in"] + "55" },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.resSummaryValue,
+                    { color: CHECK_IN_TONE["checked-in"] },
+                  ]}
+                >
+                  {checkedIn}
+                </Text>
+                <Text style={styles.resSummaryLabel}>Checked in</Text>
+              </View>
+              <View
+                style={[
+                  styles.resSummaryChip,
+                  { borderColor: CHECK_IN_TONE["no-show"] + "55" },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.resSummaryValue,
+                    { color: CHECK_IN_TONE["no-show"] },
+                  ]}
+                >
+                  {noShow}
+                </Text>
+                <Text style={styles.resSummaryLabel}>No-show</Text>
+              </View>
+            </View>
+
+            {reserved > 0 && (
+              <TouchableOpacity
+                style={styles.resCheckAllBtn}
+                onPress={() => {
+                  void Haptics.notificationAsync(
+                    Haptics.NotificationFeedbackType.Success,
+                  );
+                  onCheckInAll();
+                }}
+              >
+                <Feather
+                  name="check-circle"
+                  size={13}
+                  color={KFitColors.onAccent}
+                />
+                <Text style={styles.resCheckAllText}>
+                  Check in all reserved ({reserved})
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <ScrollView
+              style={{ maxHeight: 320 }}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {list.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyTitle}>No reservations yet</Text>
+                  <Text style={styles.emptyText}>
+                    Booked members will appear here as they reserve a spot.
+                  </Text>
+                </View>
+              ) : (
+                list
+                  .slice()
+                  .sort((a, b) => a.reservedAt - b.reservedAt)
+                  .map((r) => {
+                    const tone = CHECK_IN_TONE[r.status];
+                    return (
+                      <View key={r.id} style={styles.resRow}>
+                        <View
+                          style={[
+                            styles.resAvatar,
+                            {
+                              backgroundColor: tone + "1A",
+                              borderColor: tone + "44",
+                            },
+                          ]}
+                        >
+                          <Text style={[styles.resAvatarText, { color: tone }]}>
+                            {r.memberInitials}
+                          </Text>
+                        </View>
+                        <View style={styles.flex}>
+                          <Text style={styles.resName} numberOfLines={1}>
+                            {r.memberName}
+                          </Text>
+                          <Text style={styles.resMeta}>
+                            {CHECK_IN_LABEL[r.status]}
+                            {r.checkedInAt
+                              ? ` · ${new Date(r.checkedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                              : ""}
+                          </Text>
+                        </View>
+                        {r.status !== "checked-in" && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              void Haptics.selectionAsync();
+                              onSetStatus(r.id, "checked-in");
+                            }}
+                            style={[
+                              styles.resActionBtn,
+                              {
+                                borderColor: CHECK_IN_TONE["checked-in"] + "55",
+                                backgroundColor:
+                                  CHECK_IN_TONE["checked-in"] + "12",
+                              },
+                            ]}
+                          >
+                            <Feather
+                              name="check"
+                              size={12}
+                              color={CHECK_IN_TONE["checked-in"]}
+                            />
+                          </TouchableOpacity>
+                        )}
+                        {r.status !== "no-show" && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              void Haptics.selectionAsync();
+                              onSetStatus(r.id, "no-show");
+                            }}
+                            style={[
+                              styles.resActionBtn,
+                              {
+                                borderColor: CHECK_IN_TONE["no-show"] + "55",
+                                backgroundColor:
+                                  CHECK_IN_TONE["no-show"] + "12",
+                              },
+                            ]}
+                          >
+                            <Feather
+                              name="slash"
+                              size={12}
+                              color={CHECK_IN_TONE["no-show"]}
+                            />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })
+              )}
+            </ScrollView>
+
+            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+              <Text style={styles.closeText}>Close</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  );
+}
+
 /* ─────────────── Detail Modal ─────────────── */
 function DetailModal({
   booking,
@@ -323,17 +1379,7 @@ function DetailModal({
   onSendReminder,
   reminderSending,
   reminderSent,
-}: {
-  booking: Booking | null;
-  visible: boolean;
-  onClose: () => void;
-  onAskAction: (action: Exclude<ConfirmAction, null>) => void;
-  onSaveNotes: (notes: string) => void;
-  onReschedule: (date: string, start: string, end: string) => void;
-  onSendReminder: () => void;
-  reminderSending: boolean;
-  reminderSent: boolean;
-}) {
+}: any) {
   const insets = useSafeAreaInsets();
   const [notesDraft, setNotesDraft] = useState(() => booking?.notes ?? "");
   const [mode, setMode] = useState<"view" | "reschedule">("view");
@@ -342,7 +1388,6 @@ function DetailModal({
   const [newEnd, setNewEnd] = useState(() => booking?.end ?? "");
 
   if (!booking) return null;
-
   const tone = statusTone(booking.status);
   const isPending = booking.status === "pending";
   const isConfirmed = booking.status === "confirmed";
@@ -370,7 +1415,6 @@ function DetailModal({
     "20:00",
     "21:00",
   ];
-
   const notesDirty = notesDraft !== (booking.notes ?? "");
   const rescheduleDirty =
     newDate !== booking.date ||
@@ -398,7 +1442,6 @@ function DetailModal({
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.sheetHandle} />
-
             <View style={styles.detailHeader}>
               <View style={styles.flex}>
                 <Text style={styles.detailEyebrow}>BOOKING DETAILS</Text>
@@ -447,7 +1490,6 @@ function DetailModal({
                           void Haptics.selectionAsync();
                           setNewDate(d.iso);
                         }}
-                        activeOpacity={0.85}
                         style={[
                           styles.dateChip,
                           active && styles.dateChipActive,
@@ -473,7 +1515,6 @@ function DetailModal({
                     );
                   })}
                 </ScrollView>
-
                 <Text style={styles.fieldLabel}>START</Text>
                 <ScrollView
                   horizontal
@@ -506,7 +1547,6 @@ function DetailModal({
                     );
                   })}
                 </ScrollView>
-
                 <Text style={styles.fieldLabel}>END</Text>
                 <ScrollView
                   horizontal
@@ -543,12 +1583,10 @@ function DetailModal({
                     );
                   })}
                 </ScrollView>
-
                 <View style={styles.rescheduleActions}>
                   <TouchableOpacity
                     style={[styles.actionBtn, styles.secondaryBtn]}
                     onPress={() => setMode("view")}
-                    activeOpacity={0.85}
                   >
                     <Text
                       style={[
@@ -574,7 +1612,6 @@ function DetailModal({
                       onReschedule(newDate, newStart, newEnd);
                       setMode("view");
                     }}
-                    activeOpacity={0.85}
                   >
                     <Feather
                       name="check"
@@ -613,7 +1650,6 @@ function DetailModal({
                       );
                       onSaveNotes(notesDraft.trim());
                     }}
-                    activeOpacity={0.85}
                   >
                     <Feather
                       name="save"
@@ -626,7 +1662,6 @@ function DetailModal({
               </>
             )}
 
-            {/* ─── Sticky action bar (only when there's a real action) ─── */}
             {mode === "view" && (isPending || isConfirmed) && (
               <View style={styles.detailActionBar}>
                 {isPending && (
@@ -634,9 +1669,6 @@ function DetailModal({
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.secondaryBtn]}
                       onPress={() => setMode("reschedule")}
-                      activeOpacity={0.85}
-                      accessibilityRole="button"
-                      accessibilityLabel="Reschedule this pending request"
                     >
                       <Feather
                         name="calendar"
@@ -652,7 +1684,6 @@ function DetailModal({
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.declineBtn]}
                       onPress={() => onAskAction("decline")}
-                      activeOpacity={0.85}
                     >
                       <Feather name="x" size={13} color={KFitColors.error} />
                       <Text
@@ -664,7 +1695,6 @@ function DetailModal({
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.acceptBtn]}
                       onPress={() => onAskAction("accept")}
-                      activeOpacity={0.85}
                     >
                       <Feather
                         name="check"
@@ -688,13 +1718,6 @@ function DetailModal({
                       style={[styles.actionBtn, styles.secondaryBtn]}
                       onPress={onSendReminder}
                       disabled={reminderSending}
-                      activeOpacity={0.85}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        reminderSent
-                          ? "Reminder already sent"
-                          : "Send reminder to this member"
-                      }
                     >
                       <Feather
                         name={reminderSent ? "bell-off" : "bell"}
@@ -723,7 +1746,6 @@ function DetailModal({
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.secondaryBtn]}
                       onPress={() => setMode("reschedule")}
-                      activeOpacity={0.85}
                     >
                       <Feather
                         name="calendar"
@@ -739,7 +1761,6 @@ function DetailModal({
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.acceptBtn]}
                       onPress={() => onAskAction("complete")}
-                      activeOpacity={0.85}
                     >
                       <Feather
                         name="check-circle"
@@ -764,18 +1785,13 @@ function DetailModal({
               <TouchableOpacity
                 style={styles.noShowBtn}
                 onPress={() => onAskAction("noshow")}
-                activeOpacity={0.85}
               >
                 <Feather name="slash" size={12} color={KFitColors.mutedText} />
                 <Text style={styles.noShowText}>Mark as no-show</Text>
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={styles.closeBtn}
-              onPress={onClose}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
               <Text style={styles.closeText}>Close</Text>
             </TouchableOpacity>
           </Pressable>
@@ -808,19 +1824,9 @@ function DetailMeta({
 }
 
 /* ─────────────── Confirm Dialog ─────────────── */
-function ConfirmDialog({
-  action,
-  booking,
-  onCancel,
-  onConfirm,
-}: {
-  action: ConfirmAction;
-  booking: Booking | null;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
+function ConfirmDialog({ action, booking, onCancel, onConfirm }: any) {
   if (!action || !booking) return null;
-  const copy = CONFIRM_COPY[action];
+  const copy = CONFIRM_COPY[action as keyof typeof CONFIRM_COPY];
 
   return (
     <Modal
@@ -860,9 +1866,6 @@ function ConfirmDialog({
             <TouchableOpacity
               style={[styles.confirmBtn, styles.confirmCancelBtn]}
               onPress={onCancel}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel"
             >
               <Text style={styles.confirmCancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -872,9 +1875,6 @@ function ConfirmDialog({
                 copy.danger ? styles.confirmDanger : styles.confirmPrimary,
               ]}
               onPress={onConfirm}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel={copy.confirm}
             >
               <Feather
                 name={copy.danger ? "x" : "check"}
@@ -903,6 +1903,16 @@ export default function TrainerBookingsScreen() {
   const reschedule = useBookingsStore((s) => s.reschedule);
   const replaceBookings = useBookingsStore((s) => s.replaceBookings);
 
+  const classes = useClassesStore((s) => s.classes);
+  const addClass = useClassesStore((s) => s.addClass);
+  const updateClass = useClassesStore((s) => s.updateClass);
+  const cancelClass = useClassesStore((s) => s.cancelClass);
+  const completeClass = useClassesStore((s) => s.completeClass);
+
+  const reservations = useClassesStore((s) => s.reservations);
+  const setReservationStatus = useClassesStore((s) => s.setReservationStatus);
+  const checkInAll = useClassesStore((s) => s.checkInAll);
+
   const {
     sessions,
     isLoading: sessionsLoading,
@@ -914,14 +1924,17 @@ export default function TrainerBookingsScreen() {
   const { sendReminder, isSending: reminderSending } = useReminderSender();
   const [reminderSentId, setReminderSentId] = useState<string | null>(null);
 
-  // Coach Sessions render the live `training_sessions` rows. The list is only
-  // replaced once the first fetch settles, so the UI never flashes empty.
   useEffect(() => {
     if (sessionsLoading) return;
-    replaceBookings(sessions.map((session) => sessionToBooking(session, "K-Fit Coach")));
+    replaceBookings(
+      sessions.map((session) => sessionToBooking(session, "K-Fit Coach")),
+    );
   }, [replaceBookings, sessions, sessionsLoading]);
 
   const [filter, setFilter] = useState<Filter>("requests");
+  const [sessionView, setSessionView] = useState<"bookings" | "availability">(
+    "bookings",
+  );
   const [sort, setSort] = useState<SortMode>("date");
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -931,6 +1944,14 @@ export default function TrainerBookingsScreen() {
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [confirmTargetId, setConfirmTargetId] = useState<string | null>(null);
+
+  // Class manager state
+  const [classEditorOpen, setClassEditorOpen] = useState(false);
+  const [editingClass, setEditingClass] = useState<FitnessClass | null>(null);
+  const [cancelClassId, setCancelClassId] = useState<string | null>(null);
+  const [reservationsClassId, setReservationsClassId] = useState<string | null>(
+    null,
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -960,7 +1981,9 @@ export default function TrainerBookingsScreen() {
   }, [all]);
 
   const countFor = (key: Filter) =>
-    all.filter((b) => matchesFilter(b, key)).length;
+    key === "classes"
+      ? classes.length
+      : all.filter((b) => matchesFilter(b, key)).length;
 
   const grouped = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -979,41 +2002,30 @@ export default function TrainerBookingsScreen() {
           : b.createdAt - a.createdAt,
       );
 
-    if (sort === "requested") {
-      return [
-        {
-          date: "__all__",
-          label: "BY REQUEST DATE",
-          items: list,
-        },
-      ];
-    }
+    if (sort === "requested")
+      return [{ date: "__all__", label: "BY REQUEST DATE", items: list }];
 
     const groups: { date: string; label: string; items: Booking[] }[] = [];
     for (const b of list) {
       const last = groups[groups.length - 1];
       if (last && last.date === b.date) last.items.push(b);
       else
-        groups.push({
-          date: b.date,
-          label: toRelativeDay(b.date),
-          items: [b],
-        });
+        groups.push({ date: b.date, label: toRelativeDay(b.date), items: [b] });
     }
     return groups;
   }, [all, filter, query, sort]);
 
   const totalVisible = grouped.reduce((sum, g) => sum + g.items.length, 0);
   const empty = EMPTY_COPY[filter];
-
   const detailBooking = detailId
     ? (all.find((b) => b.id === detailId) ?? null)
     : null;
-
   const confirmTarget = confirmTargetId
     ? (all.find((b) => b.id === confirmTargetId) ?? null)
     : null;
-
+  const reservationsClass = reservationsClassId
+    ? (classes.find((c) => c.id === reservationsClassId) ?? null)
+    : null;
   const selectedArray = all.filter((b) => selected.has(b.id));
   const selectedPending = selectedArray.filter((b) => b.status === "pending");
 
@@ -1032,12 +2044,10 @@ export default function TrainerBookingsScreen() {
   const runConfirm = () => {
     if (!confirmAction || !confirmTargetId) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
     if (confirmAction === "accept") accept(confirmTargetId);
     else if (confirmAction === "decline") decline(confirmTargetId);
     else if (confirmAction === "complete") complete(confirmTargetId);
     else if (confirmAction === "noshow") markNoShow(confirmTargetId);
-
     const remoteStatus =
       confirmAction === "accept"
         ? "confirmed"
@@ -1049,7 +2059,6 @@ export default function TrainerBookingsScreen() {
     void updateSessionStatus(confirmTargetId, remoteStatus).catch((error) => {
       console.warn("[Session update failed]", error);
     });
-
     setConfirmAction(null);
     setConfirmTargetId(null);
     setDetailId(null);
@@ -1069,12 +2078,10 @@ export default function TrainerBookingsScreen() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectMode(true);
   };
-
   const exitSelectMode = () => {
     setSelectMode(false);
     setSelected(new Set());
   };
-
   const selectAllPending = () => {
     void Haptics.selectionAsync();
     setSelected(new Set(selectedPending.map((b) => b.id)));
@@ -1140,6 +2147,8 @@ export default function TrainerBookingsScreen() {
           <StatInline label="Week" value={weekCount} tone={KFitColors.accent} />
           <View style={styles.statDivider} />
           <StatInline label="Done" value={completedCount} tone="#3B82F6" />
+          <View style={styles.statDivider} />
+          <StatInline label="Classes" value={classes.length} tone="#A78BFA" />
         </View>
 
         {(sessionsError || sessionsLoading) && (
@@ -1157,30 +2166,96 @@ export default function TrainerBookingsScreen() {
           </View>
         )}
 
-        <View style={styles.searchWrap}>
-          <Feather name="search" size={14} color={KFitColors.mutedText} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search member, focus, or location"
-            placeholderTextColor={KFitColors.mutedText}
-            value={query}
-            onChangeText={setQuery}
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="search"
-            accessibilityLabel="Search bookings"
-          />
-          {query.length > 0 && (
+        {/* ── VIEW TOGGLE (Bookings vs Availability) ── */}
+        {filter === "requests" && (
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: KFitColors.surface,
+              borderRadius: 10,
+              padding: 4,
+              borderWidth: 1,
+              borderColor: KFitColors.border,
+            }}
+          >
             <TouchableOpacity
-              onPress={() => setQuery("")}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Clear search"
+              onPress={() => setSessionView("bookings")}
+              style={[
+                {
+                  flex: 1,
+                  paddingVertical: 8,
+                  alignItems: "center",
+                  borderRadius: 8,
+                },
+                sessionView === "bookings" && {
+                  backgroundColor: KFitColors.accent,
+                },
+              ]}
             >
-              <Feather name="x" size={14} color={KFitColors.mutedText} />
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: "800",
+                  color:
+                    sessionView === "bookings"
+                      ? KFitColors.onAccent
+                      : KFitColors.mutedText,
+                }}
+              >
+                Bookings
+              </Text>
             </TouchableOpacity>
-          )}
-        </View>
+            <TouchableOpacity
+              onPress={() => setSessionView("availability")}
+              style={[
+                {
+                  flex: 1,
+                  paddingVertical: 8,
+                  alignItems: "center",
+                  borderRadius: 8,
+                },
+                sessionView === "availability" && {
+                  backgroundColor: KFitColors.accent,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: "800",
+                  color:
+                    sessionView === "availability"
+                      ? KFitColors.onAccent
+                      : KFitColors.mutedText,
+                }}
+              >
+                Availability
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Hide Search Bar on Availability tab */}
+        {!(filter === "requests" && sessionView === "availability") && (
+          <View style={styles.searchWrap}>
+            <Feather name="search" size={14} color={KFitColors.mutedText} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search member, focus, or location"
+              placeholderTextColor={KFitColors.mutedText}
+              value={query}
+              onChangeText={setQuery}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+            />
+            {query.length > 0 && (
+              <TouchableOpacity onPress={() => setQuery("")} hitSlop={8}>
+                <Feather name="x" size={14} color={KFitColors.mutedText} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         <View style={styles.filterRow}>
           {FILTERS.map((f) => {
@@ -1194,10 +2269,6 @@ export default function TrainerBookingsScreen() {
                   setFilter(f.key);
                   if (selectMode) exitSelectMode();
                 }}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={`${f.label}, ${count} bookings`}
                 style={[styles.filterBtn, active && styles.filterBtnActive]}
               >
                 <Feather
@@ -1231,64 +2302,133 @@ export default function TrainerBookingsScreen() {
           })}
         </View>
 
-        <View style={styles.toolbarRow}>
+        {filter === "classes" && (
           <TouchableOpacity
+            style={styles.createClassBtn}
             onPress={() => {
-              void Haptics.selectionAsync();
-              setSort((s) => (s === "date" ? "requested" : "date"));
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setEditingClass(null);
+              setClassEditorOpen(true);
             }}
-            activeOpacity={0.85}
-            style={styles.toolbarBtn}
-            accessibilityRole="button"
-            accessibilityLabel={`Sort by ${sort === "date" ? "requested date" : "scheduled date"}`}
           >
-            <Feather
-              name={sort === "date" ? "calendar" : "clock"}
-              size={12}
-              color={KFitColors.accent}
-            />
-            <Text style={styles.toolbarText}>
-              {sort === "date" ? "By date" : "By request"}
-            </Text>
-            <Feather
-              name="chevrons-up"
-              size={11}
-              color={KFitColors.mutedText}
-            />
+            <Feather name="plus-circle" size={14} color={KFitColors.onAccent} />
+            <Text style={styles.createClassText}>New class</Text>
           </TouchableOpacity>
+        )}
 
-          {!selectMode ? (
-            <TouchableOpacity
-              onPress={enterSelectMode}
-              activeOpacity={0.85}
-              style={styles.toolbarBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Enter bulk select mode"
-            >
-              <Feather
-                name="check-square"
-                size={12}
-                color={KFitColors.accent}
-              />
-              <Text style={styles.toolbarText}>Select</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              onPress={exitSelectMode}
-              activeOpacity={0.85}
-              style={[styles.toolbarBtn, styles.toolbarBtnCancel]}
-              accessibilityRole="button"
-              accessibilityLabel="Exit select mode"
-            >
-              <Feather name="x" size={12} color={KFitColors.error} />
-              <Text style={[styles.toolbarText, { color: KFitColors.error }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
+        {filter !== "classes" &&
+          !(filter === "requests" && sessionView === "availability") && (
+            <View style={styles.toolbarRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  setSort((s) => (s === "date" ? "requested" : "date"));
+                }}
+                style={styles.toolbarBtn}
+              >
+                <Feather
+                  name={sort === "date" ? "calendar" : "clock"}
+                  size={12}
+                  color={KFitColors.accent}
+                />
+                <Text style={styles.toolbarText}>
+                  {sort === "date" ? "By date" : "By request"}
+                </Text>
+                <Feather
+                  name="chevrons-up"
+                  size={11}
+                  color={KFitColors.mutedText}
+                />
+              </TouchableOpacity>
+              {!selectMode ? (
+                <TouchableOpacity
+                  onPress={enterSelectMode}
+                  style={styles.toolbarBtn}
+                >
+                  <Feather
+                    name="check-square"
+                    size={12}
+                    color={KFitColors.accent}
+                  />
+                  <Text style={styles.toolbarText}>Select</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={exitSelectMode}
+                  style={[styles.toolbarBtn, styles.toolbarBtnCancel]}
+                >
+                  <Feather name="x" size={12} color={KFitColors.error} />
+                  <Text
+                    style={[styles.toolbarText, { color: KFitColors.error }]}
+                  >
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
-        </View>
 
-        {totalVisible === 0 ? (
+        {filter === "classes" ? (
+          classes.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <View style={styles.emptyIconWrap}>
+                <Feather name="users" size={22} color={KFitColors.accent} />
+              </View>
+              <Text style={styles.emptyTitle}>No classes scheduled</Text>
+              <Text style={styles.emptyText}>{EMPTY_COPY.classes.body}</Text>
+              <TouchableOpacity
+                style={styles.emptyCTA}
+                onPress={() => {
+                  setEditingClass(null);
+                  setClassEditorOpen(true);
+                }}
+              >
+                <Feather name="plus" size={13} color={KFitColors.onAccent} />
+                <Text style={styles.emptyCTAText}>Create first class</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.group}>
+              <View style={styles.groupHeader}>
+                <Text style={styles.groupLabel}>GROUP CLASSES</Text>
+                <Text style={styles.groupCount}>
+                  {classes.length} class{classes.length === 1 ? "" : "es"}
+                </Text>
+              </View>
+              {classes
+                .slice()
+                .sort((a, b) =>
+                  (a.date + a.start).localeCompare(b.date + b.start),
+                )
+                .map((c) => {
+                  const count = reservations.filter(
+                    (r) => r.classId === c.id,
+                  ).length;
+                  return (
+                    <ClassCard
+                      key={c.id}
+                      cls={c}
+                      reservationCount={count}
+                      onEdit={() => {
+                        setEditingClass(c);
+                        setClassEditorOpen(true);
+                      }}
+                      onCancel={() => setCancelClassId(c.id)}
+                      onComplete={() => {
+                        void Haptics.notificationAsync(
+                          Haptics.NotificationFeedbackType.Success,
+                        );
+                        completeClass(c.id);
+                      }}
+                      onViewReservations={() => setReservationsClassId(c.id)}
+                    />
+                  );
+                })}
+            </View>
+          )
+        ) : filter === "requests" && sessionView === "availability" ? (
+          <AvailabilityView />
+        ) : totalVisible === 0 ? (
           <View style={styles.emptyCard}>
             <View style={styles.emptyIconWrap}>
               <Feather name={empty.icon} size={22} color={KFitColors.accent} />
@@ -1305,9 +2445,6 @@ export default function TrainerBookingsScreen() {
               <TouchableOpacity
                 style={styles.emptyCTA}
                 onPress={() => router.push("/trainer-roster" as any)}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel="Open roster"
               >
                 <Feather name="users" size={13} color={KFitColors.onAccent} />
                 <Text style={styles.emptyCTAText}>Open Roster</Text>
@@ -1356,7 +2493,7 @@ export default function TrainerBookingsScreen() {
         </View>
       </ScrollView>
 
-      {selectMode && (
+      {selectMode && filter !== "classes" && (
         <View
           style={[styles.bulkBar, { bottom: Math.max(insets.bottom, 8) + 100 }]}
         >
@@ -1364,17 +2501,12 @@ export default function TrainerBookingsScreen() {
             <Text style={styles.bulkCount}>{selected.size}</Text>
             <Text style={styles.bulkLabel}>selected</Text>
           </View>
-          <TouchableOpacity
-            onPress={selectAllPending}
-            activeOpacity={0.85}
-            style={styles.bulkLink}
-          >
+          <TouchableOpacity onPress={selectAllPending} style={styles.bulkLink}>
             <Text style={styles.bulkLinkText}>Select all pending</Text>
           </TouchableOpacity>
           <View style={styles.bulkActions}>
             <TouchableOpacity
               onPress={bulkDecline}
-              activeOpacity={0.85}
               disabled={selected.size === 0}
               style={[
                 styles.bulkBtn,
@@ -1386,7 +2518,6 @@ export default function TrainerBookingsScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={bulkAccept}
-              activeOpacity={0.85}
               disabled={selected.size === 0}
               style={[
                 styles.bulkBtn,
@@ -1407,17 +2538,17 @@ export default function TrainerBookingsScreen() {
         booking={detailBooking}
         visible={!!detailBooking}
         onClose={() => setDetailId(null)}
-        onAskAction={(action) => {
+        onAskAction={(action: any) => {
           if (detailBooking) askConfirm(action, detailBooking.id);
         }}
-        onSaveNotes={(notes) => {
+        onSaveNotes={(notes: string) => {
           if (!detailBooking) return;
           saveNotes(detailBooking.id, notes);
           void saveSessionNotes(detailBooking.id, notes).catch((error) => {
             console.warn("[Session notes failed]", error);
           });
         }}
-        onReschedule={(date, start, end) => {
+        onReschedule={(date: string, start: string, end: string) => {
           if (!detailBooking) return;
           reschedule(detailBooking.id, date, start, end);
           const startsAt = combineDateAndTime(date, start);
@@ -1458,6 +2589,85 @@ export default function TrainerBookingsScreen() {
         onCancel={cancelConfirm}
         onConfirm={runConfirm}
       />
+
+      <ClassEditorModal
+        visible={classEditorOpen}
+        editing={editingClass}
+        onClose={() => {
+          setClassEditorOpen(false);
+          setEditingClass(null);
+        }}
+        onSave={(draft) => {
+          if (editingClass) {
+            updateClass(editingClass.id, draft);
+          } else {
+            addClass({ ...draft, coach: "K-Fit Coach" });
+          }
+          setClassEditorOpen(false);
+          setEditingClass(null);
+        }}
+      />
+
+      <ReservationsModal
+        cls={reservationsClass}
+        visible={!!reservationsClass}
+        reservations={reservations}
+        onClose={() => setReservationsClassId(null)}
+        onSetStatus={(reservationId, status) => {
+          setReservationStatus(reservationId, status);
+        }}
+        onCheckInAll={() => {
+          if (reservationsClass) checkInAll(reservationsClass.id);
+        }}
+      />
+
+      <Modal
+        visible={!!cancelClassId}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCancelClassId(null)}
+      >
+        <Pressable
+          style={styles.confirmBackdrop}
+          onPress={() => setCancelClassId(null)}
+        >
+          <Pressable
+            style={styles.confirmCard}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={[styles.confirmIconWrap, styles.confirmIconDanger]}>
+              <Feather name="x-circle" size={22} color={KFitColors.error} />
+            </View>
+            <Text style={styles.confirmTitle}>Cancel this class?</Text>
+            <Text style={styles.confirmBody}>
+              Enrolled members will be notified. This cannot be undone.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmCancelBtn]}
+                onPress={() => setCancelClassId(null)}
+              >
+                <Text style={styles.confirmCancelText}>Keep class</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, styles.confirmDanger]}
+                onPress={() => {
+                  if (cancelClassId) {
+                    void Haptics.notificationAsync(
+                      Haptics.NotificationFeedbackType.Warning,
+                    );
+                    cancelClass(cancelClassId);
+                  }
+                  setCancelClassId(null);
+                }}
+              >
+                <Feather name="x" size={13} color="#fff" />
+                <Text style={styles.confirmPrimaryText}>Cancel class</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1493,8 +2703,6 @@ const styles = StyleSheet.create({
   },
   flex: { flex: 1, minWidth: 0 },
   actionDisabled: { opacity: 0.4 },
-
-  /* Header */
   headingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1538,8 +2746,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontFamily: "monospace",
   },
-
-  /* Stat strip */
   statCard: {
     flexDirection: "row",
     alignItems: "stretch",
@@ -1549,12 +2755,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: "hidden",
   },
-  statInline: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 12,
-    gap: 2,
-  },
+  statInline: { flex: 1, alignItems: "center", paddingVertical: 12, gap: 2 },
   statDivider: {
     width: 1,
     backgroundColor: KFitColors.border,
@@ -1572,8 +2773,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     fontFamily: "monospace",
   },
-
-  /* Search */
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -1592,8 +2791,6 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     minHeight: 20,
   },
-
-  /* Filters */
   filterRow: { flexDirection: "row", gap: 6 },
   filterBtn: {
     flex: 1,
@@ -1612,11 +2809,7 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent,
     borderColor: KFitColors.accent,
   },
-  filterText: {
-    color: KFitColors.mutedText,
-    fontSize: 10,
-    fontWeight: "700",
-  },
+  filterText: { color: KFitColors.mutedText, fontSize: 10, fontWeight: "700" },
   filterTextActive: { color: KFitColors.onAccent },
   filterCount: {
     minWidth: 16,
@@ -1640,8 +2833,20 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
   filterCountTextActive: { color: KFitColors.onAccent },
-
-  /* Toolbar */
+  createClassBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: KFitColors.accent,
+  },
+  createClassText: {
+    color: KFitColors.onAccent,
+    fontSize: 13,
+    fontWeight: "900",
+  },
   toolbarRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   toolbarBtn: {
     flex: 1,
@@ -1659,13 +2864,7 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.error + "55",
     backgroundColor: KFitColors.error + "10",
   },
-  toolbarText: {
-    color: KFitColors.text,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-
-  /* Group */
+  toolbarText: { color: KFitColors.text, fontSize: 11, fontWeight: "700" },
   group: { gap: 8, marginTop: 4 },
   groupHeader: {
     flexDirection: "row",
@@ -1685,8 +2884,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: "monospace",
   },
-
-  /* Card */
   card: {
     backgroundColor: KFitColors.surface,
     borderWidth: 1,
@@ -1701,13 +2898,7 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent + "10",
   },
   cardPressed: { opacity: 0.92 },
-
-  selectIndicator: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    zIndex: 2,
-  },
+  selectIndicator: { position: "absolute", top: 8, right: 8, zIndex: 2 },
   checkbox: {
     width: 20,
     height: 20,
@@ -1722,7 +2913,6 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent,
     borderColor: KFitColors.accent,
   },
-
   cardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
   timeBox: {
     width: 74,
@@ -1733,11 +2923,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 1,
   },
-  timeStart: {
-    fontSize: 12,
-    fontWeight: "900",
-    fontFamily: "monospace",
-  },
+  timeStart: { fontSize: 12, fontWeight: "900", fontFamily: "monospace" },
   timeEnd: {
     color: KFitColors.mutedText,
     fontSize: 10,
@@ -1763,18 +2949,12 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   focus: { color: KFitColors.mutedText, fontSize: 11, marginTop: 2 },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 4,
-  },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
   metaText: {
     color: KFitColors.mutedText,
     fontSize: 10,
     fontFamily: "monospace",
   },
-
   pill: {
     flexDirection: "row",
     alignItems: "center",
@@ -1791,7 +2971,6 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     letterSpacing: 0.4,
   },
-
   noteRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1818,7 +2997,88 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   noteText: { color: KFitColors.mutedText, fontSize: 11, flex: 1 },
-
+  classCapacityRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  classCapacityTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: KFitColors.background,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    overflow: "hidden",
+  },
+  classCapacityFill: { height: "100%", borderRadius: 999 },
+  classCapacityText: {
+    color: KFitColors.mutedText,
+    fontSize: 9,
+    fontFamily: "monospace",
+    fontWeight: "700",
+  },
+  resSummaryRow: { flexDirection: "row", gap: 8 },
+  resSummaryChip: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: KFitColors.background,
+  },
+  resSummaryValue: { fontSize: 16, fontWeight: "900", fontFamily: "monospace" },
+  resSummaryLabel: {
+    color: KFitColors.mutedText,
+    fontSize: 9,
+    fontFamily: "monospace",
+    letterSpacing: 0.6,
+  },
+  resCheckAllBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: KFitColors.accent,
+  },
+  resCheckAllText: {
+    color: KFitColors.onAccent,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  resRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: KFitColors.border,
+    backgroundColor: KFitColors.background,
+  },
+  resAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  resAvatarText: { fontSize: 12, fontWeight: "900", fontFamily: "monospace" },
+  resName: { color: KFitColors.text, fontSize: 12, fontWeight: "800" },
+  resMeta: {
+    color: KFitColors.mutedText,
+    fontSize: 10,
+    fontFamily: "monospace",
+    marginTop: 2,
+  },
+  resActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
   actions: { flexDirection: "row", gap: 8 },
   actionBtn: {
     flex: 1,
@@ -1843,8 +3103,6 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
   },
   actionText: { fontSize: 12, fontWeight: "800" },
-
-  /* Empty */
   emptyCard: {
     alignItems: "center",
     paddingVertical: 32,
@@ -1884,12 +3142,7 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.accent,
     marginTop: 8,
   },
-  emptyCTAText: {
-    color: KFitColors.onAccent,
-    fontSize: 12,
-    fontWeight: "900",
-  },
-
+  emptyCTAText: { color: KFitColors.onAccent, fontSize: 12, fontWeight: "900" },
   footer: { alignItems: "center", paddingVertical: 12 },
   footerLabel: {
     color: KFitColors.mutedText,
@@ -1898,8 +3151,6 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     opacity: 0.7,
   },
-
-  /* Bulk bar */
   bulkBar: {
     position: "absolute",
     left: 16,
@@ -1921,27 +3172,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 12,
   },
-  bulkInfo: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 4,
-  },
+  bulkInfo: { flexDirection: "row", alignItems: "baseline", gap: 4 },
   bulkCount: {
     color: KFitColors.accent,
     fontSize: 18,
     fontWeight: "900",
     fontFamily: "monospace",
   },
-  bulkLabel: {
-    color: KFitColors.mutedText,
-    fontSize: 11,
-  },
+  bulkLabel: { color: KFitColors.mutedText, fontSize: 11 },
   bulkLink: { flex: 1, alignItems: "flex-end" },
-  bulkLinkText: {
-    color: KFitColors.accent,
-    fontSize: 11,
-    fontWeight: "800",
-  },
+  bulkLinkText: { color: KFitColors.accent, fontSize: 11, fontWeight: "800" },
   bulkActions: { flexDirection: "row", gap: 6 },
   bulkBtn: {
     width: 36,
@@ -1959,8 +3199,6 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.error + "1A",
     borderColor: KFitColors.error + "55",
   },
-
-  /* Detail modal */
   modalBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
@@ -2021,12 +3259,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-
-  detailMetaGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
+  detailMetaGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   detailMeta: {
     flexGrow: 1,
     flexBasis: "48%",
@@ -2037,23 +3270,14 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.background,
     gap: 4,
   },
-  detailMetaHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
+  detailMetaHeader: { flexDirection: "row", alignItems: "center", gap: 4 },
   detailMetaLabel: {
     color: KFitColors.mutedText,
     fontSize: 9,
     fontFamily: "monospace",
     letterSpacing: 0.8,
   },
-  detailMetaValue: {
-    color: KFitColors.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
+  detailMetaValue: { color: KFitColors.text, fontSize: 12, fontWeight: "700" },
   fieldLabel: {
     color: KFitColors.mutedText,
     fontSize: 9,
@@ -2062,7 +3286,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 4,
   },
-
   notesInput: {
     minHeight: 80,
     maxHeight: 140,
@@ -2090,13 +3313,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
   },
-
-  detailActionBar: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
-  },
-
+  detailActionBar: { flexDirection: "row", gap: 8, marginTop: 4 },
   noShowBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -2108,13 +3325,7 @@ const styles = StyleSheet.create({
     borderColor: KFitColors.border,
     backgroundColor: KFitColors.background,
   },
-  noShowText: {
-    color: KFitColors.mutedText,
-    fontSize: 11,
-    fontWeight: "700",
-  },
-
-  /* Reschedule */
+  noShowText: { color: KFitColors.mutedText, fontSize: 11, fontWeight: "700" },
   rescheduleBlock: { gap: 8 },
   dateChipsRow: { flexDirection: "row", gap: 6, paddingVertical: 2 },
   dateChip: {
@@ -2168,7 +3379,6 @@ const styles = StyleSheet.create({
   timeChipTextActive: { color: KFitColors.onAccent },
   timeChipTextDisabled: { color: KFitColors.mutedText },
   rescheduleActions: { flexDirection: "row", gap: 8, marginTop: 8 },
-
   closeBtn: {
     alignItems: "center",
     paddingVertical: 12,
@@ -2178,13 +3388,7 @@ const styles = StyleSheet.create({
     backgroundColor: KFitColors.background,
     marginTop: 4,
   },
-  closeText: {
-    color: KFitColors.mutedText,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  /* Confirm dialog */
+  closeText: { color: KFitColors.mutedText, fontSize: 12, fontWeight: "700" },
   confirmBackdrop: {
     flex: 1,
     alignItems: "center",
@@ -2232,12 +3436,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: 4,
   },
-  confirmActions: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 6,
-    width: "100%",
-  },
+  confirmActions: { flexDirection: "row", gap: 8, marginTop: 6, width: "100%" },
   confirmBtn: {
     flex: 1,
     flexDirection: "row",
@@ -2257,15 +3456,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
   },
-  confirmPrimary: {
-    backgroundColor: KFitColors.accent,
-  },
-  confirmDanger: {
-    backgroundColor: KFitColors.error,
-  },
-  confirmPrimaryText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "900",
-  },
+  confirmPrimary: { backgroundColor: KFitColors.accent },
+  confirmDanger: { backgroundColor: KFitColors.error },
+  confirmPrimaryText: { color: "#fff", fontSize: 13, fontWeight: "900" },
 });

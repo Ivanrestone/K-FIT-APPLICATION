@@ -25,7 +25,6 @@ type Client = {
   next: string;
 };
 
-
 const FILTERS = ["All", "Active", "Expired", "Has session"] as const;
 type Filter = (typeof FILTERS)[number];
 
@@ -61,16 +60,18 @@ export default function TrainerRosterScreen() {
   const { members, isLoading, error } = useRosterMembers();
   const { sendReminder, isSending } = useReminderSender();
 
-  const clients = useMemo<Client[]>(() =>
-    members.map((member) => ({
-      id: member.id,
-      name: member.name,
-      plan: member.plan,
-      status: member.status,
-      visits: member.visits,
-      next: formatNextSession(member.nextSession),
-    })),
-  [members]);
+  const clients = useMemo<Client[]>(
+    () =>
+      members.map((member) => ({
+        id: member.id,
+        name: member.name,
+        plan: member.plan,
+        status: member.status,
+        visits: member.visits,
+        next: formatNextSession(member.nextSession),
+      })),
+    [members],
+  );
 
   const q = query.trim().toLowerCase();
 
@@ -108,7 +109,7 @@ export default function TrainerRosterScreen() {
   return (
     <TrainerScreenShell
       eyebrow="MEMBER DATABASE"
-      title="Roster"
+      title="Members"
       activeRoute="/trainer-roster"
     >
       {/* ── Stat strip ──────────────────────── */}
@@ -213,10 +214,10 @@ export default function TrainerRosterScreen() {
 
       {(error || isLoading) && (
         <View style={styles.emptyCard}>
-          <Text style={[styles.emptyText, error && { color: KFitColors.error }]}>
-            {error
-              ? `Could not load the roster: ${error}`
-              : "Loading roster…"}
+          <Text
+            style={[styles.emptyText, error && { color: KFitColors.error }]}
+          >
+            {error ? `Could not load the roster: ${error}` : "Loading roster…"}
           </Text>
         </View>
       )}
@@ -251,9 +252,7 @@ export default function TrainerRosterScreen() {
                 style={styles.row}
                 activeOpacity={0.85}
                 onPress={() => {
-                  void Haptics.impactAsync(
-                    Haptics.ImpactFeedbackStyle.Light,
-                  );
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   router.push(`/trainer-member/${c.id}` as any);
                 }}
                 accessibilityRole="button"
