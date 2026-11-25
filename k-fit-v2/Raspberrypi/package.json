@@ -1,0 +1,12 @@
+{
+  "name": "kfit-attendance-kiosk",
+  "version": "1.0.0",
+  "description": "Live attendance dashboard for K-FIT gym, runs on Raspberry Pi",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

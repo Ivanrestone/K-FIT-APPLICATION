@@ -1,0 +1,473 @@
+# K-Fit Authentication System Documentation
+
+## Overview
+Built a complete authentication system for the K-Fit Expo mobile app using Supabase as the backend.
+
+## Environment Setup
+
+### example.env
+Fixed the environment file format for Expo:
+- Changed from `base_url = value` to `EXPO_PUBLIC_SUPABASE_URL=value` (no spaces around =)
+- Added `EXPO_PUBLIC_` prefix required for client-side access in Expo
+- Kept only public keys (URL and anon key) - removed secret keys that shouldn't be in client code
+- Secret keys should only be used server-side
+
+**Current env variables:**
+```
+EXPO_PUBLIC_SUPABASE_URL=https://ahicsoctvqxcutjbvnfl.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+## Dependencies Installed
+- `@supabase/supabase-js` - Official Supabase client library
+
+## Project Structure
+
+### App Folder Organization
+Routes are organized by role for better structure:
+```
+src/app/
+├── admin/          # Admin-specific screens
+│   ├── dashboard.tsx
+│   └── profile.tsx
+├── coach/          # Coach-specific screens
+│   ├── dashboard.tsx
+│   └── profile.tsx
+├── member/         # Member-specific screens
+│   ├── dashboard.tsx
+│   ├── profile.tsx
+│   └── edit-profile.tsx
+├── login.tsx       # Shared auth screens
+├── signup.tsx
+├── forgot-password.tsx
+├── index.tsx
+└── _layout.tsx     # Route configuration with all route definitions
+```
+
+### src/lib/supabase.ts
+- Initializes Supabase client using environment variables
+- Exported as `supabase` for use throughout the app
+
+### src/lib/auth.ts
+Contains all authentication utility functions:
+
+**Functions:**
+- `login(credentials: LoginCredentials)` - Signs in user with email/password
+- `signup(credentials: SignupCredentials)` - Creates new user account with optional metadata
+  - **Updated:** Now also inserts user into `public.users` table with correct role from database
+  - This fixes the issue where all users defaulted to 'member' role
+- `resetPassword(email: string)` - Sends password reset email
+- `logout()` - Signs out current user
+- `getCurrentUser()` - Gets current authenticated user
+  - **Updated:** Now fetches role from `public.users` table instead of just metadata
+  - Merges database role with user metadata for consistent role handling
+- `getSession()` - Gets current session
+
+**Interfaces:**
+- `LoginCredentials` - { email, password }
+- `SignupCredentials` - { email, password, data?: { first_name, last_name, role } }
+- `AuthResponse` - { success, error?, data? }
+
+**Role Fix Details:**
+- Issue: Signup stored role in metadata, but database `public.users` table had default 'member' role
+- Solution: 
+  1. Signup now inserts into `public.users` with the selected role (admin/coach/member)
+  2. getCurrentUser reads role from database table instead of metadata
+- For existing users: Update roles manually in Supabase dashboard:
+  ```sql
+  UPDATE public.users SET role = 'admin' WHERE email = 'admin-email';
+  UPDATE public.users SET role = 'coach' WHERE email = 'coach-email';
+  ```
+
+### Screens Created
+
+#### src/app/login.tsx
+- Email and password input fields
+- Login button that calls auth.login()
+- Redirects to role-specific dashboard (/member/dashboard, /admin/dashboard, /coach/dashboard)
+- Links to signup and forgot-password pages
+- Basic validation (checks for empty fields)
+- Loading state during API call
+
+#### src/app/signup.tsx
+- First name, last name, email, password fields
+- Sign up button that calls auth.signup()
+- Automatically assigns 'member' role (no role selection)
+- Redirects to /login on success
+- Link back to login page
+- Basic validation
+- Note: Admin accounts are created manually in Supabase, coach accounts via application
+
+#### src/app/forgot-password.tsx
+- Email input field
+- Reset password button that calls auth.resetPassword()
+- Redirects to /login on success
+- Link back to login page
+
+#### src/app/index.tsx
+- Modified to auto-redirect to /login on app start
+- Simple redirect using router.replace('/login')
+
+#### Member Screens (src/app/member/)
+- **dashboard.tsx** - Member dashboard with features, profile button, logout, apply to be coach button
+- **profile.tsx** - Displays member info, QR token, edit profile button
+- **edit-profile.tsx** - Update first_name and last_name
+- **apply-coach.tsx** - Coach application form with:
+  - Experience, certification, and message fields
+  - Checks for existing application status
+  - Shows pending/approved/rejected status if application exists
+  - Uses API 26 to submit application
+  - Uses API 27 to check existing application
+  - Protected route - member only
+
+#### Admin Screens (src/app/admin/)
+- **dashboard.tsx** - Admin dashboard with management features, profile button, logout
+- **profile.tsx** - Displays admin account info
+- **members.tsx** - Manage Members screen with:
+  - View all members list
+  - Search/filter by name or email
+  - View member details (click on member card)
+  - Protected route - checks auth and role on mount
+- **coach-applications.tsx** - Coach Applications screen with:
+  - View all coach applications
+  - Application details view with applicant info
+  - Approve button (uses API 29 RPC)
+  - Reject button (uses API 30 RPC)
+  - Status badges (pending/approved/rejected)
+  - Protected route - admin only
+
+#### Coach Screens (src/app/coach/)
+- **dashboard.tsx** - Coach dashboard with management features, profile button, logout
+- **profile.tsx** - Displays coach account info
+
+## API Endpoints Used
+
+### API 01 — Register Member
+```
+POST {{base_url}}/auth/v1/signup
+Headers:
+  apikey: {{anon_key}}
+  Content-Type: application/json
+Body:
+{
+  "email": "newmember@example.com",
+  "password": "StrongPassword123!",
+  "data": {
+    "first_name": "Juan",
+    "last_name": "Dela Cruz"
+  }
+}
+```
+Expected behavior:
+- Creates Supabase Auth account
+- Database trigger creates public.users record with role = member
+- App creates public.members record with QR token
+- Generates a unique QR token
+Expected status: 200 OK or successful Auth response
+
+### Login
+```
+POST {{base_url}}/auth/v1/token?grant_type=password
+Headers:
+  apikey: {{anon_key}}
+  Content-Type: application/json
+Body:
+  {
+    "email": "member@gmail.com",
+    "password": "admin123"
+  }
+```
+
+### Signup
+```
+POST {{base_url}}/auth/v1/signup
+Headers:
+  apikey: {{anon_key}}
+  Content-Type: application/json
+Body:
+  {
+    "email": "coach@gmail.com",
+    "password": "admin123!",
+    "data": {
+      "first_name": "coach",
+      "last_name": "ivan"
+    }
+  }
+```
+
+### Reset Password
+```
+POST {{base_url}}/auth/v1/token?grant_type=password
+Headers:
+  apikey: {{anon_key}}
+  Content-Type: application/json
+```
+
+## Profile APIs
+
+### API 04 — Get My User Profile
+```
+GET {{base_url}}/rest/v1/users?select=id,email,first_name,last_name,role,created_at
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{access_token}}
+```
+Expected: Only the authenticated Member's profile should be visible.
+
+### API 05 — Get My Member Profile
+```
+GET {{base_url}}/rest/v1/members?select=*
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{access_token}}
+```
+Expected response:
+```json
+[
+  {
+    "id": "YOUR-USER-UUID",
+    "qr_token": "PRIVATE-QR-TOKEN",
+    "created_at": "2026-10-30T14:10:46+00:00"
+  }
+]
+```
+Note: Do not share actual QR tokens publicly.
+
+### API 06 — Get Member Profile by ID
+```
+GET {{base_url}}/rest/v1/members?id=eq.{{user_id}}&select=*
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{access_token}}
+```
+Expected: The Member can retrieve their own profile only.
+
+### API 07 — Update Member Profile
+```
+PATCH {{base_url}}/rest/v1/users?id=eq.{{user_id}}
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/json
+  Prefer: return=representation
+Body:
+{
+  "first_name": "Updated",
+  "last_name": "Member"
+}
+```
+Expected: 200 OK with one updated record.
+
+Security restrictions:
+- Members must not be able to update: id, email, role, plan, created_at
+- Database requirement: The Member UPDATE RLS policy and column-level permissions must be configured first.
+
+### API 09 — Get Admin Profile
+```
+GET {{base_url}}/rest/v1/users?id=eq.{{admin_user_id}}&select=id,email,role
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{admin_access_token}}
+```
+
+### API 10 — Admin View All Members
+```
+GET {{base_url}}/rest/v1/members?select=id,created_at
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{admin_access_token}}
+```
+Expected: Admin can view Member records.
+Note: Avoid selecting qr_token unless the Admin operation specifically requires it.
+
+## Coach Application APIs
+
+### API 26 — Submit Coach Application
+```
+POST {{base_url}}/rest/v1/coach_applications
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/json
+  Prefer: return=representation
+Body:
+{
+  "user_id": "{{user_id}}",
+  "experience": "3 years",
+  "certification": "Personal Trainer Certification",
+  "message": "I would like to apply to become a gym coach.",
+  "status": "pending"
+}
+```
+Important: The database should enforce the authenticated user's identity and pending status. Client-submitted status must not allow self-approval.
+
+### API 27 — View My Coach Application
+```
+GET {{base_url}}/rest/v1/coach_applications?user_id=eq.{{user_id}}&select=*
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{access_token}}
+```
+Expected: Only the Member's own applications.
+
+### API 28 — Admin View Coach Applications
+```
+GET {{base_url}}/rest/v1/coach_applications?select=*
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{admin_access_token}}
+```
+Expected: Admin can review applications.
+
+### API 29 — Admin Approve Coach Application
+```
+POST {{base_url}}/rest/v1/rpc/review_coach_application
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{admin_access_token}}
+  Content-Type: application/json
+```
+Expected behavior:
+- Check Admin authorization
+- Approve application
+- Change user role to coach
+- Create coach profile
+- Record reviewing Admin and timestamp
+- Retain existing Member profile
+Body: Inspect the actual RPC parameter names before sending.
+
+### API 30 — Admin Reject Coach Application
+```
+POST {{base_url}}/rest/v1/rpc/review_coach_application
+Headers:
+  apikey: {{anon_key}}
+  Authorization: Bearer {{admin_access_token}}
+  Content-Type: application/json
+```
+Expected behavior:
+- Change application status to rejected
+- Record Admin ID
+- Record review timestamp
+- Keep the applicant's role as member
+Body: Inspect the actual RPC parameter names before sending.
+
+## Navigation Flow
+1. App starts at / (index.tsx) → redirects to /login
+2. User can go to /signup or /forgot-password from login
+3. After successful signup → redirects to /login
+4. After successful login → redirects to role-specific dashboard:
+   - Member → /member/dashboard
+   - Admin → /admin/dashboard
+   - Coach → /coach/dashboard
+5. Each dashboard/profile screen checks auth and redirects to appropriate dashboard if role doesn't match
+6. Logout from any dashboard → redirects to /login
+7. Profile navigation:
+   - Member: /member/dashboard → /member/profile → /member/edit-profile
+   - Admin: /admin/dashboard → /admin/profile
+   - Coach: /coach/dashboard → /coach/profile
+
+## Design Notes
+- **No design focus** - All screens use basic, functional UI
+- Simple centered layout with input fields and buttons
+- Blue primary color (#007AFF)
+- Basic error handling with Alert dialogs
+- Loading states during async operations
+
+## TypeScript Errors (Known)
+There are TypeScript errors about route paths not being recognized:
+- `/dashboard`, `/signup`, `/forgot-password` routes
+- These are expected because Expo Router needs to scan the app directory
+- Will resolve once the app is built/reloaded
+
+## Next Steps for AI
+- When adding new features, use the existing auth utilities from src/lib/auth.ts
+- Follow the same simple UI pattern (no complex design yet)
+- Use Expo Router for navigation (router.push, router.replace)
+- All auth state is managed by Supabase client
+- For protected routes, check auth on mount like dashboard.tsx does
+
+## Profile UI Requirements
+
+### Member Profile Screen (src/app/member/profile.tsx)
+- Display user profile information (name, email, role, created_at)
+- Show QR token (from members table)
+- Add "Edit Profile" button that navigates to /member/edit-profile
+- Add "Back to Dashboard" button that navigates to /member/dashboard
+- Protected route - checks auth and role on mount
+
+### Edit Profile Screen (src/app/member/edit-profile.tsx)
+- Input fields for first_name and last_name
+- "Save Changes" button that calls API 07 (Update Member Profile)
+- Cancel button to return to /member/profile
+- Display current values in input fields
+- Loading state during update
+- Error handling with Alert dialogs
+- Protected route - checks auth and role on mount
+
+### Admin Profile Screen (src/app/admin/profile.tsx)
+- Display admin profile (id, email, role)
+- Use API 09 to fetch admin-specific data
+- Add "Back to Dashboard" button that navigates to /admin/dashboard
+- Protected route - checks auth and role on mount
+
+### Coach Profile Screen (src/app/coach/profile.tsx)
+- Display coach profile (id, email, first_name, last_name, role, created_at)
+- Add "Back to Dashboard" button that navigates to /coach/dashboard
+- Protected route - checks auth and role on mount
+
+### Navigation Integration
+- "Profile" button added to all dashboards (member, admin, coach)
+- "Manage Members" button added to admin dashboard (navigates to /admin/members)
+- All profile screens are protected routes with role checking
+- Route redirection logic in case of role mismatch
+
+### Admin Manage Members Screen
+- Uses API 10 to fetch all members from database
+- Merges data from `members` and `users` tables
+- Real-time search/filter by name or email
+- Member cards show: name, email, role, join date
+- Click member card to view full details
+- **Delete Member functionality:**
+  - Deletes from all tables: `members`, `coaches`, `users`
+  - Uses service role client to bypass RLS policies
+  - Requires `EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY` in .env
+  - Verification step confirms deletion succeeded
+  - Protected route - admin only
+
+**Delete Member Fix (Nov 2026):**
+- **Issue:** Delete button appeared to work but records remained in database
+- **Root Cause:** RLS policies prevented deletion even for admin users
+- **Solution:**
+  1. Added `getServiceRoleClient()` in `src/lib/supabase.ts` to bypass RLS
+  2. Updated delete function to use service role client instead of anon client
+  3. Added service role key to `.env`: `EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY`
+  4. Delete now removes from all tables (members, coaches, users) regardless of user role
+  5. Added verification step to confirm deletion
+- **Environment Variables Required:**
+  ```
+  EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+  EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
+  EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIs...
+  ```
+
+### Coach Application Flow
+**Member Side:**
+- "Apply to be a Coach" button on member dashboard (orange button)
+- Application form: experience, certification, message
+- Checks existing application status before showing form
+- If application exists: shows status (pending/approved/rejected)
+- Uses API 26 to submit application
+- Uses API 27 to check existing application
+
+**Admin Side:**
+- "Coach Applications" button on admin dashboard
+- List of all applications with status badges
+- Click application to view details
+- Approve button: calls API 29 RPC function
+  - Changes user role to coach
+  - Creates coach profile
+  - Records admin and timestamp
+- Reject button: calls API 30 RPC function
+  - Changes status to rejected
+  - Records admin and timestamp
+  - Keeps user as member

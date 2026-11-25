@@ -1,0 +1,15 @@
+export const Theme = {
+  background: "#080808",
+  surface: "#121212",
+  surfaceAlt: "#1A1A1A",
+  text: "#FFFFFF",
+  textMuted: "#9CA3AF",
+  accent: "#FFD600",
+  accentSoft: "rgba(255, 214, 0, 0.08)",
+  accentBorder: "rgba(255, 214, 0, 0.25)",
+  border: "#222222",
+  success: "#10B981",
+  warning: "#F59E0B",
+  info: "#3B82F6",
+  error: "#EF4444",
+};

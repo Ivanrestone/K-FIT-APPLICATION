@@ -1,5 +1,0 @@
-{
-  "tool": null,
-  "gate": "lint+typecheck+verify",
-  "packageManager": "npm"
-}
